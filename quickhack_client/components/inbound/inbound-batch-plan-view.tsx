@@ -30,16 +30,21 @@ import {
   useUnsavedForm,
 } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { unsavedFormSnapshotsEqual } from "@/quickhack_client/lib/unsaved-changes";
+import type { MutationReceipt } from "@/quickhack_shared/core/mutation-receipt";
+
+type InboundBatchMutationResult = {
+  id: number;
+  revision: number;
+  batchDate: string;
+  batchNo: number;
+};
 
 type InboundBatchesApiResponse = {
   ok: boolean;
   message?: string;
   batches?: InboundBatchPlanRowDto[];
-  batch?: {
-    id: number;
-    batchDate: string;
-    batchNo: number;
-  };
+  batch?: InboundBatchMutationResult;
+  receipt?: MutationReceipt<InboundBatchMutationResult>;
 };
 
 type InboundBatchColumnKey =
@@ -296,9 +301,11 @@ export function SimpleInboundBatchPlanView() {
       setFormBaseline(nextForm);
       setForm(nextForm);
       setMessage("");
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setMessageTone("warning");
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -440,18 +447,38 @@ export function SimpleInboundBatchPlanView() {
         | InboundBatchesApiResponse
         | null;
 
-      if (!response.ok || !payload?.ok || !payload.batches || !payload.batch) {
+      if (!response.ok || !payload?.ok || !payload.batch) {
         throw new Error(payload?.message || "차수 저장에 실패했습니다.");
       }
 
-      setBatches(payload.batches);
-      setEditingBatchId(null);
-      setEditingBatchRevision(null);
-      const nextForm = createNewForm(payload.batches, payload.batch.batchDate);
-      setFormBaseline(nextForm);
-      setForm(nextForm);
-      setMessage(payload.message || "차수 정보를 저장했습니다.");
-      setMessageTone("success");
+      const refreshed = payload.batches
+        ? true
+        : payload.receipt?.refreshRequired
+          ? await loadBatches()
+          : false;
+      if (payload.batches) {
+        setBatches(payload.batches);
+        setEditingBatchId(null);
+        setEditingBatchRevision(null);
+        const nextForm = createNewForm(
+          payload.batches,
+          payload.batch.batchDate
+        );
+        setFormBaseline(nextForm);
+        setForm(nextForm);
+      } else if (!refreshed) {
+        setEditingBatchId(null);
+        setEditingBatchRevision(null);
+        const nextForm = createNewForm(batches, payload.batch.batchDate);
+        setFormBaseline(nextForm);
+        setForm(nextForm);
+      }
+      setMessage(
+        refreshed
+          ? payload.message || "차수 정보를 저장했습니다."
+          : `${payload.message || "차수 정보를 저장했습니다."} 목록 새로고침이 필요합니다.`
+      );
+      setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setMessageTone("warning");
@@ -480,20 +507,41 @@ export function SimpleInboundBatchPlanView() {
         | InboundBatchesApiResponse
         | null;
 
-      if (!response.ok || !payload?.ok || !payload.batches) {
+      if (!response.ok || !payload?.ok || !payload.batch) {
         throw new Error(payload?.message || "차수 삭제에 실패했습니다.");
       }
 
-      setBatches(payload.batches);
-      if (editingBatchId === batch.id) {
-        setEditingBatchId(null);
-        setEditingBatchRevision(null);
-        const nextForm = createNewForm(payload.batches, batch.batchDate);
-        setFormBaseline(nextForm);
-        setForm(nextForm);
+      const refreshed = payload.batches
+        ? true
+        : payload.receipt?.refreshRequired
+          ? await loadBatches()
+          : false;
+      if (payload.batches) {
+        setBatches(payload.batches);
+        if (editingBatchId === batch.id) {
+          setEditingBatchId(null);
+          setEditingBatchRevision(null);
+          const nextForm = createNewForm(payload.batches, batch.batchDate);
+          setFormBaseline(nextForm);
+          setForm(nextForm);
+        }
+      } else if (!refreshed) {
+        const remainingBatches = batches.filter((item) => item.id !== batch.id);
+        setBatches(remainingBatches);
+        if (editingBatchId === batch.id) {
+          setEditingBatchId(null);
+          setEditingBatchRevision(null);
+          const nextForm = createNewForm(remainingBatches, batch.batchDate);
+          setFormBaseline(nextForm);
+          setForm(nextForm);
+        }
       }
-      setMessage(payload.message || "차수 정보를 삭제했습니다.");
-      setMessageTone("success");
+      setMessage(
+        refreshed
+          ? payload.message || "차수 정보를 삭제했습니다."
+          : `${payload.message || "차수 정보를 삭제했습니다."} 목록 새로고침이 필요합니다.`
+      );
+      setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setMessageTone("warning");

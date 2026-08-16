@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { linuxClientRuntimeDirectories } from "../../quickhack_client/platform/linux/runtime-directories.ts";
 import { windowsClientRuntimeDirectories } from "../../quickhack_client/platform/windows/runtime-directories.ts";
 import { linuxServerRuntimeDirectories } from "../../quickhack_server/platform/linux/runtime-directories.ts";
@@ -74,6 +75,9 @@ assert.throws(
     }),
   /artifactKind is required/
 );
-assert.equal(projectRoot.endsWith("quickhack"), true);
+const packageJson = JSON.parse(
+  readFileSync(path.join(projectRoot, "package.json"), "utf8")
+);
+assert.equal(packageJson.name, "quickhack");
 
 console.log(`Runtime directory providers verified (${fixture.cases.length} cases).`);

@@ -8,11 +8,29 @@ import {
   POSTGRESQL_TOOL_CAPABILITIES,
   assertPostgresqlToolVersions,
 } from "../../../quickhack_shared/platform/native-runtime-contract.mjs";
+import {
+  LIFECYCLE_DAY_MS,
+  defineLifecyclePolicy,
+  isStrictlyBeforeLifecycleCutoff,
+  lifecycleAgeMs,
+  lifecycleCutoffExclusive,
+  resolveLifecycleBatchSize,
+} from "../../../quickhack_shared/lifecycle/lifecycle-policy.mjs";
 
 export const POSTGRESQL_BACKUP_PROTOCOL = "QUICKHACK_POSTGRESQL_BACKUP_V1";
 export { POSTGRESQL_MAJOR_VERSION };
 const BACKUP_EXTENSION = ".qhb";
 const MANIFEST_EXTENSION = ".qhb.json";
+const BACKUP_OPERATION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const QUARANTINE_METADATA_FILE = "quarantine.json";
+const QUARANTINE_PENDING_PREFIX = ".pending-";
+const QUARANTINE_FINAL_PREFIX = "quarantine-";
+const ACTIVE_BACKUP_OPERATION_KEYS = new Set();
+export const POSTGRESQL_BACKUP_QUARANTINE_POLICY = defineLifecyclePolicy({
+  retentionMs: 30 * LIFECYCLE_DAY_MS,
+  maxBatchSize: 100,
+});
 const MAX_TOOL_OUTPUT_BYTES = 1024 * 1024;
 const MAX_VERSION_OUTPUT_BYTES = 64 * 1024;
 
@@ -317,6 +335,23 @@ function backupBaseName(createdAt, id = randomUUID()) {
   return `quickhack-postgresql-${timestamp}-${id}`;
 }
 
+function normalizedBackupOperationId(value) {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!BACKUP_OPERATION_ID_PATTERN.test(normalized)) {
+    fail(
+      "POSTGRESQL_BACKUP_OPERATION_ID_INVALID",
+      "The backup operation ID must be a UUID."
+    );
+  }
+  return normalized;
+}
+
+function operationBackupBaseName(operationId) {
+  const digest = createHash("sha256").update(operationId, "utf8").digest("hex");
+  return `quickhack-postgresql-operation-${digest.slice(0, 40)}`;
+}
+
 function backupPath(backupDirectory, fileName) {
   const baseName = path.basename(String(fileName));
   if (baseName !== fileName || !/^quickhack-postgresql-[A-Za-z0-9-]+\.qhb$/.test(baseName)) {
@@ -409,6 +444,49 @@ async function readManifest(manifestPath) {
   }
 }
 
+async function observeOperationBackupPair(finalPath, finalManifestPath) {
+  const [payloadStat, manifestStat] = await Promise.all([
+    regularFile(finalPath),
+    regularFile(finalManifestPath),
+  ]);
+  const payloadExists = await fs.lstat(finalPath).catch(() => null);
+  const manifestExists = await fs.lstat(finalManifestPath).catch(() => null);
+  if (!payloadExists && !manifestExists) return null;
+  if (
+    (payloadExists && !payloadStat) ||
+    (manifestExists && !manifestStat)
+  ) {
+    fail(
+      "POSTGRESQL_BACKUP_OPERATION_ARTIFACT_UNSAFE",
+      "The operation-bound backup artifact is not a regular file."
+    );
+  }
+  if (!payloadStat || !manifestStat) {
+    await fs.rm(finalManifestPath, { force: true });
+    await fs.rm(finalPath, { force: true });
+    return null;
+  }
+  let manifest;
+  try {
+    manifest = await readManifest(finalManifestPath);
+  } catch (error) {
+    if (error instanceof PostgresqlNativeOperationError) {
+      return { invalidReasonCode: error.code };
+    }
+    throw error;
+  }
+  if (manifest.fileName !== path.basename(finalPath)) {
+    return { invalidReasonCode: "POSTGRESQL_BACKUP_MANIFEST_INVALID" };
+  }
+  if (
+    payloadStat.size !== manifest.encryptedSize ||
+    (await sha256(finalPath)) !== manifest.encryptedSha256
+  ) {
+    return { invalidReasonCode: "POSTGRESQL_BACKUP_CORRUPT" };
+  }
+  return { backup: { ...manifest, path: finalPath }, observed: true };
+}
+
 export async function listPostgresqlBackups(backupDirectory) {
   const root = path.resolve(backupDirectory);
   const entries = await fs.readdir(root, { withFileTypes: true }).catch((error) => {
@@ -430,15 +508,23 @@ export async function listPostgresqlBackups(backupDirectory) {
         createdAt: manifest.createdAt,
         sizeBytes: stat?.size ?? 0,
         valid: Boolean(stat && stat.size === manifest.encryptedSize),
+        validationCode:
+          stat && stat.size === manifest.encryptedSize
+            ? null
+            : "POSTGRESQL_BACKUP_CORRUPT",
         applicationVersion: manifest.applicationVersion,
         schemaVersion: manifest.schemaVersion,
       });
-    } catch {
+    } catch (error) {
       backups.push({
         fileName: entry.name.slice(0, -".json".length),
         createdAt: null,
         sizeBytes: 0,
         valid: false,
+        validationCode:
+          error instanceof PostgresqlNativeOperationError
+            ? error.code
+            : "POSTGRESQL_BACKUP_MANIFEST_INVALID",
         applicationVersion: null,
         schemaVersion: null,
       });
@@ -450,17 +536,322 @@ export async function listPostgresqlBackups(backupDirectory) {
   );
 }
 
-export async function applyPostgresqlBackupRetention(backupDirectory, retentionCount) {
+function quarantineRoot(backupDirectory) {
+  return path.join(path.resolve(backupDirectory), "quarantine");
+}
+
+function quarantineTimestamp(value) {
+  return value.toISOString().replace(/[-:.]/g, "");
+}
+
+function validateQuarantineMetadata(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    value.protocol !== "QUICKHACK_POSTGRESQL_BACKUP_QUARANTINE_V1" ||
+    typeof value.originalFileName !== "string" ||
+    !/^quickhack-postgresql-[A-Za-z0-9-]+\.qhb$/.test(
+      value.originalFileName
+    ) ||
+    typeof value.reasonCode !== "string" ||
+    !/^[A-Z0-9_]{1,128}$/.test(value.reasonCode) ||
+    typeof value.quarantinedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.quarantinedAt)) ||
+    new Date(value.quarantinedAt).toISOString() !== value.quarantinedAt ||
+    typeof value.finalDirectoryName !== "string" ||
+    !new RegExp(`^${QUARANTINE_FINAL_PREFIX}[A-Za-z0-9-]+$`).test(
+      value.finalDirectoryName
+    )
+  ) {
+    fail(
+      "POSTGRESQL_BACKUP_QUARANTINE_METADATA_INVALID",
+      "The backup quarantine metadata is invalid."
+    );
+  }
+  return value;
+}
+
+async function readQuarantineMetadata(directory) {
+  let payload;
+  try {
+    payload = await fs.readFile(
+      path.join(directory, QUARANTINE_METADATA_FILE),
+      "utf8"
+    );
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    fail(
+      "POSTGRESQL_BACKUP_QUARANTINE_METADATA_INVALID",
+      "The backup quarantine metadata is missing."
+    );
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    fail(
+      "POSTGRESQL_BACKUP_QUARANTINE_METADATA_INVALID",
+      "The backup quarantine metadata JSON is invalid."
+    );
+  }
+  return validateQuarantineMetadata(parsed);
+}
+
+async function moveRegularFileIfPresent(source, target) {
+  const state = await fs.lstat(source).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  if (!state) return false;
+  if (!state.isFile() || state.isSymbolicLink()) {
+    fail(
+      "POSTGRESQL_BACKUP_QUARANTINE_SOURCE_UNSAFE",
+      "The backup quarantine source is not a regular file."
+    );
+  }
+  const targetState = await fs.lstat(target).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  if (targetState) {
+    fail(
+      "POSTGRESQL_BACKUP_QUARANTINE_CONFLICT",
+      "The backup quarantine target already exists."
+    );
+  }
+  await fs.rename(source, target);
+  return true;
+}
+
+async function finalizePendingQuarantineDirectory(backupDirectory, pendingPath) {
+  const root = quarantineRoot(backupDirectory);
+  const pendingState = await fs.lstat(pendingPath);
+  if (!pendingState.isDirectory() || pendingState.isSymbolicLink()) {
+    fail(
+      "POSTGRESQL_BACKUP_QUARANTINE_PATH_UNSAFE",
+      "The backup quarantine staging path is unsafe."
+    );
+  }
+  const metadata = await readQuarantineMetadata(pendingPath);
+  const payloadSource = backupPath(
+    backupDirectory,
+    metadata.originalFileName
+  );
+  const manifestSource = `${payloadSource}.json`;
+  await moveRegularFileIfPresent(
+    manifestSource,
+    path.join(pendingPath, path.basename(manifestSource))
+  );
+  await moveRegularFileIfPresent(
+    payloadSource,
+    path.join(pendingPath, path.basename(payloadSource))
+  );
+  const finalPath = path.join(root, metadata.finalDirectoryName);
+  if (path.dirname(finalPath) !== root) {
+    fail(
+      "POSTGRESQL_BACKUP_QUARANTINE_PATH_UNSAFE",
+      "The backup quarantine target escaped its directory."
+    );
+  }
+  await fs.rename(pendingPath, finalPath);
+  return { directory: metadata.finalDirectoryName, ...metadata };
+}
+
+async function recoverPendingPostgresqlBackupQuarantines(backupDirectory) {
+  const root = quarantineRoot(backupDirectory);
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch((error) => {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  });
+  const recovered = [];
+  for (const entry of entries.sort((left, right) =>
+    left.name.localeCompare(right.name)
+  )) {
+    if (!entry.name.startsWith(QUARANTINE_PENDING_PREFIX)) continue;
+    const pendingPath = path.join(root, entry.name);
+    const state = await fs.lstat(pendingPath);
+    if (!state.isDirectory() || state.isSymbolicLink()) continue;
+    try {
+      recovered.push(
+        await finalizePendingQuarantineDirectory(
+          backupDirectory,
+          pendingPath
+        )
+      );
+    } catch (error) {
+      if (
+        error instanceof PostgresqlNativeOperationError &&
+        error.code === "POSTGRESQL_BACKUP_QUARANTINE_METADATA_INVALID"
+      ) {
+        // A crash can leave the private directory before its metadata is
+        // durable. Preserve that staging evidence and let the active backup
+        // candidate be classified independently in this verification pass.
+        continue;
+      }
+      throw error;
+    }
+  }
+  return recovered;
+}
+
+async function quarantinePostgresqlBackup({
+  backupDirectory,
+  fileName,
+  reasonCode,
+  now,
+}) {
+  const root = quarantineRoot(backupDirectory);
+  await fs.mkdir(root, { recursive: true, mode: 0o700 });
+  const identity = randomUUID();
+  const finalDirectoryName = `${QUARANTINE_FINAL_PREFIX}${quarantineTimestamp(
+    now
+  )}-${identity}`;
+  const pendingPath = path.join(root, `${QUARANTINE_PENDING_PREFIX}${identity}`);
+  await fs.mkdir(pendingPath, { mode: 0o700 });
+  const metadata = {
+    protocol: "QUICKHACK_POSTGRESQL_BACKUP_QUARANTINE_V1",
+    originalFileName: fileName,
+    reasonCode,
+    quarantinedAt: now.toISOString(),
+    finalDirectoryName,
+  };
+  await writeJsonExclusive(
+    path.join(pendingPath, QUARANTINE_METADATA_FILE),
+    metadata
+  );
+  return finalizePendingQuarantineDirectory(backupDirectory, pendingPath);
+}
+
+async function readPostgresqlBackupQuarantines(backupDirectory) {
+  const root = quarantineRoot(backupDirectory);
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch((error) => {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  });
+  const quarantines = [];
+  for (const entry of entries.sort((left, right) =>
+    left.name.localeCompare(right.name)
+  )) {
+    if (!entry.name.startsWith(QUARANTINE_FINAL_PREFIX)) continue;
+    const directory = path.join(root, entry.name);
+    const state = await fs.lstat(directory);
+    if (!state.isDirectory() || state.isSymbolicLink()) continue;
+    try {
+      const metadata = await readQuarantineMetadata(directory);
+      if (metadata.finalDirectoryName !== entry.name) continue;
+      quarantines.push({ directory, ...metadata });
+    } catch {
+      // Malformed quarantine entries are retained for operator review.
+    }
+  }
+  return quarantines;
+}
+
+export async function listPostgresqlBackupQuarantines(backupDirectory) {
+  return (await readPostgresqlBackupQuarantines(backupDirectory)).map(
+    ({ directory, ...entry }) => ({
+      ...entry,
+      directoryName: path.basename(directory),
+    })
+  );
+}
+
+export async function cleanupPostgresqlBackupQuarantine({
+  backupDirectory,
+  now = new Date(),
+  dryRun = false,
+  maxBatchSize,
+} = {}) {
+  const reference = new Date(now);
+  if (!Number.isFinite(reference.getTime())) {
+    throw new TypeError("now must be a valid date.");
+  }
+  const cutoffExclusive = lifecycleCutoffExclusive(
+    reference,
+    POSTGRESQL_BACKUP_QUARANTINE_POLICY
+  );
+  const batchSize = resolveLifecycleBatchSize(
+    POSTGRESQL_BACKUP_QUARANTINE_POLICY,
+    maxBatchSize
+  );
+  const eligibleBefore = (await readPostgresqlBackupQuarantines(backupDirectory))
+    .filter((entry) =>
+      isStrictlyBeforeLifecycleCutoff(
+        entry.quarantinedAt,
+        cutoffExclusive
+      )
+    )
+    .sort((left, right) => left.directory.localeCompare(right.directory));
+  const candidates = eligibleBefore.slice(0, batchSize);
+  let changedCount = 0;
+  if (!dryRun) {
+    for (const candidate of candidates) {
+      const state = await fs.lstat(candidate.directory).catch((error) => {
+        if (error?.code === "ENOENT") return null;
+        throw error;
+      });
+      if (!state || !state.isDirectory() || state.isSymbolicLink()) continue;
+      const current = await readQuarantineMetadata(candidate.directory);
+      if (
+        current.finalDirectoryName !== path.basename(candidate.directory) ||
+        !isStrictlyBeforeLifecycleCutoff(
+          current.quarantinedAt,
+          cutoffExclusive
+        )
+      ) {
+        continue;
+      }
+      await fs.rm(candidate.directory, { recursive: true });
+      changedCount += 1;
+    }
+  }
+  const remaining = (await readPostgresqlBackupQuarantines(backupDirectory))
+    .filter((entry) =>
+      isStrictlyBeforeLifecycleCutoff(
+        entry.quarantinedAt,
+        cutoffExclusive
+      )
+    );
+  const oldest = remaining
+    .map((entry) => new Date(entry.quarantinedAt))
+    .sort((left, right) => left.getTime() - right.getTime())[0];
+  return {
+    dryRun: Boolean(dryRun),
+    cutoffExclusive,
+    maxBatchSize: batchSize,
+    attemptedCount: candidates.length,
+    changedCount: dryRun ? 0 : changedCount,
+    backlogCount: remaining.length,
+    oldestEligibleAgeMs: oldest ? lifecycleAgeMs(reference, oldest) : null,
+  };
+}
+
+export async function applyPostgresqlBackupRetention(
+  backupDirectory,
+  retentionCount,
+  options = {}
+) {
   const keep = Number(retentionCount);
   if (!Number.isSafeInteger(keep) || keep <= 0) {
     fail("POSTGRESQL_BACKUP_RETENTION_INVALID", "The backup retention count is invalid.");
   }
-  const backups = (await listPostgresqlBackups(backupDirectory)).filter((item) => item.valid);
+  const verifiedFileNames = options.verifiedFileNames
+    ? new Set(options.verifiedFileNames)
+    : null;
+  const backups = (await listPostgresqlBackups(backupDirectory)).filter(
+    (item) =>
+      item.valid &&
+      (!verifiedFileNames || verifiedFileNames.has(item.fileName))
+  );
   const removed = [];
   for (const backup of backups.slice(keep)) {
     const payloadPath = backupPath(backupDirectory, backup.fileName);
-    await fs.rm(`${payloadPath}.json`, { force: true });
+    // Delete the payload first. If the process stops between the two deletes,
+    // the remaining manifest is rediscovered as invalid and quarantined on the
+    // next integrity pass instead of leaving an invisible orphan payload.
     await fs.rm(payloadPath, { force: true });
+    await fs.rm(`${payloadPath}.json`, { force: true });
     removed.push(backup.fileName);
   }
   return { retainedCount: Math.min(backups.length, keep), removed };
@@ -477,6 +868,7 @@ export async function createPostgresqlBackup({
   processExecution,
   runTool = runPostgresqlTool,
   now = new Date(),
+  operationId,
 }) {
   if (typeof encryptFile !== "function") {
     fail("POSTGRESQL_BACKUP_ENCRYPTION_REQUIRED", "Backup encryption is required.");
@@ -492,74 +884,118 @@ export async function createPostgresqlBackup({
   const connection = parseConnection(connectionString);
   const root = path.resolve(backupDirectory);
   await fs.mkdir(root, { recursive: true, mode: 0o700 });
-  const baseName = backupBaseName(now);
-  const rawPath = path.join(root, `.${baseName}.dump.tmp`);
-  const candidatePath = path.join(root, `.${baseName}.qhb.candidate`);
+  const normalizedOperationId = normalizedBackupOperationId(operationId);
+  const operationKey = normalizedOperationId
+    ? `${root}\0${normalizedOperationId}`
+    : null;
+  if (operationKey && ACTIVE_BACKUP_OPERATION_KEYS.has(operationKey)) {
+    fail(
+      "POSTGRESQL_BACKUP_OPERATION_IN_PROGRESS",
+      "The logical backup operation is already running in this process."
+    );
+  }
+  if (operationKey) ACTIVE_BACKUP_OPERATION_KEYS.add(operationKey);
+  const baseName = normalizedOperationId
+    ? operationBackupBaseName(normalizedOperationId)
+    : backupBaseName(now);
+  const attemptId = randomUUID();
+  const rawPath = path.join(root, `.${baseName}.${attemptId}.dump.tmp`);
+  const candidatePath = path.join(
+    root,
+    `.${baseName}.${attemptId}.qhb.candidate`
+  );
   const finalPath = path.join(root, `${baseName}${BACKUP_EXTENSION}`);
   const candidateManifestPath = `${candidatePath}.json`;
   const finalManifestPath = `${finalPath}.json`;
-  let payloadPublished = false;
   try {
-    await runTool({
-      tool: "pg_dump",
-      args: [
-        "--dbname", connection.database,
-        "--format", "custom",
-        "--compress", "9",
-        "--no-owner",
-        "--no-privileges",
-        "--file", rawPath,
-      ],
-      connectionString,
-      binDirectory,
-      privateDirectory,
-    });
-    const rawStat = await regularFile(rawPath);
-    if (!rawStat || rawStat.size <= 0) {
-      fail("POSTGRESQL_BACKUP_EMPTY", "pg_dump did not create a backup payload.");
+    const prePublicationQuarantined = [];
+    if (normalizedOperationId) {
+      const observed = await observeOperationBackupPair(
+        finalPath,
+        finalManifestPath
+      );
+      if (observed?.invalidReasonCode) {
+        prePublicationQuarantined.push(
+          await quarantinePostgresqlBackup({
+            backupDirectory,
+            fileName: path.basename(finalPath),
+            reasonCode: observed.invalidReasonCode,
+            now,
+          })
+        );
+      } else if (observed) {
+        return { ...observed, prePublicationQuarantined };
+      }
     }
-    await runTool({
-      tool: "pg_restore",
-      args: ["--list", rawPath],
-      connectionString,
-      binDirectory,
-      privateDirectory,
-    });
-    const dumpSha256 = await sha256(rawPath);
-    await encryptFile(rawPath, candidatePath);
-    const encryptedStat = await regularFile(candidatePath);
-    if (!encryptedStat || encryptedStat.size <= 0) {
-      fail("POSTGRESQL_BACKUP_ENCRYPTION_FAILED", "Backup encryption produced no payload.");
+    let payloadPublished = false;
+    try {
+      await runTool({
+        tool: "pg_dump",
+        args: [
+          "--dbname", connection.database,
+          "--format", "custom",
+          "--compress", "9",
+          "--no-owner",
+          "--no-privileges",
+          "--file", rawPath,
+        ],
+        connectionString,
+        binDirectory,
+        privateDirectory,
+      });
+      const rawStat = await regularFile(rawPath);
+      if (!rawStat || rawStat.size <= 0) {
+        fail("POSTGRESQL_BACKUP_EMPTY", "pg_dump did not create a backup payload.");
+      }
+      await runTool({
+        tool: "pg_restore",
+        args: ["--list", rawPath],
+        connectionString,
+        binDirectory,
+        privateDirectory,
+      });
+      const dumpSha256 = await sha256(rawPath);
+      await encryptFile(rawPath, candidatePath);
+      const encryptedStat = await regularFile(candidatePath);
+      if (!encryptedStat || encryptedStat.size <= 0) {
+        fail("POSTGRESQL_BACKUP_ENCRYPTION_FAILED", "Backup encryption produced no payload.");
+      }
+      const manifest = {
+        protocol: POSTGRESQL_BACKUP_PROTOCOL,
+        applicationVersion: String(applicationVersion),
+        schemaVersion: String(schemaVersion),
+        postgresqlMajor: POSTGRESQL_MAJOR_VERSION,
+        database: connection.database,
+        fileName: path.basename(finalPath),
+        createdAt: now.toISOString(),
+        encryptedSize: encryptedStat.size,
+        encryptedSha256: await sha256(candidatePath),
+        dumpSha256,
+      };
+      await writeJsonExclusive(candidateManifestPath, manifest);
+      await fs.link(candidatePath, finalPath);
+      payloadPublished = true;
+      await fs.link(candidateManifestPath, finalManifestPath);
+      return {
+        backup: { ...manifest, path: finalPath },
+        observed: false,
+        prePublicationQuarantined,
+      };
+    } catch (error) {
+      if (payloadPublished) {
+        await fs.rm(finalManifestPath, { force: true }).catch(() => undefined);
+        await fs.rm(finalPath, { force: true }).catch(() => undefined);
+      }
+      throw error;
+    } finally {
+      await Promise.all([
+        fs.rm(rawPath, { force: true }).catch(() => undefined),
+        fs.rm(candidatePath, { force: true }).catch(() => undefined),
+        fs.rm(candidateManifestPath, { force: true }).catch(() => undefined),
+      ]);
     }
-    const manifest = {
-      protocol: POSTGRESQL_BACKUP_PROTOCOL,
-      applicationVersion: String(applicationVersion),
-      schemaVersion: String(schemaVersion),
-      postgresqlMajor: POSTGRESQL_MAJOR_VERSION,
-      database: connection.database,
-      fileName: path.basename(finalPath),
-      createdAt: now.toISOString(),
-      encryptedSize: encryptedStat.size,
-      encryptedSha256: await sha256(candidatePath),
-      dumpSha256,
-    };
-    await writeJsonExclusive(candidateManifestPath, manifest);
-    await fs.link(candidatePath, finalPath);
-    payloadPublished = true;
-    await fs.link(candidateManifestPath, finalManifestPath);
-    return { backup: { ...manifest, path: finalPath } };
-  } catch (error) {
-    if (payloadPublished) {
-      await fs.rm(finalManifestPath, { force: true }).catch(() => undefined);
-      await fs.rm(finalPath, { force: true }).catch(() => undefined);
-    }
-    throw error;
   } finally {
-    await Promise.all([
-      fs.rm(rawPath, { force: true }).catch(() => undefined),
-      fs.rm(candidatePath, { force: true }).catch(() => undefined),
-      fs.rm(candidateManifestPath, { force: true }).catch(() => undefined),
-    ]);
+    if (operationKey) ACTIVE_BACKUP_OPERATION_KEYS.delete(operationKey);
   }
 }
 
@@ -572,6 +1008,8 @@ export async function verifyPostgresqlBackupsAndApplyRetention({
   decryptFile,
   processExecution,
   runTool = runPostgresqlTool,
+  now = new Date(),
+  requiredFileName = null,
 }) {
   const verifiedRunTool = runTool === runPostgresqlTool
     ? (input) => runPostgresqlTool({ ...input, processExecution })
@@ -583,32 +1021,104 @@ export async function verifyPostgresqlBackupsAndApplyRetention({
       processExecution,
     });
   }
-  const backups = (await listPostgresqlBackups(backupDirectory)).filter(
-    (backup) => backup.valid
-  );
+  const reference = new Date(now);
+  if (!Number.isFinite(reference.getTime())) {
+    throw new TypeError("now must be a valid date.");
+  }
+  const recoveredQuarantines =
+    await recoverPendingPostgresqlBackupQuarantines(backupDirectory);
+  const backups = await listPostgresqlBackups(backupDirectory);
   let verifiedCount = 0;
+  const verifiedFileNames = [];
+  const quarantined = [];
   for (const backup of backups) {
-    await withInspectedPostgresqlBackup({
-      backupDirectory,
-      fileName: backup.fileName,
-      connectionString,
-      binDirectory,
-      privateDirectory,
-      processExecution,
-      decryptFile,
-      runTool: verifiedRunTool,
-      operation: async () => undefined,
-    });
-    verifiedCount += 1;
+    if (!backup.valid) {
+      quarantined.push(
+        await quarantinePostgresqlBackup({
+          backupDirectory,
+          fileName: backup.fileName,
+          reasonCode:
+            backup.validationCode ?? "POSTGRESQL_BACKUP_MANIFEST_INVALID",
+          now: reference,
+        })
+      );
+      continue;
+    }
+    try {
+      await withInspectedPostgresqlBackup({
+        backupDirectory,
+        fileName: backup.fileName,
+        connectionString,
+        binDirectory,
+        privateDirectory,
+        processExecution,
+        decryptFile,
+        runTool: verifiedRunTool,
+        operation: async () => undefined,
+      });
+      verifiedCount += 1;
+      verifiedFileNames.push(backup.fileName);
+    } catch (error) {
+      if (
+        !(error instanceof PostgresqlNativeOperationError) ||
+        !new Set([
+          "POSTGRESQL_BACKUP_CORRUPT",
+          "POSTGRESQL_BACKUP_MANIFEST_INVALID",
+          "POSTGRESQL_BACKUP_VERSION_UNSUPPORTED",
+        ]).has(error.code)
+      ) {
+        throw error;
+      }
+      quarantined.push(
+        await quarantinePostgresqlBackup({
+          backupDirectory,
+          fileName: backup.fileName,
+          reasonCode: error.code,
+          now: reference,
+        })
+      );
+    }
   }
   const retention = await applyPostgresqlBackupRetention(
     backupDirectory,
-    retentionCount
+    retentionCount,
+    { verifiedFileNames }
   );
-  return {
+  const quarantineCleanup = await cleanupPostgresqlBackupQuarantine({
+    backupDirectory,
+    now: reference,
+  });
+  const result = {
     candidateCount: backups.length,
     verifiedCount,
+    remainingVerifiedCount: retention.retainedCount,
+    verifiedFileNames,
+    quarantinedCount: quarantined.length,
+    quarantined,
+    warningCount: quarantined.length,
+    recoveredQuarantineCount: recoveredQuarantines.length,
     retention,
+    quarantineCleanup,
+  };
+  if (
+    requiredFileName &&
+    quarantined.some((entry) => entry.originalFileName === requiredFileName)
+  ) {
+    fail(
+      "POSTGRESQL_NEW_BACKUP_CORRUPT",
+      "The newly published backup failed integrity verification.",
+      result
+    );
+  }
+  if (backups.length > 0 && verifiedCount === 0) {
+    fail(
+      "POSTGRESQL_BACKUP_NO_VERIFIED_RESTORE_POINT",
+      "No verified PostgreSQL backup restore point remains.",
+      result
+    );
+  }
+  return {
+    ...result,
   };
 }
 
@@ -656,13 +1166,27 @@ export async function withInspectedPostgresqlBackup({
     if ((await sha256(restoredDumpPath)) !== manifest.dumpSha256) {
       fail("POSTGRESQL_BACKUP_CORRUPT", "The decrypted dump checksum does not match its manifest.");
     }
-    await runTool({
-      tool: "pg_restore",
-      args: ["--list", restoredDumpPath],
-      connectionString,
-      binDirectory,
-      privateDirectory,
-    });
+    try {
+      await runTool({
+        tool: "pg_restore",
+        args: ["--list", restoredDumpPath],
+        connectionString,
+        binDirectory,
+        privateDirectory,
+      });
+    } catch (error) {
+      if (
+        error instanceof PostgresqlNativeOperationError &&
+        error.code === "POSTGRESQL_NATIVE_TOOL_FAILED"
+      ) {
+        fail(
+          "POSTGRESQL_BACKUP_CORRUPT",
+          "The decrypted backup is not a readable PostgreSQL archive.",
+          { causeCode: error.code }
+        );
+      }
+      throw error;
+    }
     return await operation({ manifest, restoredDumpPath });
   } finally {
     await fs.rm(restoredDumpPath, { force: true }).catch(() => undefined);

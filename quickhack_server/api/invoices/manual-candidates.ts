@@ -11,6 +11,12 @@ import {
   buildInvoiceIssueMutationResponse,
   type InvoiceChannelSubmission,
 } from "@/quickhack_server/shipment/carrier-integration/invoice-submission-response";
+import { MUTATION_RECEIPT_OUTCOMES } from "@/quickhack_shared/core/mutation-receipt";
+import {
+  createMutationReceipt,
+  settleOptionalWorkerWake,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -110,6 +116,7 @@ export async function POST(request: NextRequest) {
       userId: auth.user.userId,
     });
     let channelSubmission: InvoiceChannelSubmission | null = null;
+    let shouldWakeWorkers = false;
     if (issueBatch.status === "ALLOCATED") {
       try {
         const { submitCoupangInvoicesForIssueBatch } = await import(
@@ -119,10 +126,7 @@ export async function POST(request: NextRequest) {
           issueBatchId: issueBatch.issueBatchId,
           userId: auth.user.userId,
         });
-        const { wakeWorkerManager } = await import(
-          "@/quickhack_server/workers/manager"
-        );
-        wakeWorkerManager();
+        shouldWakeWorkers = true;
       } catch (error) {
         markOperationTraceFailed(error, "COUPANG_INVOICE_SUBMIT_FAILED");
         channelSubmission = {
@@ -136,6 +140,28 @@ export async function POST(request: NextRequest) {
       issueBatch,
       channelSubmission,
     });
+    const receipt = createMutationReceipt(
+      { issueBatch, channelSubmission },
+      {
+        operationId: stableMutationOperationId("manual-invoice-retry", [
+          issueBatch.issueBatchId,
+          issueBatch.status,
+          ...outcome.requestIds,
+        ]),
+        outcome:
+          outcome.status === 202
+            ? MUTATION_RECEIPT_OUTCOMES.accepted
+            : MUTATION_RECEIPT_OUTCOMES.committed,
+      }
+    );
+    const settledReceipt = shouldWakeWorkers
+      ? await settleOptionalWorkerWake(receipt, async () => {
+          const { wakeWorkerManager } = await import(
+            "@/quickhack_server/workers/manager"
+          );
+          wakeWorkerManager();
+        })
+      : receipt;
     return NextResponse.json(
       {
         ok: outcome.ok,
@@ -145,6 +171,7 @@ export async function POST(request: NextRequest) {
         issueBatch,
         channelSubmission,
         message: outcome.message,
+        receipt: settledReceipt,
       },
       { status: outcome.status }
     );

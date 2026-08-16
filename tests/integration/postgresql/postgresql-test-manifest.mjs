@@ -8,6 +8,10 @@ test:native-runtime-contract
 test:postgresql-service-runtime-contract
 test:postgresql-staging-runtime-contract
 test:android-runtime-contract
+test:platform-composition-roots
+test:runtime-directories
+test:process-execution-boundary
+test:platform-source-boundary
 test:postgresql-native-operations
 test:postgresql-operations-contract
 test:postgresql-transaction-kernel
@@ -20,6 +24,7 @@ test:activity-log-object-array-completeness
 test:activity-log-completeness
 test:server-job-log-completeness
 test:integration-schema-validation
+test:dependency-security-policy
 test:verification-graph
 test:test-source-layout-contract
 test:package-source-boundary
@@ -46,6 +51,7 @@ test:coupang-channel-product-order-activity
 test:order-rematch-preview
 test:order-rematch-execution
 test:account-security
+test:mutation-receipt-contract
 test:account-security-aggregate-contract
 test:account-security-ui-contract
 test:totp-key-provider
@@ -74,13 +80,16 @@ test:logen-qhkey-credential-session
 test:logen-qhkey-contract
 test:logen-integration-settings
 test:qhkey-async-state
-test:https-gateway
+test:transport-trust
 test:request-security-boundary
 test:login-attempt-hardening
 test:login-user-enumeration
 test:client-runtime-plan
 test:client-runtime-instance-id
+test:durable-handoff
 test:client-print-spool-security
+test:data-lifecycle-contract
+test:integration-evidence-lifecycle
 test:worker-leases
 test:worker-daily-schedule
 test:worker-bootstrap
@@ -140,6 +149,7 @@ test:statistics-loader-pagination
 test:statistics-loader-postgresql
 test:statistics-snapshot-storage
 test:statistics-snapshot-worker
+test:statistics-snapshot-lifecycle
 test:statistics-snapshot-dispatcher
 test:return-statistics-ui-contract
 test:inventory-statistics
@@ -159,6 +169,8 @@ test:invoice-operation-draft-state
 test:shipment-label-draft-state
 test:supplies-draft-state
 test:supplies-postgresql-convergence
+test:supplies-movement-command
+test:supplies-movement-contract
 test:supplies-target-transition
 test:supplies-rule-ui-contract
 test:supplies-forecast-rule-filters
@@ -171,6 +183,7 @@ test:supplies-reorder-ui-contract
 test:shipment-return-conflicts
 test:outbound-supply-flow
 test:sales-channel-write-gateway
+test:sales-channel-write-failure-scenario-registry
 test:sales-channel-write-failures
 test:sales-channel-write-review-ownership
 test:coupang-targeted-write-verification

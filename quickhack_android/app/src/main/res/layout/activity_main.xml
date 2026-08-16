@@ -116,6 +116,15 @@
                         app:trackThickness="3dp" />
                 </FrameLayout>
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/cancel_activation_button"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/cancel_activation"
+                    android:visibility="gone" />
+
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
     </LinearLayout>

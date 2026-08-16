@@ -24,7 +24,7 @@ const baseBatch = {
   periodFrom: "2026-05-01",
   periodTo: "2026-07-29",
   dayCount: 90,
-  calculationVersion: "statistics-daily-v2",
+  calculationVersion: "statistics-daily-v3",
 };
 
 const domains = ["PURCHASE", "INVENTORY", "SALES", "RETURNS"];
@@ -316,20 +316,20 @@ try {
     prisma,
     {
       ...baseBatch,
-      calculationVersion: "statistics-daily-v3",
+      calculationVersion: "statistics-daily-v2",
     }
   );
   await fillBatch(store, formulaV2Batch, 40);
   await store.completeStatisticsSnapshotBatch(prisma, {
     snapshotBatchId: formulaV2Batch.snapshot_batch_id,
   });
-  const [latestV1, latestV2] = await Promise.all([
+  const [latestCurrent, latestV2] = await Promise.all([
     store.findLatestCompleteStatisticsSnapshotBatch(prisma),
     store.findLatestCompleteStatisticsSnapshotBatch(prisma, {
-      calculationVersion: "statistics-daily-v3",
+      calculationVersion: "statistics-daily-v2",
     }),
   ]);
-  assert.equal(latestV1?.snapshot_batch_id, rerunBatch.snapshot_batch_id);
+  assert.equal(latestCurrent?.snapshot_batch_id, rerunBatch.snapshot_batch_id);
   assert.equal(latestV2?.snapshot_batch_id, formulaV2Batch.snapshot_batch_id);
 
   const tamperContract = {

@@ -5,6 +5,7 @@ import http from "node:http";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 import {
   buildTrustedForwardingHeaders,
@@ -16,6 +17,8 @@ import {
 import {
   QUICKHACK_AUTH_REQUEST_BODY_LIMIT_BYTES,
 } from "../../quickhack_shared/http/request-body-policy.mjs";
+import { QUICKHACK_HSTS_HEADER_VALUE } from "../../quickhack_shared/security/transport-security-policy.mjs";
+import { writeClientTrustBundleSync } from "../../tools/trust-bundle.mjs";
 
 const toolsDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(toolsDir, "..", "..");
@@ -321,6 +324,7 @@ function httpsCall(port, pathname, options = {}) {
           resolve({
             status: response.statusCode,
             authorized,
+            headers: response.headers,
             body: Buffer.concat(chunks).toString("utf8"),
           });
         });
@@ -339,9 +343,39 @@ assert(
   ),
   "The packaged HTTPS gateway is missing its request body policy dependency."
 );
+assert(
+  stagingPackageSource.includes(
+    'path.join(rootDir, "tools", "trust-bundle.mjs")'
+  ),
+  "The packaged HTTPS gateway is missing its trust bundle validator."
+);
+assert(
+  stagingPackageSource.includes(
+    'path.join(rootDir, "quickhack_shared", "security", "transport-security-policy.mjs")'
+  ),
+  "The packaged HTTPS gateway is missing its transport policy."
+);
 
 function httpsGet(port, pathname, headers = {}) {
   return httpsCall(port, pathname, { headers });
+}
+
+function rawTlsRequest(port, requestText) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const socket = tls.connect({
+      host: "127.0.0.1",
+      port,
+      servername: "localhost",
+      ca: fs.readFileSync(caPath),
+      rejectUnauthorized: true,
+    });
+    socket.setTimeout(1500, () => socket.destroy(new Error("Raw TLS request timed out.")));
+    socket.once("secureConnect", () => socket.write(requestText));
+    socket.on("data", (chunk) => chunks.push(chunk));
+    socket.once("error", reject);
+    socket.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+  });
 }
 
 function waitForExit(child, timeoutMs = 5_000) {
@@ -500,6 +534,8 @@ const backend = http.createServer((request, response) => {
       response.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
         "content-length": Buffer.byteLength(body),
+        "strict-transport-security": "max-age=1; includeSubDomains; preload",
+        "set-cookie": "qh_session=test; Path=/; HttpOnly; Secure; SameSite=Strict",
       });
       response.end(body);
     }, delay);
@@ -512,13 +548,24 @@ try {
   const gatewayPortProbe = http.createServer();
   const gatewayPort = await listen(gatewayPortProbe);
   await close(gatewayPortProbe);
+  fs.rmSync(path.join(tlsDir, "client-config"), { recursive: true, force: true });
+  const gatewayBundle = writeClientTrustBundleSync(
+    path.join(tlsDir, "client-config"),
+    {
+      origin: `https://127.0.0.1:${gatewayPort}`,
+      currentCaPem: fs.readFileSync(caPath, "utf8"),
+      generatedAt: new Date().toISOString(),
+    }
+  );
   fs.writeFileSync(
     metadataPath,
     `${JSON.stringify({
+      schemaVersion: 2,
       hostNames: ["127.0.0.1", "localhost"],
       primaryHost: "127.0.0.1",
       httpsPort: gatewayPort,
       serverUrl: `https://127.0.0.1:${gatewayPort}`,
+      currentCaSha256: gatewayBundle.manifest.currentCaSha256,
     })}\n`,
     "utf8"
   );
@@ -580,6 +627,14 @@ try {
 
   assert(response.status === 200, `Unexpected HTTPS status: ${response.status}`);
   assert(response.authorized, "TLS peer was not authorized by the QuickHack CA.");
+  assert(
+    response.headers["strict-transport-security"] === QUICKHACK_HSTS_HEADER_VALUE,
+    "The gateway did not override upstream HSTS with the fixed policy."
+  );
+  assert(
+    String(response.headers["set-cookie"] || "").includes("Secure"),
+    "The gateway removed the backend Secure cookie."
+  );
   assert(payload.method === "GET", "The proxy changed the HTTP method.");
   assert(payload.url === "/probe?value=1", "The proxy changed the request URL.");
   assert(payload.forwarded === undefined, "RFC Forwarded reached the backend.");
@@ -633,6 +688,10 @@ try {
     body: oversizedBody,
   });
   assert(fixedOversize.status === 413, "Oversized Content-Length was accepted.");
+  assert(
+    fixedOversize.headers["strict-transport-security"] === QUICKHACK_HSTS_HEADER_VALUE,
+    "A gateway rejection response omitted HSTS."
+  );
   assert(
     backendRequestCount === beforeFixedOversize,
     "Known oversized content reached the backend."
@@ -688,6 +747,14 @@ try {
   assert(
     blockedBackupSupervisor.status === 404,
     "The gateway exposed the backup supervisor route."
+  );
+  const blockedUpgrade = await rawTlsRequest(
+    gatewayPort,
+    `GET /api/internal/supervisor/socket HTTP/1.1\r\nHost: 127.0.0.1:${gatewayPort}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`
+  );
+  assert(
+    /Strict-Transport-Security: max-age=31536000\r\n/iu.test(blockedUpgrade),
+    "An upgrade rejection response omitted HSTS."
   );
   const rejectedShutdown = await httpsCall(
     gatewayPort,

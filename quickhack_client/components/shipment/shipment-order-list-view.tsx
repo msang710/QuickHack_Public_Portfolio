@@ -39,6 +39,10 @@ import {
 import { renderLogenLabelBitmap } from "@/quickhack_client/printing/logen-label-renderer";
 import { formatModelSeqLabel } from "@/quickhack_shared/device/types";
 import {
+  mutationWakeDeferred,
+  type MutationReceipt,
+} from "@/quickhack_shared/core/mutation-receipt";
+import {
   INVENTORY_STATUS,
   inventoryStatusLabel,
 } from "@/quickhack_shared/inventory/inventory-status";
@@ -282,6 +286,7 @@ type CarrierInvoiceIssueResponse = {
   message?: string;
   issueBatch?: CarrierInvoiceIssueBatch;
   issueBatches?: CarrierInvoiceIssueBatch[];
+  receipt?: MutationReceipt<unknown>;
 };
 
 type LabelPrintItem = {
@@ -1518,6 +1523,11 @@ export function ShipmentOrderListView({
         }
         setInvoiceIssueBatch(payload.issueBatch);
         await loadInvoiceWorkflow(shipmentListPrintBatchId, true);
+        if (mutationWakeDeferred(payload.receipt)) {
+          setMessage(
+            "송장 작업은 저장되었습니다. 백그라운드 후속 작업은 다음 실행 주기에 계속됩니다."
+          );
+        }
         if (!response.ok && response.status !== 202) {
           throw new Error(
             payload.message || "송장 처리 과정에서 오류가 발생했습니다."
@@ -2118,9 +2128,36 @@ export function ShipmentOrderListView({
     []
   );
 
+  const acknowledgeLocalLabelPrint = React.useCallback(
+    async (
+      requestKey: string,
+      resolution: "CONFIRMED" | "PRINTED" | "NOT_PRINTED"
+    ) => {
+      const response = await fetch(
+        `/api/client/label-print/${encodeURIComponent(requestKey)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resolution }),
+        }
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | LocalPrintApiResponse
+        | null;
+      if (!response.ok || !payload?.ok || !payload.job) {
+        throw new Error(
+          payload?.message || "로컬 출력 확인 기록을 저장하지 못했습니다."
+        );
+      }
+      return payload.job;
+    },
+    []
+  );
+
   const resolveUnknownLabelPrint = React.useCallback(
     async (printed: boolean) => {
       if (!invoiceIssueBatch || !labelPrint) return;
+      const requestKey = labelPrint.activeRequestKey;
       const confirmed = window.confirm(
         printed
           ? "관리자 판정으로 이 작업의 송장이 실제 출력되었다고 확정합니다. 같은 송장을 다시 출력하지 않습니다. 계속할까요?"
@@ -2150,18 +2187,31 @@ export function ShipmentOrderListView({
           );
         }
         setLabelPrint(payload.labelPrint);
-        setMessage(
+        let localWarning = "";
+        try {
+          if (!requestKey) {
+            throw new Error("Legacy UNKNOWN has no local request identity.");
+          }
+          await acknowledgeLocalLabelPrint(
+            requestKey,
+            printed ? "PRINTED" : "NOT_PRINTED"
+          );
+        } catch {
+          localWarning =
+            " 로컬 확인 기록은 저장되지 않아 관련 파일을 자동 삭제하지 않습니다.";
+        }
+        setMessage((
           printed
             ? "관리자 판정으로 실물 출력 완료를 확정했습니다."
             : "관리자 판정으로 출력되지 않음을 확정하고 복구 출력 대상으로 되돌렸습니다."
-        );
+        ) + localWarning);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : String(error));
       } finally {
         setIsLabelPrinting(false);
       }
     },
-    [invoiceIssueBatch, labelPrint]
+    [acknowledgeLocalLabelPrint, invoiceIssueBatch, labelPrint]
   );
 
   const printLogenLabels = React.useCallback(async () => {
@@ -2345,6 +2395,7 @@ export function ShipmentOrderListView({
     }
     setIsLabelPrinting(true);
     try {
+      const requestKey = labelPrint.activeRequestKey;
       const view = await updateCentralLabelPrint(
         invoiceIssueBatch.issueBatchId,
         "CONFIRM",
@@ -2353,11 +2404,18 @@ export function ShipmentOrderListView({
         labelPrint.printAttemptCount,
         { failedIssueItemIds: normalizeFailedLabelIds(failedLabelIds) }
       );
+      let localWarning = "";
+      try {
+        await acknowledgeLocalLabelPrint(requestKey, "CONFIRMED");
+      } catch {
+        localWarning =
+          " 로컬 확인 기록은 저장되지 않아 관련 파일을 자동 삭제하지 않습니다.";
+      }
       closeLabelConfirmation();
       setMessage(
         view.labelPrintStatus === "CONFIRMED"
-          ? "모든 송장의 실물 출력을 확인했습니다."
-          : `출력에 실패한 송장 ${failedLabelIds.length}장을 복구 출력 대상으로 남겼습니다.`
+          ? `모든 송장의 실물 출력을 확인했습니다.${localWarning}`
+          : `출력에 실패한 송장 ${failedLabelIds.length}장을 복구 출력 대상으로 남겼습니다.${localWarning}`
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -2368,6 +2426,7 @@ export function ShipmentOrderListView({
     failedLabelIds,
     invoiceIssueBatch,
     labelPrint,
+    acknowledgeLocalLabelPrint,
     closeLabelConfirmation,
     updateCentralLabelPrint,
   ]);

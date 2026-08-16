@@ -1,5 +1,11 @@
 export const POSTGRESQL_BACKUP_PROTOCOL: "QUICKHACK_POSTGRESQL_BACKUP_V1";
 export const POSTGRESQL_MAJOR_VERSION: 18;
+export const POSTGRESQL_BACKUP_QUARANTINE_POLICY: Readonly<{
+  retentionMs: number;
+  graceMs: number;
+  maxBatchSize: number;
+  keepLatest: number;
+}>;
 
 export class PostgresqlNativeOperationError extends Error {
   readonly code: string;
@@ -52,6 +58,7 @@ export type ListedPostgresqlBackup = {
   createdAt: string | null;
   sizeBytes: number;
   valid: boolean;
+  validationCode: string | null;
   applicationVersion: string | null;
   schemaVersion: string | null;
 };
@@ -111,9 +118,21 @@ export function listPostgresqlBackups(
   backupDirectory: string
 ): Promise<ListedPostgresqlBackup[]>;
 
+export function listPostgresqlBackupQuarantines(
+  backupDirectory: string
+): Promise<Array<{
+  protocol: string;
+  originalFileName: string;
+  reasonCode: string;
+  quarantinedAt: string;
+  finalDirectoryName: string;
+  directoryName: string;
+}>>;
+
 export function applyPostgresqlBackupRetention(
   backupDirectory: string,
-  retentionCount: number
+  retentionCount: number,
+  options?: { verifiedFileNames?: readonly string[] }
 ): Promise<PostgresqlBackupRetentionResult>;
 
 export function createPostgresqlBackup(
@@ -124,9 +143,34 @@ export function createPostgresqlBackup(
     encryptFile: PostgresqlBackupFileTransform;
     runTool?: NativeToolRunner;
     now?: Date;
+    operationId?: string;
   }
 ): Promise<{
   backup: PostgresqlBackupManifest & { path: string };
+  observed: boolean;
+  prePublicationQuarantined: Array<{
+    directory: string;
+    protocol: string;
+    originalFileName: string;
+    reasonCode: string;
+    quarantinedAt: string;
+    finalDirectoryName: string;
+  }>;
+}>;
+
+export function cleanupPostgresqlBackupQuarantine(input: {
+  backupDirectory: string;
+  now?: Date;
+  dryRun?: boolean;
+  maxBatchSize?: number;
+}): Promise<{
+  dryRun: boolean;
+  cutoffExclusive: Date;
+  maxBatchSize: number;
+  attemptedCount: number;
+  changedCount: number;
+  backlogCount: number;
+  oldestEligibleAgeMs: number | null;
 }>;
 
 export function verifyPostgresqlBackupsAndApplyRetention(
@@ -135,11 +179,35 @@ export function verifyPostgresqlBackupsAndApplyRetention(
     retentionCount: number;
     decryptFile: PostgresqlBackupFileTransform;
     runTool?: NativeToolRunner;
+    now?: Date;
+    requiredFileName?: string | null;
   }
 ): Promise<{
   candidateCount: number;
   verifiedCount: number;
+  remainingVerifiedCount: number;
+  verifiedFileNames: string[];
+  quarantinedCount: number;
+  quarantined: Array<{
+    directory: string;
+    protocol: string;
+    originalFileName: string;
+    reasonCode: string;
+    quarantinedAt: string;
+    finalDirectoryName: string;
+  }>;
+  warningCount: number;
+  recoveredQuarantineCount: number;
   retention: PostgresqlBackupRetentionResult;
+  quarantineCleanup: {
+    dryRun: boolean;
+    cutoffExclusive: Date;
+    maxBatchSize: number;
+    attemptedCount: number;
+    changedCount: number;
+    backlogCount: number;
+    oldestEligibleAgeMs: number | null;
+  };
 }>;
 
 export function withInspectedPostgresqlBackup<TResult>(

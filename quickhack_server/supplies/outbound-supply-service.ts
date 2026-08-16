@@ -147,7 +147,7 @@ async function createConsumption(
   const sourceType =
     input.stage === "prepack" ? PREPACK_SOURCE_TYPE : PACKING_SOURCE_TYPE;
   const sourceId = String(input.auditSessionId ?? input.allocationId);
-  const movement = await recordSupplyMovementInTransaction(
+  const { movement } = await recordSupplyMovementInTransaction(
     tx,
     {
       supplyId: input.rule.supply_id,

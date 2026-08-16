@@ -4,6 +4,11 @@ import { apiErrorResponse } from "@/quickhack_server/api/error-response";
 import { canAccessRole, type Role } from "@/quickhack_shared/auth/auth-constants";
 import { isClientRuntime } from "@/quickhack_shared/core/runtime";
 import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
+import {
+  createMutationReceipt,
+  settleOptionalMutationRefresh,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -117,23 +122,47 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "bootstrap") {
       await ensureDefaultProductCriteriaOptions(prisma);
-      const data = await getProductCriteriaPayload(prisma, true);
+      const result = { defaultCriteriaEnsured: true } as const;
+      const receipt = createMutationReceipt(result, {
+        operationId: stableMutationOperationId("product-criteria-bootstrap", [
+          true,
+        ]),
+      });
+      const refresh = await settleOptionalMutationRefresh(receipt, () =>
+        getProductCriteriaPayload(prisma, true)
+      );
 
       return NextResponse.json({
         ok: true,
         message: "기본 상품 기준값을 확인했습니다.",
-        data,
+        ...(refresh.completed ? { data: refresh.value } : {}),
+        receipt: refresh.receipt,
       });
     }
 
     if (body.action === "saveRelations") {
-      await saveProductCriteriaRelations(prisma, body, authResult.user);
-      const data = await getProductCriteriaPayload(prisma, true);
+      const relation = await saveProductCriteriaRelations(
+        prisma,
+        body,
+        authResult.user
+      );
+      const receipt = createMutationReceipt(relation, {
+        operationId: stableMutationOperationId(
+          "product-criteria-relations",
+          [relation.optionId, relation.relationRevision]
+        ),
+        committedAt: relation.updatedAt,
+      });
+      const refresh = await settleOptionalMutationRefresh(receipt, () =>
+        getProductCriteriaPayload(prisma, true)
+      );
 
       return NextResponse.json({
         ok: true,
         message: "연결된 기준값을 저장했습니다.",
-        data,
+        relation,
+        ...(refresh.completed ? { data: refresh.value } : {}),
+        receipt: refresh.receipt,
       });
     }
 
@@ -142,13 +171,23 @@ export async function POST(request: NextRequest) {
       body,
       authResult.user
     );
-    const data = await getProductCriteriaPayload(prisma, true);
+    const receipt = createMutationReceipt(option, {
+      operationId: stableMutationOperationId("product-criteria-option", [
+        option.optionId,
+        option.revision,
+      ]),
+      committedAt: option.updatedAt,
+    });
+    const refresh = await settleOptionalMutationRefresh(receipt, () =>
+      getProductCriteriaPayload(prisma, true)
+    );
 
     return NextResponse.json({
       ok: true,
       message: "상품 기준값을 저장했습니다.",
       option,
-      data,
+      ...(refresh.completed ? { data: refresh.value } : {}),
+      receipt: refresh.receipt,
     });
   } catch (error) {
     return apiErrorResponse(error);

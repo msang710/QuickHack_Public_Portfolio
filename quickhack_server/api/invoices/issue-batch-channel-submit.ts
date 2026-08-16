@@ -6,6 +6,12 @@ import {
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isClientRuntime } from "@/quickhack_shared/core/runtime";
 import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
+import { MUTATION_RECEIPT_OUTCOMES } from "@/quickhack_shared/core/mutation-receipt";
+import {
+  createMutationReceipt,
+  settleOptionalWorkerWake,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 import {
   runOperationTrace,
   setOperationTraceTargetCount,
@@ -62,15 +68,36 @@ export async function POST(request: NextRequest, context: RouteContext) {
             userId: user.userId,
           })
         );
-        if (result.completedCount > 0) {
-          const { wakeWorkerManager } = await import(
-            "@/quickhack_server/workers/manager"
-          );
-          wakeWorkerManager();
-        }
         setOperationTraceTargetCount(result.targetCount);
+        const receipt = createMutationReceipt(result, {
+          operationId: stableMutationOperationId(
+            "invoice-channel-submit",
+            [
+              issueBatchId,
+              result.status,
+              ...result.requests.map((item) => item.requestId ?? 0),
+            ]
+          ),
+          outcome:
+            result.status === "COMPLETED"
+              ? MUTATION_RECEIPT_OUTCOMES.committed
+              : MUTATION_RECEIPT_OUTCOMES.accepted,
+        });
+        const settledReceipt =
+          result.completedCount > 0
+            ? await settleOptionalWorkerWake(receipt, async () => {
+                const { wakeWorkerManager } = await import(
+                  "@/quickhack_server/workers/manager"
+                );
+                wakeWorkerManager();
+              })
+            : receipt;
         return NextResponse.json(
-          { ok: result.status === "COMPLETED", channelSubmission: result },
+          {
+            ok: result.status === "COMPLETED",
+            channelSubmission: result,
+            receipt: settledReceipt,
+          },
           { status: result.status === "COMPLETED" ? 200 : 202 }
         );
       } catch (error) {

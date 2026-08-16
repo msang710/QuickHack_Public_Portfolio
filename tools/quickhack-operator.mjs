@@ -4,7 +4,11 @@ import { composeOperatorPlatform } from "./platform/compose-operator-platform.mj
 import { composeServerPlatform } from "../quickhack_server/platform/compose-server-platform.ts";
 import { readServerRuntimeConfigSync } from "../quickhack_shared/core/server-runtime-config.mjs";
 import { authorizeQhkeyReplacement } from "./qhkey-authorize.mjs";
-import { createDirectOperatorOneShot, prepareOperatorOneShotRequest } from "./operator-direct-one-shot.mjs";
+import {
+  cleanupOperatorOneShotRequest,
+  createDirectOperatorOneShot,
+  prepareOperatorOneShotRequest,
+} from "./operator-direct-one-shot.mjs";
 import { createQuickHackOperator } from "./quickhack-operator-core.mjs";
 import { readPackageRuntimeIdentitySync } from "../quickhack_shared/core/package-runtime-identity.mjs";
 
@@ -75,6 +79,7 @@ export function createDefaultQuickHackOperator(options = {}) {
     directOneShot,
     applicationService: operatorPlatform.serviceLifecycle,
     prepareOneShot: prepareOperatorOneShotRequest,
+    cleanupPreparedOneShot: cleanupOperatorOneShotRequest,
     authorizeQhkey: (transactionId) => authorizeQhkeyReplacement(transactionId, { platform: operatorPlatform.platform }),
     openConsole: (url) => runtime.openUrl(url),
   });

@@ -12,12 +12,13 @@ import { persistChannelCredentialStatus } from "@/quickhack_server/security/chan
 import { getChannelAuthStatus } from "@/quickhack_server/security/channel-auth";
 import { getLogenCredentialStatus } from "@/quickhack_server/security/logen-usb-qhkey-provider";
 import { getTotpServerStatus } from "@/quickhack_server/auth/totp-service";
+import {
+  QUICKHACK_HTTPS_TERMINATION_ENV,
+  QUICKHACK_PUBLIC_ORIGIN_ENV,
+  resolveTransportSecurityPolicy,
+} from "@/quickhack_shared/security/transport-security-policy.mjs";
 
 export const runtime = "nodejs";
-
-function envFlag(name: string) {
-  return String(process.env[name] || "").trim();
-}
 
 function checkStatus(ok: boolean, warning = false) {
   if (ok) {
@@ -131,7 +132,13 @@ export async function GET(request: NextRequest) {
     runtimeConfig.role === "server"
       ? runtimeConfig.packageFlavor
       : "DEMONSTRATION";
-  const cookieSecure = envFlag("QUICKHACK_COOKIE_SECURE") === "1";
+  const transportSecurity = resolveTransportSecurityPolicy({
+    runtimeRole: runtimeConfig.role,
+    production: runtimeConfig.production,
+    httpsTerminated: process.env[QUICKHACK_HTTPS_TERMINATION_ENV],
+    publicOrigin: process.env[QUICKHACK_PUBLIC_ORIGIN_ENV],
+  });
+  const cookieSecure = transportSecurity.secureSessionCookie;
   const checks = [
     {
       key: "runtime",
@@ -191,9 +198,9 @@ export async function GET(request: NextRequest) {
       label: "보안 쿠키",
       status: checkStatus(!production || cookieSecure),
       value: cookieSecure ? "Secure" : "HTTP 허용",
-      detail: production
-        ? "운영 HTTPS 배포에서는 QUICKHACK_COOKIE_SECURE=1이 필요합니다."
-        : "개발/사내 HTTP 테스트에서는 0을 사용할 수 있습니다.",
+      detail: cookieSecure
+        ? "서버 전송 정책이 HTTPS session cookie를 강제합니다."
+        : "직접 HTTP 개발 런타임에서는 Secure 속성을 사용하지 않습니다.",
     },
     {
       key: "coupang-auth",

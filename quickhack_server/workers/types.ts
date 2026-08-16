@@ -26,6 +26,7 @@ export type OwnedWorkerLeaseGuard = WorkerLeaseGuard & {
 export type WorkerRunContext = {
   workerJobId: number;
   leaseToken: string;
+  runToken: string;
   claimGeneration: number;
   workerKey: string;
   triggeredBy: AuthUser | null;

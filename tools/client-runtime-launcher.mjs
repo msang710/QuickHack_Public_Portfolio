@@ -1,6 +1,4 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
-import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
@@ -10,13 +8,12 @@ import {
   CLIENT_RUNTIME_PORT,
   clientRuntimePortForArtifact,
   normalizeServerUrl,
-  resolveClientCaCertificateFile,
-  resolveClientServerUrl,
+  resolveClientTrustBundle,
 } from "./client-runtime-config.mjs";
+import { probeCentralServer } from "./client-runtime-probe.mjs";
 import {
   QUICKHACK_PACKAGE_MANIFEST_FILENAME,
   activatePackageRuntimeIdentity,
-  assertClientServerPackagePair,
 } from "../quickhack_shared/core/package-runtime-identity.mjs";
 import {
   initializeClientPrintSpool,
@@ -24,8 +21,14 @@ import {
 import {
   composeClientPlatform,
 } from "../quickhack_client/platform/compose-client-platform.ts";
-import { createLinuxOperatorProcessExecution } from "./platform/linux/process-execution.mjs";
-import { createWindowsOperatorProcessExecution } from "./platform/windows/process-execution.mjs";
+import { composeOperatorPlatform } from "./platform/compose-operator-platform.mjs";
+import { CLIENT_RUNTIME_BOOTSTRAP_FILENAME } from "./client-runtime-bootstrap.mjs";
+import {
+  assertObservedClientRuntimeOwnership,
+  createClientRuntimeOwnerStateStore,
+  launchClientRuntimeWithOwnerState,
+  waitForClientRuntime,
+} from "./client-runtime-owner-state.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDir, "..");
@@ -36,9 +39,7 @@ const packageIdentity = activatePackageRuntimeIdentity({
   runtimeRole: "CLIENT",
 });
 const clientPlatform = composeClientPlatform();
-const processExecution = process.platform === "win32"
-  ? createWindowsOperatorProcessExecution()
-  : createLinuxOperatorProcessExecution();
+const processExecution = composeOperatorPlatform().processExecution;
 const runtimeDirectories = clientPlatform.runtimeDirectories.resolve({
   appRoot: root,
   environment: process.env,
@@ -54,80 +55,7 @@ const runtimeStateDir = runtimeDirectories.stateDir;
 const logDir = runtimeDirectories.logDir;
 const logPath = path.join(logDir, "client-runtime.log");
 const statePath = path.join(runtimeStateDir, `client-${port}.json`);
-
-export function probeCentralServer(serverUrl, caCertificateFile, timeoutMs = 5000, expectedIdentity = packageIdentity) {
-  return new Promise((resolve, reject) => {
-    const request = https.request(
-      `${serverUrl}/api/runtime`,
-      {
-        method: "GET",
-        ca: fs.readFileSync(caCertificateFile),
-        timeout: timeoutMs,
-      },
-      (response) => {
-        const chunks = [];
-        response.on("data", (chunk) => chunks.push(chunk));
-        response.on("end", () => {
-          const body = Buffer.concat(chunks).toString("utf8");
-          let payload = null;
-
-          try {
-            payload = JSON.parse(body);
-          } catch {}
-
-          if (
-            !response.statusCode ||
-            response.statusCode < 200 ||
-            response.statusCode >= 500
-          ) {
-            reject(
-              new Error(
-                `QuickHack central server health check failed. HTTP ${response.statusCode || "unknown"}`
-              )
-            );
-            return;
-          }
-
-          try {
-            if (expectedIdentity) {
-              assertClientServerPackagePair(expectedIdentity, payload);
-            } else if (payload?.role === "client") {
-              throw new Error("The configured central server is another client runtime.");
-            }
-          } catch (error) {
-            reject(error);
-            return;
-          }
-
-          resolve(payload);
-        });
-      }
-    );
-
-    request.on("timeout", () =>
-      request.destroy(new Error("QuickHack central server connection timed out."))
-    );
-    request.on("error", reject);
-    request.end();
-  });
-}
-
-function readState() {
-  try {
-    return JSON.parse(fs.readFileSync(statePath, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function writeState(state) {
-  fs.mkdirSync(runtimeStateDir, { recursive: true });
-  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-}
-
-function removeState() {
-  fs.rmSync(statePath, { force: true });
-}
+const ownerState = createClientRuntimeOwnerStateStore({ statePath });
 
 function isProcessRunning(pid) {
   if (!Number.isInteger(pid) || pid <= 0) {
@@ -142,8 +70,8 @@ function isProcessRunning(pid) {
   }
 }
 
-function terminateOwnedProcess(pid) {
-  processExecution.terminateOwnedProcess(pid);
+function terminateOwnedDetachedProcess(pid, options) {
+  processExecution.terminateOwnedDetachedProcess(pid, options);
 }
 
 function captureSourceNextEnv(runtimePlan) {
@@ -215,27 +143,21 @@ function assertMatchingLocalClient(existing) {
   }
 }
 
-async function waitFor(predicate, timeoutMs, intervalMs = 250) {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const result = await predicate();
-
-    if (result) {
-      return result;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-
-  return null;
-}
-
 async function stopOwnedRuntime(existingRuntime) {
   const existing = existingRuntime || (await probeRuntime());
+  const stateResult = ownerState.read();
 
   if (!existing.reachable) {
-    removeState();
+    if (
+      stateResult.status === "VALID" &&
+      stateResult.state.state === "CLAIMED" &&
+      isProcessRunning(stateResult.state.pid)
+    ) {
+      const error = new Error("The client runtime process is alive, but its endpoint identity cannot be verified.");
+      error.code = "CLIENT_RUNTIME_OWNERSHIP_UNVERIFIED";
+      throw error;
+    }
+    if (stateResult.status !== "MISSING") ownerState.recoverInactive();
     return false;
   }
 
@@ -244,22 +166,34 @@ async function stopOwnedRuntime(existingRuntime) {
   }
   assertMatchingLocalClient(existing);
 
-  const state = readState();
+  const state = requireObservedRuntimeOwnership(existing, stateResult);
 
-  if (
-    !state ||
-    state.instanceId !== existing.instanceId ||
-    !isProcessRunning(state.pid)
-  ) {
-    throw new Error(
-      `A client runtime is already running on port ${port}, but this launcher does not own it.`
-    );
+  terminateOwnedDetachedProcess(state.pid);
+  let stopped = await waitForClientRuntime(async () => {
+    const current = await probeRuntime(300);
+    return !isProcessRunning(state.pid) && (!current.reachable || current.instanceId !== state.instanceId);
+  }, 5000, 200);
+  if (!stopped && isProcessRunning(state.pid)) {
+    terminateOwnedDetachedProcess(state.pid, { force: true });
+    stopped = await waitForClientRuntime(async () => {
+      const current = await probeRuntime(300);
+      return !isProcessRunning(state.pid) && (!current.reachable || current.instanceId !== state.instanceId);
+    }, 5000, 200);
   }
-
-  terminateOwnedProcess(state.pid);
-  await waitFor(async () => !(await probeRuntime(300)).reachable, 5000, 200);
-  removeState();
+  if (!stopped) {
+    const error = new Error("The owned client runtime endpoint did not stop.");
+    error.code = "CLIENT_RUNTIME_STOP_TIMEOUT";
+    throw error;
+  }
+  ownerState.removeOwned({ ownerToken: state.ownerToken, instanceId: state.instanceId, pid: state.pid });
   return true;
+}
+
+function requireObservedRuntimeOwnership(existing, stateResult = ownerState.read()) {
+  const current = stateResult.status === "LEGACY"
+    ? { status: "VALID", state: ownerState.adoptLegacy(existing) }
+    : stateResult;
+  return assertObservedClientRuntimeOwnership(existing, current, isProcessRunning);
 }
 
 async function startRuntime(serverUrl, caCertificateFile) {
@@ -272,11 +206,24 @@ async function startRuntime(serverUrl, caCertificateFile) {
     assertMatchingLocalClient(existing);
 
     if (normalizeServerUrl(existing.serverUrl) === serverUrl) {
+      requireObservedRuntimeOwnership(existing);
       console.log(`[QuickHack Client] Local runtime is ready: ${clientUrl}`);
       return;
     }
 
     await stopOwnedRuntime(existing);
+  } else {
+    const stateResult = ownerState.read();
+    if (
+      stateResult.status === "VALID" &&
+      stateResult.state.state === "CLAIMED" &&
+      isProcessRunning(stateResult.state.pid)
+    ) {
+      const error = new Error("A claimed client runtime is still starting or is not yet reachable.");
+      error.code = "CLIENT_RUNTIME_START_IN_PROGRESS";
+      throw error;
+    }
+    if (stateResult.status !== "MISSING") ownerState.recoverInactive();
   }
 
   const runtimePlan = resolveClientRuntimePlan({
@@ -285,7 +232,7 @@ async function startRuntime(serverUrl, caCertificateFile) {
     port,
   });
   const sourceNextEnvSnapshot = captureSourceNextEnv(runtimePlan);
-  await probeCentralServer(serverUrl, caCertificateFile);
+  await probeCentralServer(serverUrl, caCertificateFile, 5000, packageIdentity);
   let printSpoolStartupError = null;
   try {
     const printSpool = await initializeClientPrintSpool({
@@ -317,49 +264,9 @@ async function startRuntime(serverUrl, caCertificateFile) {
     );
   }
   const instanceId = crypto.randomBytes(24).toString("hex");
-  fs.mkdirSync(logDir, { recursive: true });
-  const logFd = fs.openSync(logPath, "a");
-  const child = spawn(process.execPath, runtimePlan.args, {
-    cwd: runtimePlan.cwd,
-    detached: true,
-    windowsHide: true,
-    stdio: ["ignore", logFd, logFd],
-    env: processExecution.childEnvironment({
-      executableDirectories: [path.dirname(process.execPath)],
-      overrides: {
-      PORT: String(port),
-      HOST: host,
-      HOSTNAME: host,
-      NODE_ENV: runtimePlan.nodeEnv,
-      QUICKHACK_RUNTIME_ROLE: "client",
-      QUICKHACK_SERVER_URL: serverUrl,
-      QUICKHACK_APP_ROOT: root,
-      QUICKHACK_RUNTIME_DIR: runtimeDirectories.runtimeDir,
-      QUICKHACK_CLIENT_INSTANCE_ID: instanceId,
-      ...(packageIdentity
-        ? { QUICKHACK_PACKAGE_MANIFEST: packageIdentity.manifestPath }
-        : {}),
-      QUICKHACK_PRINT_SPOOL_INITIALIZED: "1",
-      ...(printSpoolStartupError
-        ? {
-            QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_CODE:
-              printSpoolStartupError.code,
-            QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_MESSAGE:
-              printSpoolStartupError.message,
-          }
-        : {}),
-      NODE_EXTRA_CA_CERTS: caCertificateFile,
-      ...(runtimePlan.nextDistDir
-        ? { QUICKHACK_NEXT_DIST_DIR: runtimePlan.nextDistDir }
-        : {}),
-      },
-    }),
-  });
-
-  fs.closeSync(logFd);
-  child.unref();
-  writeState({
-    pid: child.pid,
+  const ownerToken = crypto.randomBytes(24).toString("hex");
+  const preparedState = {
+    ownerToken,
     port,
     clientUrl,
     serverUrl,
@@ -369,23 +276,77 @@ async function startRuntime(serverUrl, caCertificateFile) {
     runtimeMode: runtimePlan.mode,
     artifactKind: packageIdentity?.artifactKind ?? "",
     startedAt: new Date().toISOString(),
-  });
-
-  const ready = await waitFor(async () => {
-    if (!isProcessRunning(child.pid)) {
-      return null;
+  };
+  try {
+    await launchClientRuntimeWithOwnerState({
+      stateStore: ownerState,
+      preparedState,
+      spawnBootstrap(prepared) {
+        fs.mkdirSync(logDir, { recursive: true });
+        const logFd = fs.openSync(logPath, "a");
+        try {
+          return processExecution.spawnOwnedDetached(process.execPath, [
+            CLIENT_RUNTIME_BOOTSTRAP_FILENAME,
+            "--state-path",
+            statePath,
+            "--owner-token",
+            prepared.ownerToken,
+            "--instance-id",
+            prepared.instanceId,
+            "--cwd",
+            runtimePlan.cwd,
+            "--",
+            ...runtimePlan.args,
+          ], {
+            cwd: root,
+            stdio: ["ignore", logFd, logFd],
+            env: processExecution.childEnvironment({
+              executableDirectories: [path.dirname(process.execPath)],
+              overrides: {
+                PORT: String(port),
+                HOST: host,
+                HOSTNAME: host,
+                NODE_ENV: runtimePlan.nodeEnv,
+                QUICKHACK_RUNTIME_ROLE: "client",
+                QUICKHACK_SERVER_URL: serverUrl,
+                QUICKHACK_APP_ROOT: root,
+                QUICKHACK_RUNTIME_DIR: runtimeDirectories.runtimeDir,
+                QUICKHACK_CLIENT_INSTANCE_ID: instanceId,
+                QUICKHACK_CLIENT_TRUST_BUNDLE_DIR: path.dirname(caCertificateFile),
+                ...(packageIdentity
+                  ? { QUICKHACK_PACKAGE_MANIFEST: packageIdentity.manifestPath }
+                  : {}),
+                QUICKHACK_PRINT_SPOOL_INITIALIZED: "1",
+                ...(printSpoolStartupError
+                  ? {
+                      QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_CODE: printSpoolStartupError.code,
+                      QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_MESSAGE: printSpoolStartupError.message,
+                    }
+                  : {}),
+                NODE_EXTRA_CA_CERTS: caCertificateFile,
+                ...(runtimePlan.nextDistDir
+                  ? { QUICKHACK_NEXT_DIST_DIR: runtimePlan.nextDistDir }
+                  : {}),
+              },
+            }),
+          });
+        } finally {
+          fs.closeSync(logFd);
+        }
+      },
+      terminateOwnedDetachedProcess,
+      isProcessRunning,
+      probeRuntime,
+      waitFor: waitForClientRuntime,
+      timeoutMs: runtimePlan.mode === "next-source" ? 45000 : 20000,
+    });
+  } catch (error) {
+    if (error?.code === "CLIENT_RUNTIME_READINESS_TIMEOUT") {
+      error.message = `Client runtime did not start. Check ${logPath}`;
     }
-
-    const probe = await probeRuntime();
-    return probe.role === "client" && probe.instanceId === instanceId
-      ? probe
-      : null;
-  }, runtimePlan.mode === "next-source" ? 45000 : 20000);
-  restoreSourceNextEnv(sourceNextEnvSnapshot);
-
-  if (!ready) {
-    removeState();
-    throw new Error(`Client runtime did not start. Check ${logPath}`);
+    throw error;
+  } finally {
+    restoreSourceNextEnv(sourceNextEnvSnapshot);
   }
 
   console.log(`[QuickHack Client] Local runtime is ready: ${clientUrl}`);
@@ -408,32 +369,37 @@ async function main() {
     return;
   }
 
-  if (command === "stop") {
-    const stopped = await stopOwnedRuntime();
-    console.log(
-      stopped
-        ? "[QuickHack Client] Local runtime stopped."
-        : "[QuickHack Client] Local runtime was not running."
-    );
-    return;
-  }
-
-  if (command === "restart") {
-    await stopOwnedRuntime();
-  } else if (command !== "start") {
+  if (!["start", "stop", "restart"].includes(command)) {
     throw new Error(`Unknown command: ${command}`);
   }
-
-  const packageConfigDir = packageIdentity ? runtimeDirectories.configDir : "";
-  const serverUrl = resolveClientServerUrl(root, port, packageConfigDir);
-  const caCertificateFile = resolveClientCaCertificateFile(root, Date.now(), packageConfigDir);
-  await startRuntime(serverUrl, caCertificateFile);
+  const commandLock = ownerState.acquireCommandLock();
+  try {
+    if (command === "stop") {
+      const stopped = await stopOwnedRuntime();
+      console.log(
+        stopped
+          ? "[QuickHack Client] Local runtime stopped."
+          : "[QuickHack Client] Local runtime was not running."
+      );
+      return;
+    }
+    if (command === "restart") await stopOwnedRuntime();
+    const packageConfigDir = packageIdentity ? runtimeDirectories.configDir : "";
+    const trustBundle = resolveClientTrustBundle(root, Date.now(), packageConfigDir);
+    const serverUrl = trustBundle.origin;
+    const caCertificateFile = trustBundle.paths.combinedCa;
+    await startRuntime(serverUrl, caCertificateFile);
+  } finally {
+    commandLock.release();
+  }
 }
 
-main().catch((error) => {
-  const code = error && typeof error === "object" && "code" in error
-    ? `${error.code}: `
-    : "";
-  console.error(`[QuickHack Client] ${code}${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    const code = error && typeof error === "object" && "code" in error
+      ? `${error.code}: `
+      : "";
+    console.error(`[QuickHack Client] ${code}${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}

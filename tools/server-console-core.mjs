@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { request as httpsRequest } from "node:https";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { composeServerPlatform } from "../quickhack_server/platform/compose-server-platform.ts";
@@ -247,11 +248,32 @@ function gatewayPlan(root, nodeExecutable, dataDir) {
   return Object.freeze({ entry, nodeExecutable, args: Object.freeze([entry]), cwd: root, tls });
 }
 
+function tlsHostSelection() {
+  const addresses = Object.values(os.networkInterfaces())
+    .flatMap((entries) => entries ?? [])
+    .filter((entry) => entry.family === "IPv4" && !entry.internal)
+    .map((entry) => String(entry.address).trim().toLowerCase())
+    .filter((entry) => entry && !entry.startsWith("169.254."))
+    .sort();
+  const hostname = String(os.hostname() ?? "").trim().toLowerCase();
+  const safeHostname = /^[a-z0-9.-]{1,253}$/u.test(hostname) && !hostname.includes("..")
+    ? hostname
+    : "";
+  const primaryHost = addresses[0] || safeHostname || "localhost";
+  return Object.freeze({
+    primaryHost,
+    hostNames: Object.freeze([
+      ...new Set([primaryHost, ...addresses, safeHostname, "127.0.0.1", "localhost"].filter(Boolean)),
+    ]),
+  });
+}
+
 function consolePage({ flavor, actionToken, integrationHtml }) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QuickHack 서버 콘솔</title><style>
 body{font-family:system-ui,sans-serif;margin:0;background:#0b1220;color:#e5e7eb}main{max-width:1000px;margin:auto;padding:24px}.card{background:#111827;border:1px solid #334155;border-radius:14px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap}button,a,input{border:0;border-radius:9px;padding:10px 14px}button,a{background:#2563eb;color:white;text-decoration:none;cursor:pointer}.danger{background:#b91c1c}.muted{color:#94a3b8}pre{white-space:pre-wrap}code{color:#93c5fd}form{display:grid;gap:10px;max-width:520px}input{background:#1f2937;color:#fff}</style></head><body><main>
 <h1>QuickHack 서버 콘솔</h1><p class="muted">설치 flavor <code>${flavor}</code>. 이 콘솔 프로세스가 본서버와 HTTPS gateway를 소유합니다.</p>
 <section class="card"><h2>본서버</h2><div class="row"><button id="quickhack-start" data-action="/api/quickhack/start">시작</button><button id="quickhack-stop" class="danger" data-action="/api/quickhack/stop">중지</button><a href="https://127.0.0.1:${DEFAULT_PORTS.gateway}" target="_blank" rel="noreferrer">열기</a></div><pre id="status">확인 중</pre></section>
+<section class="card"><h2>HTTPS 신뢰</h2><div class="row"><button data-action="/api/tls/initialize">인증서 갱신</button><button data-action="/api/tls/rotate">CA 회전 시작</button><button data-action="/api/tls/finalize-rotation">CA 회전 종료</button></div><p class="muted">CA 회전 시작 후 모든 PC와 Android를 새 client-config로 갱신·재등록한 다음 회전을 종료하세요.</p></section>
 <section class="card"><h2>런타임 설정</h2><div class="row"><button id="runtime-environment-toggle" data-action="/api/runtime/toggle-environment">개발/운영 모드</button><button id="coupang-write-api-toggle" data-action="/api/runtime/toggle-coupang-write-api">Coupang 쓰기</button><button id="logen-write-api-toggle" data-action="/api/runtime/toggle-logen-write-api">Logen 쓰기</button></div><p class="muted">런타임 환경은 설치 flavor를 변경하지 않습니다.</p></section>
 <section class="card"><h2>백업</h2><button data-action="/api/operator/backup">지금 실행</button></section>
 <section class="card"><h2>OTP 보안 복구</h2><p class="muted">이 화면은 OTP 키나 암호를 입력받지 않습니다.</p><form id="otp-security-form"><input id="otp-security-confirm" name="confirmText" autocomplete="off" placeholder="확인 문구"><button id="otp-security-recover" type="submit">OTP 전체 초기화</button></form><pre id="otp-security-state">상태는 본서버에서 확인합니다.</pre></section>
@@ -445,6 +467,8 @@ export function createServerConsole(input) {
       HOSTNAME: "127.0.0.1",
       NODE_ENV: backend.mode === "next-dev" ? "development" : "production",
       QUICKHACK_SUPERVISOR_TOKEN: actionToken,
+      QUICKHACK_HTTPS_TERMINATED: "1",
+      QUICKHACK_PUBLIC_SERVER_ORIGIN: gateway.tls.trustBundle.origin,
     }, true));
     if (!(await waitForHealthy(`http://127.0.0.1:${DEFAULT_PORTS.backend}/api/runtime`))) {
       await runtime.terminateOwnedProcess(backendChild.pid);
@@ -539,6 +563,14 @@ export function createServerConsole(input) {
       backend,
       gateway,
       integration: integrationStatus,
+      tls: {
+        ready: tls.ready,
+        errors: tls.errors,
+        origin: tls.trustBundle?.origin ?? "",
+        currentCaSha256: tls.trustBundle?.manifest.currentCaSha256 ?? "",
+        previousCaSha256: tls.trustBundle?.manifest.previousCaSha256 ?? "",
+        rotationNotBefore: tls.trustBundle?.manifest.rotationNotBefore ?? "",
+      },
       qhkey: redactedPublicValue(qhkey),
       totpSecurity,
       backups,
@@ -552,6 +584,48 @@ export function createServerConsole(input) {
       "POST",
       { action: "runNow", workerKey: "database-auto-backup" }
     );
+  }
+
+  async function replaceTls(mode) {
+    const wasRunning = managed.size > 0;
+    if (wasRunning) await stop();
+    const runtimeConfig = config();
+    const hosts = tlsHostSelection();
+    try {
+      await initializeQuickHackTls({
+        dataDir: runtimeConfig.dataDirectory,
+        httpsPort: DEFAULT_PORTS.gateway,
+        hostNames: hosts.hostNames,
+        primaryHost: hosts.primaryHost,
+        mode,
+        scriptPath: path.join(root, "tools", "initialize-https.ps1"),
+        runtime,
+      });
+    } catch (error) {
+      let failure = error;
+      if (wasRunning) {
+        try {
+          await start();
+        } catch (restartError) {
+          if (error && typeof error === "object") {
+            error.restartCode = restartError?.code || "TLS_ROLLBACK_RESTART_FAILED";
+          } else {
+            failure = Object.assign(new Error(String(error)), {
+              code: "TLS_INITIALIZATION_FAILED",
+              restartCode: restartError?.code || "TLS_ROLLBACK_RESTART_FAILED",
+            });
+          }
+        }
+      }
+      throw failure;
+    }
+    if (wasRunning) await start();
+    const labels = {
+      INITIALIZE: "HTTPS leaf certificate renewed.",
+      ROTATE: "CA rotation window started.",
+      FINALIZE_ROTATION: "CA rotation window finalized.",
+    };
+    return { ok: true, restarted: wasRunning, message: labels[mode] };
   }
 
   const server = createServer(async (request, response) => {
@@ -593,11 +667,9 @@ export function createServerConsole(input) {
         if (requestUrl.pathname === "/api/qhkey/replacement-cancel") {
           return json(response, 200, await cancelQhkeyReplacement(config().dataDirectory, payload.transactionId));
         }
-        if (requestUrl.pathname === "/api/tls/initialize") {
-          const runtimeConfig = config();
-          await initializeQuickHackTls({ dataDir: runtimeConfig.dataDirectory, httpsPort: DEFAULT_PORTS.gateway, hostNames: ["127.0.0.1", "localhost"], scriptPath: path.join(root, "tools", "initialize-https.ps1"), runtime });
-          return json(response, 200, { ok: true, message: "HTTPS certificate initialized." });
-        }
+        if (requestUrl.pathname === "/api/tls/initialize") return json(response, 200, await replaceTls("INITIALIZE"));
+        if (requestUrl.pathname === "/api/tls/rotate") return json(response, 200, await replaceTls("ROTATE"));
+        if (requestUrl.pathname === "/api/tls/finalize-rotation") return json(response, 200, await replaceTls("FINALIZE_ROTATION"));
         const integrationResult = await integration.handleAction(requestUrl.pathname, { root, config: config(), managed, payload });
         if (integrationResult) return json(response, integrationResult.status ?? 200, redactedPublicValue(integrationResult.payload));
       }

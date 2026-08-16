@@ -46,7 +46,6 @@
     { "path": "quickhack_shared/platform/windows/child-process-policy.mjs", "token": "powershell", "count": 13, "classification": "adapter-owned" },
     { "path": "quickhack_shared/platform/windows/child-process-policy.mjs", "token": "cmd.exe", "count": 1, "classification": "adapter-owned" },
 
-    { "path": "tools/client-runtime-launcher.mjs", "token": "process.platform", "count": 1, "classification": "observation-only" },
     { "path": "tools/platform/compose-operator-platform.mjs", "token": "process.platform", "count": 1, "classification": "composition-root" },
     { "path": "tools/platform/linux/backup-master-recovery-operator.d.mts", "token": "systemd", "count": 1, "classification": "adapter-owned" },
     { "path": "tools/platform/linux/backup-master-recovery-operator.mjs", "token": "systemd", "count": 1, "classification": "adapter-owned" },

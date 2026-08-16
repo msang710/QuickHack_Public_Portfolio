@@ -423,7 +423,7 @@ try {
     periodFrom: snapshotCalculation.period.fromDate,
     periodTo: snapshotCalculation.period.toDate,
     dayCount: snapshotCalculation.period.dayCount,
-    calculationVersion: "statistics-daily-v2",
+    calculationVersion: "statistics-daily-v3",
   };
   const snapshotBatch =
     await snapshotStore.createStatisticsSnapshotBatch(

@@ -71,6 +71,47 @@ await assert.rejects(
 );
 assert.deepEqual(failedSteps, ["install", "MIGRATE"]);
 
+const restoreFailureCalls = [];
+const restoreFailureOperator = createQuickHackOperator({
+  ...dependencies,
+  prepareOneShot: async (operation) => {
+    restoreFailureCalls.push(`prepare:${operation}`);
+    return { kind: "QUICKHACK_RESTORE_REQUEST", operationId: "restore-operation" };
+  },
+  cleanupPreparedOneShot: async (receipt) => {
+    restoreFailureCalls.push(`cleanup:${receipt.operationId}`);
+    return true;
+  },
+  oneShot: {
+    async execute(operation) {
+      restoreFailureCalls.push(`start:${operation}`);
+      const error = new Error("simulated one-shot start failure");
+      error.code = "OPERATION_FAILED";
+      throw error;
+    },
+  },
+});
+await assert.rejects(
+  () => restoreFailureOperator.execute({ command: "restore", backupFile: "backup.qhb" }),
+  (error) => error.code === "OPERATION_FAILED"
+);
+assert.deepEqual(restoreFailureCalls, [
+  "prepare:RESTORE",
+  "start:RESTORE",
+  "cleanup:restore-operation",
+]);
+
+const unclaimedSuccessOperator = createQuickHackOperator({
+  ...dependencies,
+  prepareOneShot: async () => ({ kind: "QUICKHACK_RESTORE_REQUEST", operationId: "unclaimed-operation" }),
+  cleanupPreparedOneShot: async () => true,
+  oneShot: { async execute(operation) { return { operation, state: "COMPLETED" }; } },
+});
+await assert.rejects(
+  () => unclaimedSuccessOperator.execute({ command: "restore", backupFile: "backup.qhb" }),
+  (error) => error.code === "RESTORE_REQUEST_NOT_CLAIMED"
+);
+
 const systemdCalls = [];
 const systemd = createSystemdOneShotProcess({ run: async (args) => {
   systemdCalls.push(args);
