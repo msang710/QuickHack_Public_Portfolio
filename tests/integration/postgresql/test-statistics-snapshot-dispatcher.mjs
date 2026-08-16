@@ -28,7 +28,7 @@ async function createCompleteBatch(store, input) {
     periodTo: input.dataCutoffDate,
     dayCount: 90,
     calculationVersion:
-      input.calculationVersion ?? "statistics-daily-v2",
+      input.calculationVersion ?? "statistics-daily-v3",
   };
   const batch = await store.createStatisticsSnapshotBatch(
     prisma,
@@ -120,7 +120,7 @@ try {
     periodFrom: "2026-05-01",
     periodTo: "2026-07-29",
     dayCount: 90,
-    calculationVersion: "statistics-daily-v2",
+    calculationVersion: "statistics-daily-v3",
   };
   const liveData = createStatisticsSnapshotFixture(
     "SALES",
@@ -193,7 +193,7 @@ try {
     periodFrom: "2026-05-01",
     periodTo: "2026-07-29",
     dayCount: 90,
-    calculationVersion: "statistics-daily-v2",
+    calculationVersion: "statistics-daily-v3",
   });
   for (const [index, domain] of domains.entries()) {
     await store.putStatisticsSnapshotItem(prisma, {
@@ -272,7 +272,7 @@ try {
   await createCompleteBatch(store, {
     dataCutoffDate: "2026-07-30",
     periodFrom: "2026-05-02",
-    calculationVersion: "statistics-daily-v1",
+    calculationVersion: "statistics-daily-v2",
     marker: 30,
   });
   const delayedCalls = { count: 0 };
@@ -390,7 +390,7 @@ try {
   }
 
   console.log(
-    "Statistics snapshot current, one-day delay, custom LIVE, safe fallback, v1 exclusion, and shared UI contracts verified."
+    "Statistics snapshot current, one-day delay, custom LIVE, safe fallback, v2 exclusion, and shared UI contracts verified."
   );
   console.log(
     JSON.stringify({

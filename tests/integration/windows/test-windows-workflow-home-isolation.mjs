@@ -7,6 +7,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const EXPECTED_VERIFY_ENVIRONMENT = {
   HOME: "${{ runner.temp }}\\home",
   LOCALAPPDATA: "${{ runner.temp }}\\local-app-data",
+  QUICKHACK_PACKAGE_TARGET: "${{ matrix.target }}",
+  QUICKHACK_RELEASE_VERSION: "${{ inputs.version }}",
   USERPROFILE: "${{ runner.temp }}\\user-profile",
 };
 const WORKFLOWS = [
@@ -15,8 +17,8 @@ const WORKFLOWS = [
     verifyStep: "Build selected Windows package",
     requiredCommands: [
       "npm run build",
-      'npm run "stage:windows:${{ matrix.target }}"',
-      'npm run "release:windows:${{ matrix.target }}"',
+      'npm run "stage:windows:$env:QUICKHACK_PACKAGE_TARGET"',
+      'npm run "release:windows:$env:QUICKHACK_PACKAGE_TARGET"',
     ],
   },
 ];

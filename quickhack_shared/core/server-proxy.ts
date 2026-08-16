@@ -1,9 +1,10 @@
 // QuickHack note: 클라이언트 런타임에서 중앙 서버 API로 요청을 프록시하는 공통 함수입니다.
 ﻿import { NextRequest, NextResponse } from "next/server";
 import {
-  isClientRuntime,
+  getRuntimeRole,
   requireRemoteServerUrl,
 } from "@/quickhack_shared/core/runtime";
+import { isTrustedLoopbackCookieHop } from "@/quickhack_shared/security/transport-security-policy.mjs";
 import {
   copyQuickHackObservabilityHeaders,
 } from "@/quickhack_shared/observability/http-trace";
@@ -144,12 +145,21 @@ export function getServerProxyErrorMessage(error: unknown) {
   return "중앙 서버에 연결할 수 없습니다.";
 }
 
-function copySetCookie(source: Response, target: NextResponse) {
+function copySetCookie(
+  request: NextRequest,
+  source: Response,
+  target: NextResponse
+) {
   const setCookie = source.headers.get("set-cookie");
 
   if (setCookie) {
-    // The browser talks to the desktop client only through loopback HTTP.
-    const clientRuntimeCookie = isClientRuntime()
+    const trustedLoopbackHop = isTrustedLoopbackCookieHop({
+      runtimeRole: getRuntimeRole(),
+      remoteOrigin: requireRemoteServerUrl(),
+      localOrigin: request.nextUrl.origin,
+      hostHeader: request.headers.get("host"),
+    });
+    const clientRuntimeCookie = trustedLoopbackHop
       ? setCookie.replace(/;\s*Secure\b/gi, "")
       : setCookie;
     target.headers.set("set-cookie", clientRuntimeCookie);
@@ -355,7 +365,7 @@ export async function proxyToServer(
     proxied.headers.set("content-disposition", contentDisposition);
   }
 
-  copySetCookie(response, proxied);
+  copySetCookie(request, response, proxied);
   copyQuickHackObservabilityHeaders(
     response.headers,
     proxied.headers,

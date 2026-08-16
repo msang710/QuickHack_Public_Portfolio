@@ -10,6 +10,8 @@ import {
   isLoopbackHost,
   normalizeHttpAuthority,
 } from "./quickhack-https-forwarding.mjs";
+import { QUICKHACK_HSTS_HEADER_VALUE } from "../quickhack_shared/security/transport-security-policy.mjs";
+import { readClientTrustBundleSync } from "./trust-bundle.mjs";
 
 function requiredEnv(name) {
   const value = String(process.env[name] || "").trim();
@@ -74,6 +76,9 @@ if (!isLoopbackHost(upstreamHost)) {
 const pfx = fs.readFileSync(pfxPath);
 const passphrase = fs.readFileSync(passphraseFile, "utf8").trim();
 const metadataPath = path.join(path.dirname(pfxPath), "metadata.json");
+const gatewayTrustBundle = readClientTrustBundleSync(
+  path.join(path.dirname(pfxPath), "client-config")
+);
 
 if (!passphrase) {
   throw new Error("QuickHack TLS PFX passphrase file is empty.");
@@ -89,6 +94,15 @@ function readAllowedPublicAuthorities() {
 
   if (Number(metadata?.httpsPort) !== listenPort || !Array.isArray(metadata?.hostNames)) {
     throw new Error("QuickHack TLS metadata does not match the HTTPS gateway port.");
+  }
+  if (
+    metadata.schemaVersion !== 2 ||
+    metadata.serverUrl !== gatewayTrustBundle.origin ||
+    metadata.currentCaSha256 !== gatewayTrustBundle.manifest.currentCaSha256 ||
+    (metadata.previousCaSha256 ?? "") !== (gatewayTrustBundle.manifest.previousCaSha256 ?? "") ||
+    (metadata.rotationNotBefore ?? "") !== (gatewayTrustBundle.manifest.rotationNotBefore ?? "")
+  ) {
+    throw new Error("QuickHack TLS metadata does not match the client trust bundle.");
   }
 
   const authorities = new Set(
@@ -154,6 +168,7 @@ function jsonResponse(response, status, payload) {
     "cache-control": "no-store",
     "content-length": Buffer.byteLength(body),
     connection: "close",
+    "strict-transport-security": QUICKHACK_HSTS_HEADER_VALUE,
   });
   response.end(body);
 }
@@ -267,7 +282,7 @@ const server = https.createServer(
       }
       upstreamResponseRelayed = true;
       const headers = { ...pendingUpstreamResponse.headers };
-      delete headers["strict-transport-security"];
+      headers["strict-transport-security"] = QUICKHACK_HSTS_HEADER_VALUE;
       response.writeHead(pendingUpstreamResponse.statusCode || 502, headers);
       pendingUpstreamResponse.pipe(response);
     };
@@ -286,6 +301,7 @@ const server = https.createServer(
         "content-type": "text/plain; charset=utf-8",
         "cache-control": "no-store",
         "content-length": Buffer.byteLength(body),
+        "strict-transport-security": QUICKHACK_HSTS_HEADER_VALUE,
       });
       response.end(body);
     };
@@ -362,7 +378,9 @@ server.on("upgrade", (request, socket, head) => {
     draining ||
     request.url?.startsWith("/api/internal/supervisor/")
   ) {
-    socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+    socket.end(
+      `HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nStrict-Transport-Security: ${QUICKHACK_HSTS_HEADER_VALUE}\r\n\r\n`
+    );
     return;
   }
 
@@ -372,7 +390,9 @@ server.on("upgrade", (request, socket, head) => {
     const publicAuthority = requestPublicAuthority(request);
     headers = forwardedHeaders(request, publicAuthority);
   } catch {
-    socket.destroy();
+    socket.end(
+      `HTTP/1.1 400 Bad Request\r\nConnection: close\r\nStrict-Transport-Security: ${QUICKHACK_HSTS_HEADER_VALUE}\r\n\r\n`
+    );
     return;
   }
 
@@ -392,24 +412,32 @@ server.on("upgrade", (request, socket, head) => {
       `HTTP/1.1 ${upstreamResponse.statusCode || 101} ${upstreamResponse.statusMessage || "Switching Protocols"}\r\n`
     );
     for (const [name, value] of Object.entries(upstreamResponse.headers)) {
+      if (name.toLowerCase() === "strict-transport-security") continue;
       if (Array.isArray(value)) {
         for (const item of value) socket.write(`${name}: ${item}\r\n`);
       } else if (value !== undefined) {
         socket.write(`${name}: ${value}\r\n`);
       }
     }
+    socket.write(`strict-transport-security: ${QUICKHACK_HSTS_HEADER_VALUE}\r\n`);
     socket.write("\r\n");
     if (upstreamHead.length > 0) socket.write(upstreamHead);
     if (head.length > 0) upstreamSocket.write(head);
     upstreamSocket.pipe(socket);
     socket.pipe(upstreamSocket);
   });
-  upstream.on("error", () => socket.destroy());
+  upstream.on("error", () => {
+    socket.end(
+      `HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nStrict-Transport-Security: ${QUICKHACK_HSTS_HEADER_VALUE}\r\n\r\n`
+    );
+  });
   upstream.end();
 });
 
 server.on("clientError", (_error, socket) => {
-  socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+  socket.end(
+    `HTTP/1.1 400 Bad Request\r\nConnection: close\r\nStrict-Transport-Security: ${QUICKHACK_HSTS_HEADER_VALUE}\r\n\r\n`
+  );
 });
 
 server.listen(listenPort, listenHost, () => {

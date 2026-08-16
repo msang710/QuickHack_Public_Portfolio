@@ -14,11 +14,13 @@ export async function initializeWindowsServerConsoleTls(input) {
     dataDir: path.resolve(input.dataDir),
     httpsPort: input.httpsPort,
     hostNames,
+    primaryHost: String(input.primaryHost ?? hostNames[0] ?? "").trim(),
+    mode: String(input.mode ?? "INITIALIZE").trim().toUpperCase(),
   });
   const encoded = Buffer.from(argumentsLine, "utf8").toString("base64");
   await runPowerShellScript(
-    "$ErrorActionPreference='Stop'; $input=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))|ConvertFrom-Json; " +
-      "& $input.scriptPath -DataDir $input.dataDir -HttpsPort $input.httpsPort -HostNamesCsv ($input.hostNames -join ',')",
+    "$ErrorActionPreference='Stop'; $request=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))|ConvertFrom-Json; " +
+      "& $request.scriptPath -DataDir $request.dataDir -HttpsPort $request.httpsPort -HostNamesCsv ($request.hostNames -join ',') -PrimaryHost $request.primaryHost -Mode $request.mode",
     { inputLine: encoded, timeoutMs: 120_000, maxOutputBytes: 4 * 1024 * 1024 }
   );
 }

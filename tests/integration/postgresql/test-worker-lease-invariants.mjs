@@ -46,6 +46,7 @@ try {
 
   let invocationCount = 0;
   const executionLeaseTokens = [];
+  const executionRunTokens = [];
   let firstRunStarted;
   const firstRunStartedPromise = new Promise((resolve) => {
     firstRunStarted = resolve;
@@ -63,6 +64,7 @@ try {
     async run(context) {
       invocationCount += 1;
       executionLeaseTokens.push(context.leaseToken);
+      executionRunTokens.push(context.runToken);
       assert(
         typeof context.leaseToken === "string" && context.leaseToken.length > 0,
         "The worker execution context did not expose its lease token."
@@ -111,6 +113,11 @@ try {
     "Replacement worker executions did not receive distinct lease tokens."
   );
   assert(
+    executionRunTokens.length === 2 &&
+      new Set(executionRunTokens).size === 1,
+    "A stale logical run did not preserve its run token across lease takeover."
+  );
+  assert(
     String(firstRunError.message).includes("Worker lease lost"),
     `Unexpected stale worker error: ${firstRunError.message}`
   );
@@ -149,16 +156,18 @@ try {
   );
 
   let retryWorkerInvocationCount = 0;
+  const retryRunTokens = [];
   registeredWorkers.push({
     key: retryWorkerKey,
     name: "Worker retry cycle invariant test",
     type: "TEST",
     defaultIntervalSeconds: 3_600,
     defaultScheduleEnabled: true,
-    maxAttempts: 1,
+    maxAttempts: 2,
     lockSeconds: 10,
-    async run() {
+    async run(context) {
       retryWorkerInvocationCount += 1;
+      retryRunTokens.push(context.runToken);
       throw new Error("forced scheduled worker failure");
     },
   });
@@ -169,12 +178,26 @@ try {
     where: { worker_key: retryWorkerKey },
   });
 
-  assert(failedJob.status === "FAILED", "The exhausted worker did not remain FAILED.");
+  assert(
+    failedJob.status === "RETRY_WAITING",
+    "The retryable worker did not enter RETRY_WAITING."
+  );
   assert(failedJob.attempt_count === 1, "The first retry cycle attempt count is incorrect.");
   assert(Boolean(failedJob.last_run_at), "A failed run did not update last_run_at.");
   assert(
     Boolean(failedJob.next_run_at) && failedJob.next_run_at > failedJob.finished_at,
-    "An exhausted scheduled worker was not deferred to its regular interval."
+    "A retryable scheduled worker was not deferred."
+  );
+
+  await runWorkerJob(retryWorkerKey).catch(() => undefined);
+  const exhaustedJob = await prisma.server_worker_jobs.findUniqueOrThrow({
+    where: { worker_key: retryWorkerKey },
+  });
+  assert(exhaustedJob.status === "FAILED", "The exhausted worker did not remain FAILED.");
+  assert(exhaustedJob.attempt_count === 2, "The retry budget was not exhausted.");
+  assert(
+    retryRunTokens.length === 2 && new Set(retryRunTokens).size === 1,
+    "A scheduled retry changed its logical run token."
   );
 
   await prisma.server_worker_jobs.update({
@@ -205,10 +228,14 @@ try {
     where: { worker_key: retryWorkerKey },
   });
 
-  assert(retryWorkerInvocationCount === 2, "The new retry cycle did not run exactly once.");
+  assert(retryWorkerInvocationCount === 3, "The new retry cycle did not run exactly once.");
   assert(
     restartedCycle.attempt_count === 1,
     "An exhausted worker did not reset its attempt count for a new run cycle."
+  );
+  assert(
+    retryRunTokens[2] !== retryRunTokens[1],
+    "A new worker retry cycle reused the exhausted logical run token."
   );
 
   const dueInvocationCounts = new Map(dueWorkerKeys.map((key) => [key, 0]));

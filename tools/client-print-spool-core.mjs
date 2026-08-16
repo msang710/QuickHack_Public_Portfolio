@@ -7,10 +7,19 @@ import {
   open,
   readFile,
   readdir,
+  rename,
   rm,
   unlink,
 } from "node:fs/promises";
 import path from "node:path";
+import {
+  LIFECYCLE_DAY_MS,
+  defineLifecyclePolicy,
+  isStrictlyBeforeLifecycleCutoff,
+  lifecycleAgeMs,
+  lifecycleCutoffExclusive,
+  resolveLifecycleBatchSize,
+} from "../quickhack_shared/lifecycle/lifecycle-policy.mjs";
 const REQUEST_KEY_SOURCE = String.raw`LOGEN-LABEL-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}`;
 const CONTENT_HASH_SOURCE = String.raw`[0-9a-f]{64}`;
 const SPOOL_FILE_PATTERN = new RegExp(
@@ -24,6 +33,12 @@ const RECOVERY_FILE_PATTERN = new RegExp(
 const REQUEST_KEY_PATTERN = new RegExp(`^${REQUEST_KEY_SOURCE}$`, "i");
 const CONTENT_HASH_PATTERN = new RegExp(`^${CONTENT_HASH_SOURCE}$`, "i");
 const RECOVERY_VERSION = 1;
+const RESOLVED_RECOVERY_VERSION = 2;
+const PRINT_ARTIFACT_RETENTION_POLICY = defineLifecyclePolicy({
+  retentionMs: 30 * LIFECYCLE_DAY_MS,
+  maxBatchSize: 100,
+});
+const PRINT_RESOLUTIONS = new Set(["CONFIRMED", "PRINTED", "NOT_PRINTED"]);
 const RECOVERY_REASON_CODES = new Set([
   "ORPHANED_PRINT_SPOOL",
   "PRINT_ATTEMPT_STARTED",
@@ -60,6 +75,7 @@ export function getClientPrintSpoolPaths(options = {}) {
       "print-spool-recovery",
       "by-request"
     ),
+    jobsDir: path.join(clientDataDir, "print-jobs"),
   };
 }
 
@@ -153,6 +169,31 @@ async function readRecoveryMarker(filename) {
     throw error;
   }
   const status = String(parsed?.status || "");
+  if (parsed?.version === RESOLVED_RECOVERY_VERSION && status === "RESOLVED") {
+    const acknowledgedAt = String(parsed?.acknowledgedAt || "");
+    const sourceStatus = String(parsed?.sourceStatus || "");
+    const resolution = String(parsed?.resolution || "");
+    if (
+      !["UNKNOWN", "CONFLICT"].includes(sourceStatus) ||
+      !PRINT_RESOLUTIONS.has(resolution) ||
+      !REQUEST_KEY_PATTERN.test(String(parsed?.requestKey || "")) ||
+      !CONTENT_HASH_PATTERN.test(String(parsed?.contentHash || "")) ||
+      !Number.isFinite(Date.parse(acknowledgedAt))
+    ) {
+      return null;
+    }
+    return {
+      version: RESOLVED_RECOVERY_VERSION,
+      status,
+      sourceStatus,
+      reasonCode: String(parsed.reasonCode || ""),
+      requestKey: String(parsed.requestKey),
+      contentHash: String(parsed.contentHash).toLowerCase(),
+      recoveredAt: String(parsed.recoveredAt || ""),
+      resolution,
+      acknowledgedAt: new Date(acknowledgedAt).toISOString(),
+    };
+  }
   const conflict = status === "CONFLICT";
   if (
     parsed?.version !== RECOVERY_VERSION ||
@@ -201,6 +242,30 @@ async function createRecoveryMarkerFile(directory, filename, marker) {
       if (error?.code === "EEXIST") return false;
       throw error;
     }
+  } finally {
+    await handle?.close().catch(() => {});
+    await rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
+async function replaceRecoveryMarkerFile(target, marker) {
+  const state = await lstat(target);
+  if (!state.isFile() || state.isSymbolicLink()) {
+    throw new ClientPrintSpoolError(
+      "PRINT_SPOOL_UNSAFE_RECOVERY_MARKER",
+      "The local print recovery marker is not a regular file."
+    );
+  }
+  const directory = path.dirname(target);
+  const temporary = path.join(directory, `.recovery-${randomUUID()}.tmp`);
+  let handle = null;
+  try {
+    handle = await open(temporary, "wx", 0o600);
+    await handle.writeFile(`${JSON.stringify(marker)}\n`, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await rename(temporary, target);
   } finally {
     await handle?.close().catch(() => {});
     await rm(temporary, { force: true }).catch(() => {});
@@ -340,6 +405,7 @@ export async function initializeClientPrintSpool(options = {}) {
     await ensurePrivateDirectory(paths.spoolDir, runtimeOptions);
     await ensurePrivateDirectory(paths.recoveryDir, runtimeOptions);
     await ensurePrivateDirectory(paths.recoveryIndexDir, runtimeOptions);
+    await ensurePrivateDirectory(paths.jobsDir, runtimeOptions);
     const recoveryMigration = await migrateLegacyRecoveryMarkers(paths, now);
     const entries = await readdir(paths.spoolDir);
     let recoveredCount = 0;
@@ -372,6 +438,21 @@ export async function initializeClientPrintSpool(options = {}) {
       recoveredCount += 1;
     }
 
+    let lifecycle;
+    let lifecycleWarning = null;
+    try {
+      lifecycle = await pruneAcknowledgedClientPrintArtifacts({
+        ...options,
+        now: now(),
+      });
+    } catch (error) {
+      lifecycle = null;
+      lifecycleWarning =
+        error instanceof ClientPrintSpoolError
+          ? error.code
+          : "PRINT_ARTIFACT_LIFECYCLE_FAILED";
+    }
+
     return {
       ok: true,
       ...paths,
@@ -379,6 +460,8 @@ export async function initializeClientPrintSpool(options = {}) {
       recoveredCount,
       skippedCount,
       skippedNames,
+      lifecycle,
+      lifecycleWarning,
     };
   } catch (error) {
     if (error instanceof ClientPrintSpoolError) throw error;
@@ -460,6 +543,222 @@ export async function inspectClientPrintSpoolRecovery(options) {
   return marker.contentHash === contentHash
     ? { status: "MATCH", marker }
     : { status: "CONFLICT", marker: null };
+}
+
+export async function acknowledgeClientPrintSpoolRecovery(options) {
+  const requestKey = String(options?.requestKey || "");
+  const contentHash = String(options?.contentHash || "").toLowerCase();
+  const resolution = String(options?.resolution || "");
+  assertRequestIdentity(requestKey, contentHash);
+  if (!PRINT_RESOLUTIONS.has(resolution)) {
+    throw new ClientPrintSpoolError(
+      "INVALID_PRINT_RESOLUTION",
+      "The local print resolution is invalid."
+    );
+  }
+  const acknowledgedAt = new Date(
+    options?.acknowledgedAt || new Date()
+  );
+  if (!Number.isFinite(acknowledgedAt.getTime())) {
+    throw new ClientPrintSpoolError(
+      "INVALID_PRINT_ACKNOWLEDGEMENT_TIME",
+      "The local print acknowledgement time is invalid."
+    );
+  }
+  const canonicalAcknowledgedAt = acknowledgedAt.toISOString();
+  const { recoveryIndexDir } = getClientPrintSpoolPaths(options);
+  await assertPrivateDirectory(recoveryIndexDir);
+  const conflictPath = path.join(
+    recoveryIndexDir,
+    recoveryConflictFilename(requestKey)
+  );
+  const unknownPath = path.join(
+    recoveryIndexDir,
+    recoveryFilename(requestKey)
+  );
+  const target = (await recoveryPathExists(conflictPath))
+    ? conflictPath
+    : unknownPath;
+  let existing;
+  try {
+    existing = await readRecoveryMarker(target);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new ClientPrintSpoolError(
+        "PRINT_RECOVERY_MARKER_MISSING",
+        "The local print recovery marker is missing."
+      );
+    }
+    throw error;
+  }
+  if (!existing) {
+    throw new ClientPrintSpoolError(
+      "PRINT_RECOVERY_MARKER_INVALID",
+      "The local print recovery marker is invalid."
+    );
+  }
+  if (existing.status === "RESOLVED") {
+    if (
+      existing.requestKey.toLowerCase() === requestKey.toLowerCase() &&
+      existing.contentHash === contentHash &&
+      existing.resolution === resolution &&
+      existing.acknowledgedAt === canonicalAcknowledgedAt
+    ) {
+      return existing;
+    }
+    throw new ClientPrintSpoolError(
+      "PRINT_RECOVERY_ACKNOWLEDGEMENT_CONFLICT",
+      "The local print recovery marker was already resolved differently."
+    );
+  }
+  if (
+    existing.requestKey.toLowerCase() !== requestKey.toLowerCase() ||
+    (existing.status === "UNKNOWN" && existing.contentHash !== contentHash)
+  ) {
+    throw new ClientPrintSpoolError(
+      "PRINT_RECOVERY_IDENTITY_MISMATCH",
+      "The local print recovery marker does not match the ledger identity."
+    );
+  }
+  const resolved = {
+    version: RESOLVED_RECOVERY_VERSION,
+    status: "RESOLVED",
+    sourceStatus: existing.status,
+    reasonCode: existing.reasonCode,
+    requestKey,
+    contentHash,
+    recoveredAt: existing.recoveredAt,
+    resolution,
+    acknowledgedAt: canonicalAcknowledgedAt,
+  };
+  await replaceRecoveryMarkerFile(target, resolved);
+  return resolved;
+}
+
+async function readResolvedRetentionCandidates(paths, cutoffExclusive) {
+  const entries = (await readdir(paths.recoveryIndexDir)).sort((left, right) =>
+    left.localeCompare(right)
+  );
+  const result = [];
+  for (const name of entries) {
+    if (!name.endsWith(".json")) continue;
+    const filename = path.join(paths.recoveryIndexDir, name);
+    let marker;
+    try {
+      marker = await readRecoveryMarker(filename);
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    if (
+      marker?.status === "RESOLVED" &&
+      isStrictlyBeforeLifecycleCutoff(
+        marker.acknowledgedAt,
+        cutoffExclusive
+      )
+    ) {
+      result.push({ filename, marker });
+    }
+  }
+  return result;
+}
+
+export async function pruneAcknowledgedClientPrintArtifacts(options = {}) {
+  const paths = getClientPrintSpoolPaths(options);
+  await assertPrivateDirectory(paths.recoveryIndexDir);
+  await assertPrivateDirectory(paths.jobsDir);
+  const now = new Date(options.now || new Date());
+  if (!Number.isFinite(now.getTime())) {
+    throw new TypeError("now must be a valid date.");
+  }
+  const cutoffExclusive = lifecycleCutoffExclusive(
+    now,
+    PRINT_ARTIFACT_RETENTION_POLICY
+  );
+  const maxBatchSize = resolveLifecycleBatchSize(
+    PRINT_ARTIFACT_RETENTION_POLICY,
+    options.maxBatchSize
+  );
+  const eligibleBefore = await readResolvedRetentionCandidates(
+    paths,
+    cutoffExclusive
+  );
+  const candidates = eligibleBefore.slice(0, maxBatchSize);
+  let changedCount = 0;
+  let skippedCount = 0;
+
+  if (!options.dryRun) {
+    for (const candidate of candidates) {
+      const ledgerPath = path.join(
+        paths.jobsDir,
+        `${candidate.marker.requestKey}.json`
+      );
+      let ledgerState;
+      try {
+        ledgerState = await lstat(ledgerPath);
+      } catch (error) {
+        if (error?.code === "ENOENT") {
+          await unlink(candidate.filename).catch((unlinkError) => {
+            if (unlinkError?.code !== "ENOENT") throw unlinkError;
+          });
+          changedCount += 1;
+          continue;
+        }
+        throw error;
+      }
+      if (!ledgerState.isFile() || ledgerState.isSymbolicLink()) {
+        skippedCount += 1;
+        continue;
+      }
+      let ledger;
+      try {
+        ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          skippedCount += 1;
+          continue;
+        }
+        throw error;
+      }
+      const acknowledgement = ledger?.acknowledgement;
+      if (
+        String(ledger?.requestKey || "").toLowerCase() !==
+          candidate.marker.requestKey.toLowerCase() ||
+        String(ledger?.contentHash || "").toLowerCase() !==
+          candidate.marker.contentHash ||
+        String(acknowledgement?.resolution || "") !==
+          candidate.marker.resolution ||
+        String(acknowledgement?.acknowledgedAt || "") !==
+          candidate.marker.acknowledgedAt
+      ) {
+        skippedCount += 1;
+        continue;
+      }
+      await unlink(ledgerPath);
+      await unlink(candidate.filename).catch((error) => {
+        if (error?.code !== "ENOENT") throw error;
+      });
+      changedCount += 1;
+    }
+  }
+
+  const eligibleAfter = await readResolvedRetentionCandidates(
+    paths,
+    cutoffExclusive
+  );
+  const oldest = eligibleAfter
+    .map((candidate) => new Date(candidate.marker.acknowledgedAt))
+    .sort((left, right) => left.getTime() - right.getTime())[0];
+  return {
+    dryRun: Boolean(options.dryRun),
+    cutoffExclusive,
+    maxBatchSize,
+    attemptedCount: candidates.length,
+    changedCount: options.dryRun ? 0 : changedCount,
+    skippedCount: options.dryRun ? 0 : skippedCount,
+    backlogCount: eligibleAfter.length,
+    oldestEligibleAgeMs: oldest ? lifecycleAgeMs(now, oldest) : null,
+  };
 }
 
 export async function createPrivatePrintSpoolFile(options) {

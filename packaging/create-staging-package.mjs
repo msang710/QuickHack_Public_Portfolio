@@ -476,18 +476,13 @@ if (isClientPackage) {
   optionalCopyDir(path.join(rootDir, "assets"), path.join(outputDir, "assets"));
   mkdirSync(path.join(outputDir, "config"), { recursive: true });
   writeFileSync(
-    path.join(outputDir, "config", "server-url.txt"),
-    "https://127.0.0.1:3443\r\n",
-    "ascii"
-  );
-  writeFileSync(
     path.join(outputDir, `README-${productQualifier.toUpperCase()}-CLIENT.txt`),
     [
       `QuickHack ${productQualifier.toLowerCase()} client`,
       "",
       `Run ${launcherFileName} to start the local client runtime and open QuickHack.`,
-      "Before first launch, copy server-url.txt and quickhack-ca.pem from the server-generated client-config folder into config.",
-      "The central HTTPS server address is stored in config\\server-url.txt.",
+      "Before first launch, copy every file from the server-generated client-config folder into config as one unit.",
+      "Do not mix files from different trust-bundle generations; incomplete bundles are rejected.",
       `The local client listens only on http://127.0.0.1:${isDemonstrationPackage ? 3001 : 3002}.`,
       "ADB commands run on this client PC through the bundled Android platform-tools.",
       "Logen labels are sent to an installed Windows printer through the bundled RAW printer bridge.",
@@ -715,6 +710,22 @@ for (const licenseName of ["COPYRIGHT", "LICENSE", "README.txt"]) {
 copyFile(
   path.join(rootDir, "quickhack_shared", "http", "request-body-policy.mjs"),
   path.join(outputDir, "quickhack_shared", "http", "request-body-policy.mjs")
+);
+copyFile(
+  path.join(rootDir, "tools", "trust-bundle.mjs"),
+  path.join(outputDir, "tools", "trust-bundle.mjs")
+);
+copyFile(
+  path.join(rootDir, "tools", "trust-bundle.d.mts"),
+  path.join(outputDir, "tools", "trust-bundle.d.mts")
+);
+copyFile(
+  path.join(rootDir, "quickhack_shared", "security", "transport-security-policy.mjs"),
+  path.join(outputDir, "quickhack_shared", "security", "transport-security-policy.mjs")
+);
+copyFile(
+  path.join(rootDir, "quickhack_shared", "security", "transport-security-policy.d.mts"),
+  path.join(outputDir, "quickhack_shared", "security", "transport-security-policy.d.mts")
 );
 copyFile(
   path.join(rootDir, "tools", "initialize-https.ps1"),

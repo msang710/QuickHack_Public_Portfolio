@@ -3,6 +3,12 @@ import { apiErrorResponse } from "@/quickhack_server/api/error-response";
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isClientRuntime } from "@/quickhack_shared/core/runtime";
 import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
+import { MUTATION_RECEIPT_OUTCOMES } from "@/quickhack_shared/core/mutation-receipt";
+import {
+  createMutationReceipt,
+  settleOptionalWorkerWake,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 import {
   runOperationTrace,
   setOperationTraceTargetCount,
@@ -76,11 +82,29 @@ async function handle(
           })
         );
         setOperationTraceTargetCount(count);
-        const { wakeWorkerManager } = await import(
-          "@/quickhack_server/workers/manager"
+        const receipt = createMutationReceipt(
+          { issueBatchId, queuedCount: count, reconcileOnly },
+          {
+            operationId: stableMutationOperationId(
+              "carrier-registration-queue",
+              [issueBatchId, reconcileOnly, count]
+            ),
+            outcome: MUTATION_RECEIPT_OUTCOMES.accepted,
+          }
         );
-        wakeWorkerManager();
-        return NextResponse.json({ ok: true, queuedCount: count }, { status: 202 });
+        const settledReceipt = await settleOptionalWorkerWake(
+          receipt,
+          async () => {
+            const { wakeWorkerManager } = await import(
+              "@/quickhack_server/workers/manager"
+            );
+            wakeWorkerManager();
+          }
+        );
+        return NextResponse.json(
+          { ok: true, queuedCount: count, receipt: settledReceipt },
+          { status: 202 }
+        );
       } catch (error) {
         return apiErrorResponse(error);
       }

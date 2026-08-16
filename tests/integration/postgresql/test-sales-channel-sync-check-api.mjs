@@ -771,6 +771,48 @@ try {
     "INVENTORY_VERIFICATION_NOT_RECHECKABLE"
   );
 
+  const { beginWorkerShutdown } = await import(
+    "@/quickhack_server/workers/shutdown-runtime"
+  );
+  beginWorkerShutdown("sales-channel-receipt-fault-injection");
+  const decisionDuringShutdown = await writeApi.PATCH(
+    request("/api/admin/sales-channel-write-requests", {
+      token: staffToken,
+      method: "PATCH",
+      body: {
+        action: "decision",
+        requestId: writeRequest.sales_channel_write_request_id,
+        targetId:
+          writeRequest.targets[0].sales_channel_write_request_target_id,
+        decision: "CHANNEL_NOT_APPLIED",
+        note: "채널에서 미반영을 직접 확인했습니다.",
+      },
+    })
+  );
+  assert.equal(decisionDuringShutdown.status, 200);
+  const decisionDuringShutdownPayload =
+    await decisionDuringShutdown.clone().json();
+  assert.equal(decisionDuringShutdownPayload.ok, true);
+  assert.equal(
+    decisionDuringShutdownPayload.result.manualVerificationStatus,
+    "CHANNEL_NOT_APPLIED"
+  );
+  assert.equal(decisionDuringShutdownPayload.receipt.refreshRequired, false);
+  assert.deepEqual(decisionDuringShutdownPayload.receipt.warnings, [
+    { code: "WORKER_WAKE_DEFERRED", retryable: true },
+  ]);
+  const persistedDecisionDuringShutdown =
+    await prisma.sales_channel_write_requests.findUniqueOrThrow({
+      where: {
+        sales_channel_write_request_id:
+          writeRequest.sales_channel_write_request_id,
+      },
+    });
+  assert.equal(
+    persistedDecisionDuringShutdown.manual_verification_status,
+    "CHANNEL_NOT_APPLIED"
+  );
+
   const routeSource = readFileSync(
     path.join(
       projectRoot,

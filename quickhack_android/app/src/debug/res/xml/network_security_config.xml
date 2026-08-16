@@ -3,7 +3,6 @@
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="@raw/quickhack_ca" />
         </trust-anchors>
     </base-config>
 </network-security-config>

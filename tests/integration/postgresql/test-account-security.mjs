@@ -35,6 +35,17 @@ function request(path, token, body) {
   });
 }
 
+function patchRequest(path, token, body) {
+  return new NextRequest(`http://localhost${path}`, {
+    method: "PATCH",
+    headers: {
+      cookie: `quickhack_session=${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 function responseSessionToken(response) {
   const setCookie = response.headers.get("set-cookie") || "";
   const match = setCookie.match(/quickhack_session=([^;]+)/);
@@ -172,6 +183,68 @@ try {
   });
   const leaderToken = await authService.createUserSession(leader.user_id);
   const staffToken = await authService.createUserSession(staff.user_id);
+
+  const profileMutationUser = await createUser({
+    username: "account-profile-before",
+    password: "Profile!234",
+    displayName: "프로필 변경 전",
+  });
+  const profileMutationToken = await authService.createUserSession(
+    profileMutationUser.user_id
+  );
+  const profilePatchWithFailedEnrichment =
+    meApi.createAccountProfilePatchHandler({
+      loadSecurityEnrichment: async () => {
+        throw new Error(
+          "postgresql://private-user:private-password@127.0.0.1/account"
+        );
+      },
+    });
+  const profileMutationResponse = await profilePatchWithFailedEnrichment(
+    patchRequest("/api/auth/me", profileMutationToken, {
+      username: "account-profile-after",
+      displayName: "프로필 변경 후",
+      phone: "010-1234-5678",
+      email: "profile-after@example.test",
+      birthDate: "",
+      hireDate: "",
+      expectedRevision: profileMutationUser.revision,
+    })
+  );
+  assert.equal(profileMutationResponse.status, 200);
+  const profileMutationPayload = await profileMutationResponse.clone().json();
+  assert.equal(profileMutationPayload.ok, true);
+  assert.equal(profileMutationPayload.profile, undefined);
+  assert.equal(profileMutationPayload.receipt.refreshRequired, true);
+  assert.deepEqual(profileMutationPayload.receipt.warnings, [
+    { code: "REFRESH_DEFERRED", retryable: true },
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(profileMutationPayload),
+    /private-user|private-password/
+  );
+  const replacementProfileToken = responseSessionToken(
+    profileMutationResponse
+  );
+  assert.notEqual(replacementProfileToken, profileMutationToken);
+  assert.equal(
+    await authService.getAuthUserFromToken(profileMutationToken),
+    null
+  );
+  assert.equal(
+    (await authService.getAuthUserFromToken(replacementProfileToken))?.username,
+    "account-profile-after"
+  );
+  const persistedProfileMutation = await prisma.users.findUniqueOrThrow({
+    where: { user_id: profileMutationUser.user_id },
+    include: { employee_profiles: true },
+  });
+  assert.equal(persistedProfileMutation.username, "account-profile-after");
+  assert.equal(
+    persistedProfileMutation.employee_profiles?.display_name,
+    "프로필 변경 후"
+  );
+  assert.equal(persistedProfileMutation.revision, profileMutationUser.revision + 1);
 
   assert.equal(
     (await adminUsersApi.GET(request("/api/admin/users"))).status,

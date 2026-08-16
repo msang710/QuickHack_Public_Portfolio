@@ -83,8 +83,8 @@ export async function POST(request: NextRequest) {
 
     if (error instanceof MobileDeviceAuthError) {
       return apiFailureResponse({
-        status: 403,
-        code: "MOBILE_DEVICE_AUTH_FAILED",
+        status: error.status,
+        code: error.code,
         message: error.message,
         cause: error,
       });

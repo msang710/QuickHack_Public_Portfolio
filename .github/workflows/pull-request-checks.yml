@@ -85,21 +85,26 @@ jobs:
           HOME: ${{ runner.temp }}\home
           LOCALAPPDATA: ${{ runner.temp }}\local-app-data
           USERPROFILE: ${{ runner.temp }}\user-profile
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
         shell: pwsh
         run: |
           npm run build
           $env:QUICKHACK_NODE_RUNTIME_DIR = Split-Path -Parent (Get-Command node).Source
-          npm run "stage:windows:${{ matrix.target }}" -- "--postgresql-runtime-dir=$env:QUICKHACK_RELEASE_POSTGRESQL_ROOT"
-          npm run "release:windows:${{ matrix.target }}" -- -Version "${{ inputs.version }}"
+          npm run "stage:windows:$env:QUICKHACK_PACKAGE_TARGET" -- "--postgresql-runtime-dir=$env:QUICKHACK_RELEASE_POSTGRESQL_ROOT"
+          npm run "release:windows:$env:QUICKHACK_PACKAGE_TARGET" -- -Version "$env:QUICKHACK_RELEASE_VERSION"
       - name: Verify selected Windows release artifact
         shell: pwsh
+        env:
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
         run: >-
           node tools/verify-package-release-artifact.mjs
-          --artifact-dir=release/distribution/windows/${{ matrix.target }}
+          --artifact-dir="release/distribution/windows/$env:QUICKHACK_PACKAGE_TARGET"
           --platform=windows
-          --target=${{ matrix.target }}
-          --release-version=${{ inputs.version }}
-      - uses: actions/upload-artifact@v4
+          --target="$env:QUICKHACK_PACKAGE_TARGET"
+          --release-version="$env:QUICKHACK_RELEASE_VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-${{ matrix.target }}
           path: release/distribution/windows/${{ matrix.target }}/
@@ -121,15 +126,22 @@ jobs:
         run: useradd --create-home builder && chown -R builder:builder "$GITHUB_WORKSPACE"
       - run: sudo -u builder npm ci
       - run: sudo -u builder npm run build
-      - run: sudo -u builder npm run "release:linux:${{ matrix.target }}" -- --version="${{ inputs.version }}"
+      - name: Build selected Linux package
+        env:
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
+        run: sudo -u builder npm run "release:linux:$QUICKHACK_PACKAGE_TARGET" -- --version="$QUICKHACK_RELEASE_VERSION"
       - name: Verify selected Arch release artifact
+        env:
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
         run: >-
           sudo -u builder node tools/verify-package-release-artifact.mjs
-          --artifact-dir=release/distribution/linux/${{ matrix.target }}
+          --artifact-dir="release/distribution/linux/$QUICKHACK_PACKAGE_TARGET"
           --platform=linux
-          --target=${{ matrix.target }}
-          --release-version=${{ inputs.version }}
-      - uses: actions/upload-artifact@v4
+          --target="$QUICKHACK_PACKAGE_TARGET"
+          --release-version="$QUICKHACK_RELEASE_VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: linux-${{ matrix.target }}
           path: release/distribution/linux/${{ matrix.target }}/

@@ -146,6 +146,7 @@ export function createQuickHackOperator(dependencies) {
     const stateDirectory = path.join(dataDirectory, "state", "operator");
     const release = MUTATING_COMMANDS.has(command) ? acquireLock(stateDirectory, command) : () => undefined;
     const partialResult = [];
+    let preparedOneShot;
     try {
       let result;
       if (command === "STATUS") result = await callLocalServerConsole(dataDirectory, "/api/status", { method: "GET", timeoutMs: 5000 });
@@ -172,14 +173,35 @@ export function createQuickHackOperator(dependencies) {
       }
       else if (["MIGRATE", "RESTORE", "PROVISION_INITIAL_LEADER"].includes(command)) {
         if (typeof dependencies.prepareOneShot === "function") {
-          await dependencies.prepareOneShot(command, input, runtimeConfig);
+          preparedOneShot = await dependencies.prepareOneShot(command, input, runtimeConfig);
         }
         result = await dependencies.oneShot.execute(command, input);
+        if (preparedOneShot && typeof dependencies.cleanupPreparedOneShot === "function") {
+          const remainedUnclaimed = await dependencies.cleanupPreparedOneShot(preparedOneShot);
+          preparedOneShot = undefined;
+          if (remainedUnclaimed) {
+            const error = new Error("The one-shot operation returned without claiming its prepared request.");
+            error.code = "RESTORE_REQUEST_NOT_CLAIMED";
+            throw error;
+          }
+        } else {
+          preparedOneShot = undefined;
+        }
       }
       else if (command === "AUTHORIZE_QHKEY") result = await dependencies.authorizeQhkey(input.transactionId);
       else if (command === "RUN_ONE_SHOT") result = await dependencies.directOneShot.execute(input.operation, input);
       return Object.freeze({ command, state: "COMPLETED", result: sanitized(result) });
     } catch (error) {
+      if (preparedOneShot && typeof dependencies.cleanupPreparedOneShot === "function") {
+        try {
+          await dependencies.cleanupPreparedOneShot(preparedOneShot);
+          preparedOneShot = undefined;
+        } catch (cleanupError) {
+          const failure = new Error("The one-shot operation failed and its unclaimed request could not be recovered.", { cause: error });
+          failure.code = cleanupError?.code || "RESTORE_REQUEST_CLEANUP_FAILED";
+          throw failure;
+        }
+      }
       const failure = new Error(error instanceof Error ? error.message : "The operator operation failed.");
       failure.code = error?.code || "OPERATOR_OPERATION_FAILED";
       if (partialResult.length > 0) failure.partialResult = sanitized(partialResult);

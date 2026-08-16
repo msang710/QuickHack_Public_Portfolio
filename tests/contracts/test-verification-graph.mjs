@@ -55,14 +55,27 @@ assert.ok(!postgresqlSemanticTestScripts.includes("test:carrier-invoice-issue-fl
 assert.ok(!postgresqlSemanticTestScripts.includes("test:carrier-invoice-issue-recovery"));
 assert.equal(scripts["test:carrier-invoice-issue-ownership-migration"], undefined);
 
-const nativeDependencyContractScripts = Object.freeze([
+const crossPlatformContractScripts = Object.freeze([
+  "test:dependency-security-policy",
+  "test:sales-channel-write-failure-scenario-registry",
+  "test:mutation-receipt-contract",
+  "test:supplies-movement-contract",
+  "test:supplies-target-transition",
+  "test:durable-handoff",
+  "test:transport-trust",
+  "test:mobile-provisioning-contract",
+  "test:data-lifecycle-contract",
   "test:native-runtime-contract",
   "test:postgresql-service-runtime-contract",
   "test:postgresql-staging-runtime-contract",
   "test:android-runtime-contract",
+  "test:platform-composition-roots",
+  "test:runtime-directories",
+  "test:process-execution-boundary",
+  "test:platform-source-boundary",
 ]);
 
-for (const contractScript of nativeDependencyContractScripts) {
+for (const contractScript of crossPlatformContractScripts) {
   assert.equal(
     countPaths("verify:postgresql", contractScript),
     1,

@@ -27,6 +27,7 @@ export const COUPANG_RETURN_HISTORY_FIELDS = [
   "reason_category",
   "reason_detail",
   "cancel_count",
+  "items_json",
 ] as const;
 
 export const COUPANG_EXCHANGE_HISTORY_FIELDS = [

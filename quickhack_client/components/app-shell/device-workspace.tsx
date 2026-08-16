@@ -102,6 +102,7 @@ import {
   type StatisticsPeriodSelection,
 } from "@/quickhack_shared/statistics/statistics-period";
 import { cn } from "@/quickhack_shared/core/utils";
+import type { MutationReceipt } from "@/quickhack_shared/core/mutation-receipt";
 import {
   clonePersonalSettings,
   createDefaultPersonalSettings,
@@ -156,6 +157,17 @@ type AccountProfileUpdateResponse = {
   message?: string;
   user?: AuthUser;
   profile?: AccountProfile;
+  receipt?: MutationReceipt<{
+    user: AuthUser;
+    profile: Omit<
+      AccountProfile,
+      | "totpEnabled"
+      | "totpVerifiedAt"
+      | "totpLockedUntil"
+      | "recoveryCodeCount"
+      | "activeMobileDeviceCount"
+    >;
+  }>;
 };
 
 type PersonalSettingsResponse = {
@@ -1319,14 +1331,53 @@ function DeviceWorkspaceContent({
         | AccountProfileUpdateResponse
         | null;
 
-      if (!response.ok || !payload?.ok || !payload.profile) {
+      if (!response.ok || !payload?.ok) {
         throw new Error(payload?.message || "계정 정보를 저장하지 못했습니다.");
       }
 
-      setAccountProfile(payload.profile);
-      setAccountProfileDraft({ ...payload.profile });
+      let nextProfile = payload.profile;
+      let refreshDeferred = false;
+
+      if (!nextProfile && payload.receipt?.refreshRequired) {
+        try {
+          const refreshResponse = await fetch("/api/auth/me", {
+            cache: "no-store",
+          });
+          const refreshPayload = (await refreshResponse
+            .json()
+            .catch(() => null)) as AccountProfileResponse | null;
+          if (
+            !refreshResponse.ok ||
+            !refreshPayload?.ok ||
+            !refreshPayload.authenticated ||
+            !refreshPayload.profile
+          ) {
+            throw new Error("계정 정보 새로고침이 지연되었습니다.");
+          }
+          nextProfile = refreshPayload.profile;
+        } catch {
+          refreshDeferred = true;
+          if (accountProfile && payload.receipt.result.profile) {
+            nextProfile = {
+              ...accountProfile,
+              ...payload.receipt.result.profile,
+            };
+          }
+        }
+      }
+
+      if (!nextProfile) {
+        throw new Error(payload.message || "저장된 계정 정보를 확인하지 못했습니다.");
+      }
+
+      setAccountProfile(nextProfile);
+      setAccountProfileDraft({ ...nextProfile });
       setAccountProfileError("");
-      setAccountSettingsMessage(payload.message || "계정 정보를 저장했습니다.");
+      setAccountSettingsMessage(
+        refreshDeferred
+          ? `${payload.message || "계정 정보를 저장했습니다."} 최신 보안 상태는 화면을 새로고침해 확인하세요.`
+          : payload.message || "계정 정보를 저장했습니다."
+      );
     } catch (error) {
       setAccountSettingsError(
         error instanceof Error ? error.message : String(error)

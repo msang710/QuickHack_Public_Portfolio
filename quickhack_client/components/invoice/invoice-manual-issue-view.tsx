@@ -2,6 +2,10 @@
 
 import * as React from "react";
 import {
+  mutationWakeDeferred,
+  type MutationReceipt,
+} from "@/quickhack_shared/core/mutation-receipt";
+import {
   AlertTriangle,
   PackagePlus,
   RefreshCcw,
@@ -53,6 +57,7 @@ type CandidateResponse = {
   nextCursor?: string | null;
   hasMore?: boolean;
   totalCount?: number;
+  receipt?: MutationReceipt<unknown>;
 };
 
 function formatDate(value: string | null | undefined) {
@@ -436,11 +441,15 @@ export function InvoiceManualIssueView({
       if (!response.ok) {
         throw new Error(payload.message || "송장 채번을 다시 시도하지 못했습니다.");
       }
-      setMessage(
+      const resultMessage =
         payload.message ??
           (payload.issueBatch?.status === "ALLOCATED"
             ? "송장번호를 다시 채번했습니다. 이어지는 쿠팡 등록 상태를 확인하세요."
-            : "재시도를 접수했습니다. 표시된 결과를 다시 확인하세요.")
+            : "재시도를 접수했습니다. 표시된 결과를 다시 확인하세요.");
+      setMessage(
+        mutationWakeDeferred(payload.receipt)
+          ? `${resultMessage} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
+          : resultMessage
       );
       if (payload.reviewRequired && payload.requestIds?.[0]) {
         onOpenWriteReview?.(payload.requestIds[0]);

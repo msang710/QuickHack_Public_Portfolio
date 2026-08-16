@@ -19,6 +19,7 @@ import {
   redactPersonalDataCopiesForSubject,
   type PersonalDataTableSummary,
 } from "@/quickhack_server/security/personal-data-redaction-service";
+import { scrubCoupangOrdersheetIntegrationEvidence } from "@/quickhack_server/integration/integration-evidence-lifecycle";
 
 type TableSummary = {
   table: string;
@@ -325,6 +326,12 @@ export async function redactExpiredSalesChannelPersonalData(
     retentionDays
   );
   const redactedAt = databaseNow();
+  const integrationEvidence =
+    await scrubCoupangOrdersheetIntegrationEvidence({
+      now: quickHackClock.nowDate(),
+      maxBatchSize: batchSize,
+    });
+  await assertWorkerLeaseActive(options.workerLease);
   const reconciliation = await reconcileStoredPersonalDataLifecycles({
     batchSize,
     workerLease: options.workerLease,
@@ -393,6 +400,7 @@ export async function redactExpiredSalesChannelPersonalData(
     redactedAt,
     retentionDays,
     cutoff,
+    integrationEvidence,
     reconciliation,
     waitingCompletion: reconciliation.waitingCompletion,
     activeClaim: reconciliation.activeClaim,

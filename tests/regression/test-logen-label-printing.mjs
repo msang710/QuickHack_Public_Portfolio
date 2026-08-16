@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { buildLogenTsplForTest } from "@/quickhack_client/printing/printer-service";
 import { LOGEN_LABEL_TEMPLATE } from "@/quickhack_shared/shipment/logen-label";
 
@@ -70,6 +72,54 @@ try {
     error.code === "INVALID_TRACKING_NUMBER";
 }
 assert(injectionBlocked, "A tracking number injected a RAW printer command.");
+
+const labelServiceSource = await readFile(
+  path.join(
+    process.cwd(),
+    "quickhack_server/shipment/carrier-integration/logen/label-print-service.ts"
+  ),
+  "utf8"
+);
+assert.match(
+  labelServiceSource,
+  /label_active_request_key: uncertain \? requestKey : null/,
+  "An UNKNOWN result must retain its central request identity."
+);
+const resolveUnknownSource = labelServiceSource.slice(
+  labelServiceSource.indexOf("export async function resolveUnknownLogenLabelPrint")
+);
+assert.match(resolveUnknownSource, /label_active_request_key: null/);
+assert.match(
+  resolveUnknownSource,
+  /label_active_request_key: batch\.label_active_request_key/,
+  "UNKNOWN resolution must compare-and-clear the current identity, including a legacy null identity."
+);
+
+const shipmentViewSource = await readFile(
+  path.join(
+    process.cwd(),
+    "quickhack_client/components/shipment/shipment-order-list-view.tsx"
+  ),
+  "utf8"
+);
+const confirmationSource = shipmentViewSource.slice(
+  shipmentViewSource.indexOf("const confirmPhysicalLabels"),
+  shipmentViewSource.indexOf("React.useEffect", shipmentViewSource.indexOf("const confirmPhysicalLabels"))
+);
+assert(
+  confirmationSource.indexOf("await updateCentralLabelPrint") <
+    confirmationSource.indexOf("await acknowledgeLocalLabelPrint"),
+  "Local acknowledgement must never precede the central print decision."
+);
+const unknownResolutionSource = shipmentViewSource.slice(
+  shipmentViewSource.indexOf("const resolveUnknownLabelPrint"),
+  shipmentViewSource.indexOf("const printLogenLabels")
+);
+assert(
+  unknownResolutionSource.indexOf("/api/invoices/issue-batches/") <
+    unknownResolutionSource.indexOf("await acknowledgeLocalLabelPrint"),
+  "UNKNOWN resolution must commit centrally before local acknowledgement."
+);
 
 console.log("Logen label RAW print contract verified.");
 

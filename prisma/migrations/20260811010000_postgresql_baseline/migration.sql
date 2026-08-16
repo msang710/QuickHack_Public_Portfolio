@@ -415,6 +415,7 @@ CREATE TABLE "client_http_trace_observations" (
 -- CreateTable
 CREATE TABLE "server_worker_jobs" (
     "lease_token" UUID,
+    "run_token" UUID,
     "claim_generation" INTEGER NOT NULL DEFAULT 0,
     "worker_job_id" SERIAL NOT NULL,
     "worker_key" TEXT NOT NULL,
@@ -4304,6 +4305,12 @@ DECLARE
   old_status TEXT;
   new_status TEXT;
 BEGIN
+  -- Direct item mutation remains forbidden after BUILDING. The only allowed
+  -- terminal delete is the FK cascade initiated by deleting its parent batch.
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+    RETURN OLD;
+  END IF;
+
   IF TG_OP <> 'INSERT' THEN
     SELECT "status" INTO old_status
       FROM "statistics_snapshot_batches"
@@ -4670,9 +4677,15 @@ BEGIN
     IF NEW.sales_channel_write_request_id IS DISTINCT FROM OLD.sales_channel_write_request_id
        OR NEW.channel IS DISTINCT FROM OLD.channel
        OR NEW.request_type IS DISTINCT FROM OLD.request_type
-       OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
-       OR NEW.request_digest IS DISTINCT FROM OLD.request_digest THEN
+       OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key THEN
       RAISE EXCEPTION 'sales_channel_write_requests identity is immutable';
+    END IF;
+    IF NEW.request_digest IS DISTINCT FROM OLD.request_digest
+       AND NOT (
+         OLD.request_status = 'RETRYING'
+         AND NEW.request_status = 'PENDING'
+       ) THEN
+      RAISE EXCEPTION 'sales_channel_write_requests request digest is immutable outside retry replacement';
     END IF;
     IF NEW.request_status = 'RETRYING'
        AND OLD.request_status NOT IN ('REJECTED', 'NOT_APPLIED') THEN

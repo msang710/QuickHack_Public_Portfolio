@@ -3,6 +3,10 @@ import {
   configureIntegrationTestEnvironment,
   createTemporaryDatabase,
 } from "../../support/postgresql-test-scope.mjs";
+import {
+  SALES_CHANNEL_WRITE_FAILURE_SCENARIO,
+  runSalesChannelWriteFailureScenarios,
+} from "./sales-channel-write-failure-scenario-registry.mjs";
 
 const temporaryDatabase = createTemporaryDatabase(
   "quickhack-write-failure-flows-"
@@ -2167,7 +2171,7 @@ async function assertManualNotAppliedCanBeResubmitted(api, reviewApi) {
   );
 }
 
-async function assertRetryKeepsImmutableTargetSnapshot(api) {
+async function assertExactRetryKeepsSnapshotAndCompletedRejectsChanges(api) {
   const timestamp = new Date("2026-07-19T12:34:00.000Z");
   const [firstUser, retryUser] = await Promise.all([
     prisma.users.create({
@@ -2199,55 +2203,6 @@ async function assertRetryKeepsImmutableTargetSnapshot(api) {
     inspectionNote: "immutable request target",
   });
   const before = await createNotAppliedOrderRequest(api, initialCommand);
-  const changedCommand = orderInstructCommand({
-    idempotencyKey: initialCommand.idempotencyKey,
-    shipmentId: "SHIP-CHANGED-RETRY",
-    externalOrderId: "ORDER-CHANGED-RETRY",
-    userId: retryUser.user_id,
-    externalVendorItemId: "CHANGED-VENDOR-ITEM",
-    quantity: 2,
-    inspectionNote: "must not replace the persisted target",
-  });
-  let changedDispatchCount = 0;
-  let changedError;
-
-  try {
-    await api.requestSalesChannelWrite(
-      changedCommand,
-      { finalize: async () => undefined },
-      {
-        executeWrite: async (command) => {
-          changedDispatchCount += 1;
-          return successResponse(command);
-        },
-        verifyWrite: async () => verificationResult("CONFIRMED"),
-      }
-    );
-  } catch (error) {
-    changedError = error;
-  }
-
-  assert(
-    changedError instanceof api.SalesChannelWriteReviewRequiredError,
-    "A retry with a changed immutable target snapshot was not rejected."
-  );
-  assert(
-    changedDispatchCount === 0,
-    "A retry with a changed target snapshot reached the external adapter."
-  );
-  const unchanged = await prisma.sales_channel_write_requests.findUniqueOrThrow({
-    where: { idempotency_key: initialCommand.idempotencyKey },
-    include: { targets: true, attempts: true },
-  });
-  assertOrderCommandSnapshot(unchanged, initialCommand, "immutable retry rejection");
-  assert(
-    unchanged.request_status === "NOT_APPLIED" &&
-      unchanged.targets[0].sales_channel_write_request_target_id ===
-        before.targets[0].sales_channel_write_request_target_id &&
-      unchanged.attempts.length === before.attempts.length,
-    "The rejected changed retry mutated the durable request aggregate."
-  );
-
   const exactRetryCommand = structuredClone(initialCommand);
   exactRetryCommand.requestedByUserId = retryUser.user_id;
   let exactDispatchCount = 0;
@@ -2292,6 +2247,55 @@ async function assertRetryKeepsImmutableTargetSnapshot(api) {
     completed.attempts.map((attempt) => attempt.attempt_type).join(",") ===
       "WRITE,WRITE,LOCAL_FINALIZE",
     "The immutable retry attempt history is incomplete."
+  );
+
+  const changedCommand = orderInstructCommand({
+    idempotencyKey: initialCommand.idempotencyKey,
+    shipmentId: "SHIP-CHANGED-RETRY",
+    externalOrderId: "ORDER-CHANGED-RETRY",
+    userId: retryUser.user_id,
+    externalVendorItemId: "CHANGED-VENDOR-ITEM",
+    quantity: 2,
+    inspectionNote: "must not replace a completed target",
+  });
+  let changedDispatchCount = 0;
+  let changedError;
+
+  try {
+    await api.requestSalesChannelWrite(
+      changedCommand,
+      { finalize: async () => undefined },
+      {
+        executeWrite: async (command) => {
+          changedDispatchCount += 1;
+          return successResponse(command);
+        },
+        verifyWrite: async () => verificationResult("CONFIRMED"),
+      }
+    );
+  } catch (error) {
+    changedError = error;
+  }
+
+  assert(
+    changedError instanceof api.SalesChannelWriteReviewRequiredError,
+    "A changed command reused the idempotency key of a completed request."
+  );
+  assert(
+    changedDispatchCount === 0,
+    "A changed command for a completed request reached the external adapter."
+  );
+  const unchanged = await prisma.sales_channel_write_requests.findUniqueOrThrow({
+    where: { idempotency_key: initialCommand.idempotencyKey },
+    include: { targets: true, attempts: true },
+  });
+  assertOrderCommandSnapshot(unchanged, initialCommand, "completed retry guard");
+  assert(
+    unchanged.request_status === "COMPLETED" &&
+      unchanged.targets[0].sales_channel_write_request_target_id ===
+        before.targets[0].sales_channel_write_request_target_id &&
+      unchanged.attempts.length === completed.attempts.length,
+    "The rejected completed-request change mutated the durable aggregate."
   );
 }
 
@@ -3581,7 +3585,17 @@ try {
   await assertReturnStateConflictIsVerified(writeApi, coupangApi, "UNKNOWN");
   await assertDefinitiveReturnRejectionStaysNotApplied(writeApi, coupangApi);
   await assertManualNotAppliedCanBeResubmitted(writeApi, reviewApi);
-  await assertRetryKeepsImmutableTargetSnapshot(writeApi);
+  await assertExactRetryKeepsSnapshotAndCompletedRejectsChanges(writeApi);
+  await runSalesChannelWriteFailureScenarios(writeApi, {
+    [SALES_CHANNEL_WRITE_FAILURE_SCENARIO.CHANGED_NOT_APPLIED_COMMAND_REPLACES_SNAPSHOT]:
+      assertChangedNotAppliedCommandReplacesSnapshot,
+    [SALES_CHANNEL_WRITE_FAILURE_SCENARIO.CHANGED_REJECTED_COMMAND_REPLACES_SNAPSHOT]:
+      assertChangedRejectedCommandReplacesSnapshot,
+    [SALES_CHANNEL_WRITE_FAILURE_SCENARIO.CONCURRENT_CHANGED_RETRIES_HAVE_ONE_WINNER]:
+      assertConcurrentChangedRetriesHaveOneWinner,
+    [SALES_CHANNEL_WRITE_FAILURE_SCENARIO.RETRY_SNAPSHOT_FAILURE_ROLLS_BACK]:
+      assertRetrySnapshotFailureRollsBack,
+  });
   await assertRetryIdentityMismatchIsBlocked(writeApi);
   await assertDuplicateConcurrentRequestIsIdempotent(writeApi);
   await assertLocalFinalizeRetryDoesNotResend(

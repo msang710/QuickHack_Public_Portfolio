@@ -17,6 +17,11 @@ import {
   requiredApiDateTime,
 } from "@/quickhack_server/core/database/time-boundary";
 import { lockServerSecurityState } from "@/quickhack_server/auth/security-state";
+import {
+  createMutationReceipt,
+  settleOptionalMutationRefresh,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -38,6 +43,49 @@ class AccountProfileUpdateError extends Error {
     this.name = "AccountProfileUpdateError";
     this.status = status;
   }
+}
+
+type AccountProfileSecurityEnrichment = readonly [
+  {
+    enabled: number;
+    verified_at: Date | null;
+    locked_until: Date | null;
+  } | null,
+  number,
+  number,
+];
+
+type AccountProfilePatchDependencies = {
+  loadSecurityEnrichment?: (
+    prisma: typeof import("@/quickhack_server/core/prisma").prisma,
+    userId: number
+  ) => Promise<AccountProfileSecurityEnrichment>;
+};
+
+async function loadAccountProfileSecurityEnrichment(
+  prisma: typeof import("@/quickhack_server/core/prisma").prisma,
+  userId: number
+): Promise<AccountProfileSecurityEnrichment> {
+  return Promise.all([
+    prisma.user_totp_credentials.findUnique({
+      where: { user_id: userId },
+      select: {
+        enabled: true,
+        verified_at: true,
+        locked_until: true,
+      },
+    }),
+    prisma.user_totp_recovery_codes.count({
+      where: { user_id: userId, used_at: null },
+    }),
+    prisma.mobile_registered_devices.count({
+      where: {
+        user_id: userId,
+        enabled: 1,
+        revoked_at: null,
+      },
+    }),
+  ]);
 }
 
 function parseJsonObject(text: string) {
@@ -266,7 +314,10 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function PATCH(request: NextRequest) {
+async function handleAccountProfilePatch(
+  request: NextRequest,
+  dependencies: AccountProfilePatchDependencies
+) {
   const bodyText = await request.text();
 
   if (isClientRuntime()) {
@@ -393,57 +444,62 @@ export async function PATCH(request: NextRequest) {
         replacementToken: replacement?.token ?? null,
       };
     });
-    const [totpCredential, recoveryCodeCount, activeMobileDeviceCount] =
-      await Promise.all([
-        prisma.user_totp_credentials.findUnique({
-          where: { user_id: updated.user_id },
-          select: {
-            enabled: true,
-            verified_at: true,
-            locked_until: true,
-          },
-        }),
-        prisma.user_totp_recovery_codes.count({
-          where: { user_id: updated.user_id, used_at: null },
-        }),
-        prisma.mobile_registered_devices.count({
-          where: {
-            user_id: updated.user_id,
-            enabled: 1,
-            revoked_at: null,
-          },
-        }),
-      ]);
+    const user = toAuthUser(updated);
+    const baseProfile = {
+      userId: updated.user_id,
+      username: updated.username,
+      displayName: updated.employee_profiles.display_name,
+      phone: updated.employee_profiles.phone ?? "",
+      email: updated.employee_profiles.email ?? "",
+      birthDate: apiDate(updated.employee_profiles.birth_date) ?? "",
+      isBirthdayToday: isBirthdayOnDate(
+        apiDate(updated.employee_profiles.birth_date),
+        todayKstDate()
+      ),
+      hireDate: apiDate(updated.employee_profiles.hire_date) ?? "",
+      role: updated.role,
+      isDeveloper: updated.is_developer === 1,
+      mobilePackingEnabled: updated.mobile_packing_enabled === 1,
+      isActive: updated.is_active === 1,
+      revision: updated.revision,
+      createdAt: requiredApiDateTime(updated.created_at),
+      updatedAt: requiredApiDateTime(updated.updated_at),
+    };
+    const receipt = createMutationReceipt(
+      { user, profile: baseProfile },
+      {
+        operationId: stableMutationOperationId("account-profile", [
+          updated.user_id,
+          updated.revision,
+        ]),
+        committedAt: updated.updated_at,
+      }
+    );
+    const loadSecurityEnrichment =
+      dependencies.loadSecurityEnrichment ??
+      loadAccountProfileSecurityEnrichment;
+    const enrichment = await settleOptionalMutationRefresh(receipt, () =>
+      loadSecurityEnrichment(prisma, updated.user_id)
+    );
+    const profile = enrichment.completed
+      ? {
+          ...baseProfile,
+          totpEnabled: enrichment.value[0]?.enabled === 1,
+          totpVerifiedAt:
+            apiDateTime(enrichment.value[0]?.verified_at) ?? "",
+          totpLockedUntil:
+            apiDateTime(enrichment.value[0]?.locked_until) ?? "",
+          recoveryCodeCount: enrichment.value[1],
+          activeMobileDeviceCount: enrichment.value[2],
+        }
+      : undefined;
 
     const response = NextResponse.json({
       ok: true,
       message: "계정 정보를 저장했습니다.",
-      user: toAuthUser(updated),
-      profile: {
-        userId: updated.user_id,
-        username: updated.username,
-        displayName: updated.employee_profiles.display_name,
-        phone: updated.employee_profiles.phone ?? "",
-        email: updated.employee_profiles.email ?? "",
-        birthDate: apiDate(updated.employee_profiles.birth_date) ?? "",
-        isBirthdayToday: isBirthdayOnDate(
-          apiDate(updated.employee_profiles.birth_date),
-          todayKstDate()
-        ),
-        hireDate: apiDate(updated.employee_profiles.hire_date) ?? "",
-        role: updated.role,
-        isDeveloper: updated.is_developer === 1,
-        mobilePackingEnabled: updated.mobile_packing_enabled === 1,
-        isActive: updated.is_active === 1,
-        totpEnabled: totpCredential?.enabled === 1,
-        totpVerifiedAt: apiDateTime(totpCredential?.verified_at) ?? "",
-        totpLockedUntil: apiDateTime(totpCredential?.locked_until) ?? "",
-        recoveryCodeCount,
-        activeMobileDeviceCount,
-        revision: updated.revision,
-        createdAt: requiredApiDateTime(updated.created_at),
-        updatedAt: requiredApiDateTime(updated.updated_at),
-      },
+      user,
+      profile,
+      receipt: enrichment.receipt,
     });
     if (updated.replacementToken) {
       setSessionCookie(response, updated.replacementToken);
@@ -474,3 +530,12 @@ export async function PATCH(request: NextRequest) {
     return apiErrorResponse(error);
   }
 }
+
+export function createAccountProfilePatchHandler(
+  dependencies: AccountProfilePatchDependencies = {}
+) {
+  return (request: NextRequest) =>
+    handleAccountProfilePatch(request, dependencies);
+}
+
+export const PATCH = createAccountProfilePatchHandler();

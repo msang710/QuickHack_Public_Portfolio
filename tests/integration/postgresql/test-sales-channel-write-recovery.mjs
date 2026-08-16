@@ -3,6 +3,7 @@ import {
   configureIntegrationTestEnvironment,
   createTemporaryDatabase,
 } from "../../support/postgresql-test-scope.mjs";
+import { postgresqlSqlState } from "@/quickhack_server/core/database/postgres-errors";
 
 const temporaryDatabase = createTemporaryDatabase(
   "quickhack-sales-channel-write-recovery-"
@@ -312,7 +313,7 @@ try {
 
   await assert.rejects(
     recoverInterruptedSalesChannelWrites({ now: NOW }),
-    (error) => error?.cause?.code === "P0001"
+    (error) => postgresqlSqlState(error) === "P0001"
   );
   const rolledBackRequest =
     await prisma.sales_channel_write_requests.findUniqueOrThrow({

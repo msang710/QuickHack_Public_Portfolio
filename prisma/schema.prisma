@@ -561,6 +561,7 @@ model client_http_trace_observations {
 
 model server_worker_jobs {
   lease_token                   String?                                       @db.Uuid
+  run_token                     String?                                       @db.Uuid
   claim_generation              Int                                           @default(0)
   worker_job_id                 Int                                           @id @default(autoincrement())
   worker_key                    String                                        @unique(map: "idx_server_worker_jobs_worker_key_unique")

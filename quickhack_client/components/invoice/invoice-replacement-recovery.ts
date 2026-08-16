@@ -1,9 +1,14 @@
 import type { InvoiceReplacement } from "./invoice-operation-types";
+import {
+  mutationWakeDeferred,
+  type MutationReceipt,
+} from "@/quickhack_shared/core/mutation-receipt";
 
 type CarrierRegistrationRecoveryResponse = {
   ok?: boolean;
   message?: string;
   queuedCount?: number;
+  receipt?: MutationReceipt<unknown>;
 };
 
 export async function recoverCarrierRegistration(
@@ -30,7 +35,10 @@ export async function recoverCarrierRegistration(
     );
   }
 
-  return reconcileOnly
+  const message = reconcileOnly
     ? "로젠의 실제 등록 상태를 다시 조회합니다."
     : "로젠 등록 작업을 다시 실행하도록 예약했습니다.";
+  return mutationWakeDeferred(payload.receipt)
+    ? `${message} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
+    : message;
 }

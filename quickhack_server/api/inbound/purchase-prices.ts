@@ -13,6 +13,11 @@ import {
   setOperationTraceUserId,
   traceOperationSpan,
 } from "@/quickhack_server/observability/operation-trace";
+import {
+  createMutationReceipt,
+  settleOptionalMutationRefresh,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -198,19 +203,30 @@ export async function POST(request: NextRequest) {
     );
     const note = purchasePriceNoteFromBody(body);
     const priceDate = String(body.priceDate ?? "");
-    const [rates, notes] = await traceOperationSpan("SERVICE_READ", () =>
-      Promise.all([
-        listPurchasePriceRates(prisma, priceDate, note),
-        listPurchasePriceConditionNotes(prisma, priceDate),
-      ])
+    const receipt = createMutationReceipt(result, {
+      operationId: stableMutationOperationId(
+        "purchase-price-save",
+        result.savedRates.flatMap((rate) => [rate.id, rate.revision])
+      ),
+      committedAt: result.savedRates.at(-1)?.updatedAt,
+    });
+    const refresh = await settleOptionalMutationRefresh(receipt, () =>
+      traceOperationSpan("SERVICE_READ", () =>
+        Promise.all([
+          listPurchasePriceRates(prisma, priceDate, note),
+          listPurchasePriceConditionNotes(prisma, priceDate),
+        ])
+      )
     );
 
     return NextResponse.json({
       ok: true,
       message: `매입가 기준 ${result.savedRates.length}개를 저장했습니다.`,
       queryContext: { priceDate, note },
-      rates,
-      notes,
+      ...(refresh.completed
+        ? { rates: refresh.value[0], notes: refresh.value[1] }
+        : {}),
+      receipt: refresh.receipt,
     });
   } catch (error) {
     return apiErrorResponse(error);

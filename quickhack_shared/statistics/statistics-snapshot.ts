@@ -23,7 +23,7 @@ export type StatisticsSnapshotDomain =
   (typeof STATISTICS_SNAPSHOT_DOMAINS)[number];
 
 export const CURRENT_STATISTICS_CALCULATION_VERSION =
-  "statistics-daily-v2";
+  "statistics-daily-v3";
 export const CURRENT_STATISTICS_PAYLOAD_SCHEMA_VERSION = 2;
 
 export type StatisticsSnapshotBatchContract = {

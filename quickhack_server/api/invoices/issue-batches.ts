@@ -17,6 +17,12 @@ import {
   buildInvoiceIssueMutationResponse,
   type InvoiceChannelSubmission,
 } from "@/quickhack_server/shipment/carrier-integration/invoice-submission-response";
+import { MUTATION_RECEIPT_OUTCOMES } from "@/quickhack_shared/core/mutation-receipt";
+import {
+  createMutationReceipt,
+  settleOptionalWorkerWake,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -182,17 +188,33 @@ export async function POST(request: NextRequest) {
           issueBatch: result,
           channelSubmission,
         });
-        if (
+        const shouldWakeWorkers =
           typeof channelSubmission === "object" &&
           channelSubmission !== null &&
           "completedCount" in channelSubmission &&
-          Number(channelSubmission.completedCount) > 0
-        ) {
-          const { wakeWorkerManager } = await import(
-            "@/quickhack_server/workers/manager"
-          );
-          wakeWorkerManager();
-        }
+          Number(channelSubmission.completedCount) > 0;
+        const receipt = createMutationReceipt(
+          { issueBatch: result, channelSubmission },
+          {
+            operationId: stableMutationOperationId("invoice-issue-batch", [
+              result.issueBatchId,
+              result.status,
+              ...outcome.requestIds,
+            ]),
+            outcome:
+              outcome.status === 202
+                ? MUTATION_RECEIPT_OUTCOMES.accepted
+                : MUTATION_RECEIPT_OUTCOMES.committed,
+          }
+        );
+        const settledReceipt = shouldWakeWorkers
+          ? await settleOptionalWorkerWake(receipt, async () => {
+              const { wakeWorkerManager } = await import(
+                "@/quickhack_server/workers/manager"
+              );
+              wakeWorkerManager();
+            })
+          : receipt;
         return NextResponse.json(
           {
             ok: outcome.ok,
@@ -202,6 +224,7 @@ export async function POST(request: NextRequest) {
             issueBatch: result,
             channelSubmission,
             message: outcome.message,
+            receipt: settledReceipt,
           },
           { status: outcome.status }
         );
