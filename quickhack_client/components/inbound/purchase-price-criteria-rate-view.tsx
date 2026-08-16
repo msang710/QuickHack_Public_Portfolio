@@ -43,6 +43,7 @@ import {
   useUnsavedChanges,
   useUnsavedForm,
 } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
+import type { MutationReceipt } from "@/quickhack_shared/core/mutation-receipt";
 
 type ProductCriteriaApiResponse = {
   ok: boolean;
@@ -76,7 +77,19 @@ type PurchasePriceApiResponse = {
   rates?: PurchasePriceRateDto[];
   notes?: string[];
   queryContext?: { priceDate: string; note: string };
+  receipt?: MutationReceipt<{ savedRates: PurchasePriceRateDto[] }>;
 };
+
+function mergeSavedPurchasePriceRates(
+  current: PurchasePriceRateDto[],
+  saved: PurchasePriceRateDto[]
+) {
+  const savedById = new Map(saved.map((rate) => [rate.id, rate]));
+  const merged = current.map((rate) => savedById.get(rate.id) ?? rate);
+  const existingIds = new Set(current.map((rate) => rate.id));
+  merged.push(...saved.filter((rate) => !existingIds.has(rate.id)));
+  return merged;
+}
 
 const PURCHASE_PRICE_CRITERIA_FORM_ID = "inbound.purchase-price-criteria";
 
@@ -622,12 +635,32 @@ export function PurchasePriceCriteriaRateView() {
         throw new Error("저장한 날짜와 조건이 아닌 매입가 응답을 받았습니다.");
       }
 
-      setRates(payload.rates ?? []);
-      setConditionNoteOptions(payload.notes ?? []);
+      const refreshDeferred = payload.receipt?.refreshRequired === true;
+      if (payload.rates) {
+        setRates(payload.rates);
+      } else if (refreshDeferred) {
+        setRates((current) =>
+          mergeSavedPurchasePriceRates(
+            current,
+            payload.receipt?.result.savedRates ?? []
+          )
+        );
+      }
+      if (payload.notes) {
+        setConditionNoteOptions(payload.notes);
+      } else if (refreshDeferred && conditionNote) {
+        setConditionNoteOptions((current) =>
+          current.includes(conditionNote) ? current : [...current, conditionNote]
+        );
+      }
       setDrafts({});
       setLoadedQueryKey(currentQueryKey);
-      setMessage(payload.message || "매입가 기준을 저장했습니다. ");
-      setMessageTone("success");
+      setMessage(
+        refreshDeferred
+          ? `${payload.message || "매입가 기준을 저장했습니다."} 전체 목록은 새로고침해 확인하세요.`
+          : payload.message || "매입가 기준을 저장했습니다. "
+      );
+      setMessageTone(refreshDeferred ? "warning" : "success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setMessageTone("warning");

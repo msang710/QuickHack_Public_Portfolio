@@ -4,6 +4,7 @@ import type { BackupConsoleWorkerKey } from "@/quickhack_server/admin/backup-wor
 import { BACKUP_CONSOLE_WORKER_KEYS } from "@/quickhack_server/admin/backup-worker-policy";
 import {
   inspectOperationalPostgresqlBinDirectory,
+  listOperationalPostgresqlBackupQuarantines,
   listOperationalPostgresqlBackups,
 } from "@/quickhack_server/admin/postgresql-backup-service";
 import { getBackupEncryptionState } from "@/quickhack_server/security/backup-encryption";
@@ -34,9 +35,10 @@ export async function readBackupConsoleState() {
   const database = getPostgresqlDatabaseConfig();
   const runtime = getRuntimeConfig();
   const backupDirectory = path.join(runtime.paths.dataDir, "backups");
-  const [encryption, backups, allWorkers, recentRuns] = await Promise.all([
+  const [encryption, backups, quarantines, allWorkers, recentRuns] = await Promise.all([
     getBackupEncryptionState(),
     listOperationalPostgresqlBackups(),
+    listOperationalPostgresqlBackupQuarantines(),
     listWorkerJobs(),
     prisma.server_job_logs.findMany({
       where: { job_type: "WORKER_DATABASE_MAINTENANCE" },
@@ -88,6 +90,7 @@ export async function readBackupConsoleState() {
     },
     retentionCount: runtime.serverConfig?.backupRetentionCount ?? 30,
     backups,
+    quarantines,
     shutdown: {
       requested: shutdown.requested,
       requestedAt: shutdown.requestedAt,

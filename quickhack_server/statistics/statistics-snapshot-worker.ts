@@ -14,6 +14,10 @@ import {
   putStatisticsSnapshotItem,
 } from "@/quickhack_server/statistics/statistics-snapshot-store";
 import type { WorkerRunContext } from "@/quickhack_server/workers/types";
+import {
+  pruneStatisticsSnapshots,
+  type StatisticsSnapshotLifecycleSummary,
+} from "@/quickhack_server/statistics/statistics-snapshot-lifecycle";
 import { quickHackClock } from "@/quickhack_shared/core/time";
 import {
   CURRENT_STATISTICS_CALCULATION_VERSION,
@@ -52,6 +56,7 @@ export type StatisticsSnapshotWorkerSummary = {
   skipReason: string | null;
   totalDurationMs: number;
   domains: StatisticsSnapshotWorkerDomainSummary[];
+  retention: StatisticsSnapshotLifecycleSummary;
 };
 
 function safeErrorMessage(error: unknown) {
@@ -133,6 +138,7 @@ export async function runDailyStatisticsSnapshot(input: {
       STATISTICS_SNAPSHOT_TOTAL_DOMAINS
     );
 
+    const retention = await pruneStatisticsSnapshots({ now });
     return {
       dataCutoffDate: period.dataCutoffDate,
       periodFrom: period.range.fromDate,
@@ -148,6 +154,7 @@ export async function runDailyStatisticsSnapshot(input: {
       skipReason: "COMPLETE_SNAPSHOT_ALREADY_EXISTS",
       totalDurationMs: Math.round(performance.now() - startedAtMs),
       domains: [],
+      retention,
     };
   }
 
@@ -200,6 +207,8 @@ export async function runDailyStatisticsSnapshot(input: {
       snapshotBatchId: batch.snapshot_batch_id,
       completedAt: now,
     });
+    await input.context.assertLeaseActive();
+    const retention = await pruneStatisticsSnapshots({ now });
 
     return {
       dataCutoffDate: period.dataCutoffDate,
@@ -216,6 +225,7 @@ export async function runDailyStatisticsSnapshot(input: {
       skipReason: null,
       totalDurationMs: Math.round(performance.now() - startedAtMs),
       domains: domainSummaries,
+      retention,
     };
   } catch (error) {
     if (snapshotBatchId !== null && !input.context.signal.aborted) {

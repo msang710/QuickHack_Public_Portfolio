@@ -34,6 +34,10 @@ import {
 } from "@/quickhack_client/components/admin/sales-channel-sync-check-presentation";
 import { cn } from "@/quickhack_shared/core/utils";
 import {
+  mutationWakeDeferred,
+  type MutationReceipt,
+} from "@/quickhack_shared/core/mutation-receipt";
+import {
   SALES_CHANNEL_WRITE_REQUEST_LABELS,
   SALES_CHANNEL_WRITE_STATUS_LABELS,
 } from "@/quickhack_shared/sales-channel/write-requests";
@@ -48,6 +52,7 @@ type ApiResponse = {
   unresolvedCount?: number;
   items?: SalesChannelWriteReviewItemDto[];
   controls?: SalesChannelWriteControlDto[];
+  receipt?: MutationReceipt<unknown>;
 };
 
 const STATUS_OPTIONS = [
@@ -633,7 +638,12 @@ export function SalesChannelWriteReviewView({
         throw new Error(payload.message || "처리에 실패했습니다.");
       }
 
-      setMessage(payload.message || "처리 결과를 저장했습니다.");
+      const resultMessage = payload.message || "처리 결과를 저장했습니다.";
+      setMessage(
+        mutationWakeDeferred(payload.receipt)
+          ? `${resultMessage} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
+          : resultMessage
+      );
       onAccepted?.();
       await load();
       return true;

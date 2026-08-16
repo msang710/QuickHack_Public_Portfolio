@@ -291,11 +291,24 @@ try {
   });
   assert(observed?.process_status === "DONE", "Observed event is not DONE.");
   assert(observed?.api_call_log_id === null, "Targeted event has an API log.");
-  assert(observed?.fields.length === 13, "Return snapshot is not complete.");
+  assert(observed?.fields.length === 14, "Return snapshot is not complete.");
   assert(
     observed?.fields.find((field) => field.field_name === "reason_detail")
       ?.after_value === "연락처 [PHONE] 확인",
     "Return history did not mask a phone number."
+  );
+  assert(
+    observed?.fields.find((field) => field.field_name === "items_json")
+      ?.after_value ===
+      JSON.stringify([
+        {
+          externalVendorItemId: "3187044096",
+          sellerProductItemId: "57623797",
+          vendorItemName: "테스트 상품",
+          cancelCount: 1,
+        },
+      ]),
+    "Return history did not preserve the immutable item projection."
   );
 
   const secondPersist = await persistCoupangReturnRawSnapshots(
@@ -305,6 +318,53 @@ try {
   );
   assert(secondPersist.eventCreatedCount === 0, "Identical return made an event.");
   assert(secondPersist.noOpCount === 1, "Identical return was not a no-op.");
+
+  const itemChangedPayloadItems = [
+    {
+      shipmentBoxId: "884440000000001111",
+      vendorItemId: "3187044097",
+      sellerProductItemId: "57623798",
+      vendorItemName: "Second fixture item",
+      cancelCount: 1,
+      releaseStatus: "N",
+    },
+    {
+      shipmentBoxId: "884440000000001111",
+      vendorItemId: "3187044096",
+      sellerProductItemId: "57623797",
+      vendorItemName: "테스트 상품",
+      cancelCount: 1,
+      releaseStatus: "N",
+    },
+  ];
+  const itemChangedReturn = normalizeReturnRequest(
+    returnPayload({ returnItems: itemChangedPayloadItems })
+  );
+  const itemChangedPersist = await persistCoupangReturnRawSnapshots(
+    [itemChangedReturn],
+    await reserveSalesChannelProjectionObservation(),
+    "2026-07-27 10:01:10"
+  );
+  assert(
+    itemChangedPersist.eventCreatedCount === 1,
+    "A changed return item projection made no history event."
+  );
+  const reorderedItemPersist = await persistCoupangReturnRawSnapshots(
+    [
+      normalizeReturnRequest(
+        returnPayload({
+          returnItems: [...itemChangedPayloadItems].reverse(),
+        })
+      ),
+    ],
+    await reserveSalesChannelProjectionObservation(),
+    "2026-07-27 10:01:20"
+  );
+  assert(
+    reorderedItemPersist.eventCreatedCount === 0 &&
+      reorderedItemPersist.noOpCount === 1,
+    "Return item input order changed the canonical history snapshot."
+  );
 
   const cancelReturn = normalizeReturnRequest(
     returnPayload({
@@ -360,6 +420,7 @@ try {
       external_receipt_id: firstReturn.externalReceiptId,
       event_type: "COUPANG_RETURN_CHANGED",
     },
+    orderBy: { coupang_raw_change_event_id: "desc" },
     include: { fields: true },
   });
   const statusChange = changedEvent?.fields.find(
@@ -370,7 +431,7 @@ try {
       statusChange.after_value === "RETURNS_COMPLETED",
     "Return change did not preserve before and after status."
   );
-  assert(changedEvent?.fields.length === 13, "Changed return is not full snapshot.");
+  assert(changedEvent?.fields.length === 14, "Changed return is not full snapshot.");
 
   const invalidReturn = normalizeReturnRequest(
     returnPayload({

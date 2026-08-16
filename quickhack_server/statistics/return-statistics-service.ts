@@ -99,21 +99,11 @@ export type ReturnStatisticsEventInput = {
   }>;
 };
 
-export type ReturnStatisticsRawItemInput = {
+export type ReturnStatisticsClaimItemInput = {
   externalVendorItemId: string | null;
   sellerProductItemId: string | null;
   vendorItemName: string | null;
   cancelCount: number;
-};
-
-export type ReturnStatisticsRawInput = {
-  returnRawId: number;
-  externalReceiptId: string;
-  externalOrderId: string;
-  externalShipmentId: string | null;
-  cancelType: string | null;
-  cancelCount: number;
-  items: ReturnStatisticsRawItemInput[];
 };
 
 export type ReturnStatisticsAllocationLinkInput = {
@@ -123,6 +113,7 @@ export type ReturnStatisticsAllocationLinkInput = {
   externalReceiptId: string;
   pgNo: string;
   actionType: string;
+  createdAt: string;
 };
 
 export type ReturnStatisticsInspectionInput = {
@@ -145,11 +136,16 @@ export type ReturnStatisticsApprovalInput = {
 export type ReturnStatisticsAggregateInput = {
   sales: ReturnStatisticsSaleInput[];
   events: ReturnStatisticsEventInput[];
-  returnRaws: ReturnStatisticsRawInput[];
   allocationLinks: ReturnStatisticsAllocationLinkInput[];
   inspections: ReturnStatisticsInspectionInput[];
   approvals: ReturnStatisticsApprovalInput[];
 };
+
+export type ReturnStatisticsAsOfContext = Readonly<{
+  cutoffExclusive: Date;
+  timezone: "Asia/Seoul";
+  snapshotKind: "DAILY_RETURN";
+}>;
 
 type ClaimSnapshot = Record<string, string | null>;
 
@@ -170,7 +166,7 @@ type PreparedReturnClaim = {
   externalCompletedAt: Date | null;
   withdrawnAt: Date | null;
   withdrawn: boolean;
-  raw: ReturnStatisticsRawInput | null;
+  items: ReturnStatisticsClaimItemInput[];
 };
 
 type PreparedExchangeClaim = {
@@ -246,6 +242,56 @@ function parseDate(value: string | null | undefined) {
     : text;
   const parsed = new Date(localIso);
   return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function periodCutoffExclusive(period: StatisticsPeriodContext) {
+  return statisticsDateTimeBounds({
+    fromDate: period.dataCutoffDate,
+    toDate: period.dataCutoffDate,
+  }).toExclusive;
+}
+
+function immutableReturnStatisticsAsOfContext(
+  cutoffExclusive: Date
+): ReturnStatisticsAsOfContext {
+  const cutoffEpochMs = cutoffExclusive.getTime();
+  return Object.freeze({
+    get cutoffExclusive() {
+      return new Date(cutoffEpochMs);
+    },
+    timezone: "Asia/Seoul" as const,
+    snapshotKind: "DAILY_RETURN" as const,
+  });
+}
+
+export function createReturnStatisticsAsOfContext(
+  period: StatisticsPeriodContext
+): ReturnStatisticsAsOfContext {
+  return immutableReturnStatisticsAsOfContext(
+    periodCutoffExclusive(period)
+  );
+}
+
+function resolveReturnStatisticsAsOfContext(
+  period: StatisticsPeriodContext,
+  provided?: ReturnStatisticsAsOfContext
+) {
+  const expectedCutoff = periodCutoffExclusive(period);
+  if (!provided) {
+    return createReturnStatisticsAsOfContext(period);
+  }
+  const providedCutoff = new Date(provided.cutoffExclusive);
+  if (
+    provided.timezone !== "Asia/Seoul" ||
+    provided.snapshotKind !== "DAILY_RETURN" ||
+    !Number.isFinite(providedCutoff.getTime()) ||
+    providedCutoff.getTime() !== expectedCutoff.getTime()
+  ) {
+    throw new TypeError(
+      "Return statistics as-of context does not match its closed period."
+    );
+  }
+  return immutableReturnStatisticsAsOfContext(providedCutoff);
 }
 
 function round(value: number, digits = 2) {
@@ -375,18 +421,57 @@ function snapshotFromFields(event: ReturnStatisticsEventInput) {
   ) as ClaimSnapshot;
 }
 
-function rawQuantity(raw: ReturnStatisticsRawInput | null, snapshot: ClaimSnapshot) {
-  if (raw && raw.items.length > 0) {
-    return raw.items.reduce(
+function immutableClaimItems(snapshot: ClaimSnapshot) {
+  if (!snapshot.items_json) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(snapshot.items_json);
+    if (!Array.isArray(parsed)) return [];
+    const items: ReturnStatisticsClaimItemInput[] = [];
+    for (const value of parsed) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return [];
+      }
+      const row = value as Record<string, unknown>;
+      if (
+        (row.externalVendorItemId !== null &&
+          typeof row.externalVendorItemId !== "string") ||
+        (row.sellerProductItemId !== null &&
+          typeof row.sellerProductItemId !== "string") ||
+        (row.vendorItemName !== null &&
+          typeof row.vendorItemName !== "string") ||
+        typeof row.cancelCount !== "number" ||
+        !Number.isSafeInteger(row.cancelCount) ||
+        row.cancelCount < 0
+      ) {
+        return [];
+      }
+      items.push({
+        externalVendorItemId: nullableText(row.externalVendorItemId),
+        sellerProductItemId: nullableText(row.sellerProductItemId),
+        vendorItemName: nullableText(row.vendorItemName),
+        cancelCount: row.cancelCount,
+      });
+    }
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+function claimQuantity(
+  items: ReturnStatisticsClaimItemInput[],
+  snapshot: ClaimSnapshot
+) {
+  if (items.length > 0) {
+    return items.reduce(
       (sum, item) => sum + Math.max(0, Math.trunc(item.cancelCount)),
       0
     );
   }
 
-  const fallback = Number.parseInt(
-    snapshot.cancel_count ?? String(raw?.cancelCount ?? 0),
-    10
-  );
+  const fallback = Number.parseInt(snapshot.cancel_count ?? "0", 10);
   return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
 }
 
@@ -408,9 +493,6 @@ function prepareSales(input: ReturnStatisticsAggregateInput) {
 }
 
 function prepareClaims(input: ReturnStatisticsAggregateInput) {
-  const rawByReceipt = new Map(
-    input.returnRaws.map((raw) => [raw.externalReceiptId, raw])
-  );
   const returnEventsByReceipt = new Map<
     string,
     ReturnStatisticsEventInput[]
@@ -470,7 +552,7 @@ function prepareClaims(input: ReturnStatisticsAggregateInput) {
     }
 
     const snapshot = snapshotFromFields(latest);
-    const raw = rawByReceipt.get(receiptId) ?? null;
+    const items = immutableClaimItems(snapshot);
     const withdrawal = withdrawals.at(-1) ?? null;
     const withdrawalSnapshot = withdrawal
       ? snapshotFromFields(withdrawal)
@@ -481,31 +563,24 @@ function prepareClaims(input: ReturnStatisticsAggregateInput) {
       continue;
     }
 
-    const externalOrderId =
-      latest.externalOrderId ?? raw?.externalOrderId ?? null;
-    const externalShipmentId =
-      latest.externalShipmentId ?? raw?.externalShipmentId ?? null;
-
     returns.push({
       receiptId,
-      externalOrderId,
-      externalShipmentId,
-      receiptType:
-        normalizedCode(snapshot.receipt_type) ??
-        normalizedCode(raw?.cancelType),
+      externalOrderId: latest.externalOrderId,
+      externalShipmentId: latest.externalShipmentId,
+      receiptType: normalizedCode(snapshot.receipt_type),
       receiptStatus: normalizedCode(snapshot.receipt_status),
       faultType: normalizedCode(snapshot.fault_by_type),
       reasonCode: nullableText(snapshot.reason_code),
       reasonLabel: nullableText(snapshot.reason_label),
       reasonCategory: nullableText(snapshot.reason_category),
       reasonDetail: nullableText(snapshot.reason_detail),
-      quantity: rawQuantity(raw, snapshot),
+      quantity: claimQuantity(items, snapshot),
       observedAt,
       externalCreatedAt: parseDate(snapshot.external_created_at),
       externalCompletedAt: parseDate(snapshot.external_completed_at),
       withdrawnAt: parseDate(withdrawalSnapshot.external_withdrawn_at),
       withdrawn: withdrawal !== null,
-      raw,
+      items,
     });
   }
 
@@ -559,7 +634,7 @@ function claimReason(claim: PreparedReturnClaim) {
   );
 }
 
-function claimItemVendorId(item: ReturnStatisticsRawItemInput) {
+function claimItemVendorId(item: ReturnStatisticsClaimItemInput) {
   return item.externalVendorItemId ?? item.sellerProductItemId;
 }
 
@@ -638,7 +713,7 @@ function buildClaimLinks(
       continue;
     }
 
-    if (!claim.externalCreatedAt || !claim.raw || claim.raw.items.length === 0) {
+    if (!claim.externalCreatedAt || claim.items.length === 0) {
       unlinkedReceiptIds.add(claim.receiptId);
       continue;
     }
@@ -647,7 +722,7 @@ function buildClaimLinks(
     const consumedSaleIds = new Set<number>();
     let ambiguous = false;
 
-    for (const item of claim.raw.items) {
+    for (const item of claim.items) {
       const vendorItemId = claimItemVendorId(item);
       const desiredCount = Math.max(0, Math.trunc(item.cancelCount));
 
@@ -1205,8 +1280,8 @@ function cancellationStatistics(
       trend.set(key, current);
     }
 
-    if (claim.raw?.items.length) {
-      for (const item of claim.raw.items) {
+    if (claim.items.length) {
+      for (const item of claim.items) {
         productValues.push({
           label:
             item.vendorItemName ??
@@ -1304,6 +1379,7 @@ export function aggregateReturnStatistics(
   options: {
     now?: Date;
     period?: StatisticsPeriodContext;
+    asOf?: ReturnStatisticsAsOfContext;
   } = {}
 ): ReturnStatisticsData {
   const now = options.now ?? quickHackClock.nowDate();
@@ -1313,10 +1389,8 @@ export function aggregateReturnStatistics(
   const previousPeriodBounds = statisticsDateTimeBounds(
     period.previousRange
   );
-  const cutoffExclusive = statisticsDateTimeBounds({
-    fromDate: period.dataCutoffDate,
-    toDate: period.dataCutoffDate,
-  }).toExclusive;
+  const asOf = resolveReturnStatisticsAsOfContext(period, options.asOf);
+  const cutoffExclusive = asOf.cutoffExclusive;
   const cutoffEvents = input.events.filter((event) => {
     const detectedAt = parseDate(event.detectedAt);
     return (
@@ -1327,6 +1401,13 @@ export function aggregateReturnStatistics(
   const cutoffInput = {
     ...input,
     events: cutoffEvents,
+    allocationLinks: input.allocationLinks.filter((link) => {
+      const createdAt = parseDate(link.createdAt);
+      return (
+        createdAt !== null &&
+        createdAt.getTime() < cutoffExclusive.getTime()
+      );
+    }),
   };
   const sales = prepareSales(input).filter(
     (sale) => sale.soldDate.getTime() < cutoffExclusive.getTime()
@@ -1766,12 +1847,12 @@ export function aggregateReturnStatistics(
 }
 
 export async function loadReturnStatisticsInput(
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  options: { asOf: ReturnStatisticsAsOfContext }
 ): Promise<ReturnStatisticsAggregateInput> {
   const [
     sales,
     events,
-    returnRaws,
     allocationLinks,
     inspections,
     approvals,
@@ -1781,6 +1862,7 @@ export async function loadReturnStatisticsInput(
         prisma.sales_records.findMany({
           where: {
             sale_status: { in: ["SOLD", "RETURNED"] },
+            sold_at: { lt: options.asOf.cutoffExclusive },
           },
           select: {
             sale_record_id: true,
@@ -1822,6 +1904,7 @@ export async function loadReturnStatisticsInput(
         prisma.coupang_raw_change_event.findMany({
           where: {
             event_type: { in: [...CLAIM_EVENT_TYPES] },
+            detected_at: { lt: options.asOf.cutoffExclusive },
           },
           select: {
             coupang_raw_change_event_id: true,
@@ -1853,38 +1936,10 @@ export async function loadReturnStatisticsInput(
     }),
     loadStatisticsCursorPages({
       loadPage: (cursor, take) =>
-        prisma.coupang_return_raw.findMany({
-          select: {
-            coupang_return_raw_id: true,
-            external_receipt_id: true,
-            external_order_id: true,
-            external_shipment_id: true,
-            cancel_type: true,
-            cancel_count: true,
-            items: {
-              select: {
-                external_vendor_item_id: true,
-                seller_product_item_id: true,
-                vendor_item_name: true,
-                cancel_count: true,
-              },
-              orderBy: { coupang_return_raw_item_id: "asc" },
-            },
-          },
-          orderBy: { coupang_return_raw_id: "asc" },
-          take,
-          ...(cursor === undefined
-            ? {}
-            : {
-                cursor: { coupang_return_raw_id: cursor },
-                skip: 1,
-              }),
-        }),
-      getCursor: (row) => row.coupang_return_raw_id,
-    }),
-    loadStatisticsCursorPages({
-      loadPage: (cursor, take) =>
         prisma.coupang_return_allocation.findMany({
+          where: {
+            created_at: { lt: options.asOf.cutoffExclusive },
+          },
           select: {
             coupang_return_allocation_id: true,
             coupang_return_raw_id: true,
@@ -1892,6 +1947,7 @@ export async function loadReturnStatisticsInput(
             external_receipt_id: true,
             pg_no: true,
             action_type: true,
+            created_at: true,
           },
           orderBy: { coupang_return_allocation_id: "asc" },
           take,
@@ -1911,6 +1967,7 @@ export async function loadReturnStatisticsInput(
             inspection_type: INSPECTION_TYPE.returnCheck,
             source_type: INSPECTION_SOURCE_TYPE.coupangReturn,
             coupang_return_allocation_id: { not: null },
+            checked_at: { lt: options.asOf.cutoffExclusive },
           },
           select: {
             inspection_id: true,
@@ -1938,6 +1995,7 @@ export async function loadReturnStatisticsInput(
           where: {
             channel: "COUPANG",
             request_type: SALES_CHANNEL_WRITE_REQUEST_TYPE.returnApproval,
+            requested_at: { lt: options.asOf.cutoffExclusive },
           },
           select: {
             sales_channel_write_request_id: true,
@@ -1996,20 +2054,6 @@ export async function loadReturnStatisticsInput(
         afterValue: field.after_value,
       })),
     })),
-    returnRaws: returnRaws.map((raw) => ({
-      returnRawId: raw.coupang_return_raw_id,
-      externalReceiptId: raw.external_receipt_id,
-      externalOrderId: raw.external_order_id,
-      externalShipmentId: raw.external_shipment_id,
-      cancelType: raw.cancel_type,
-      cancelCount: raw.cancel_count,
-      items: raw.items.map((item) => ({
-        externalVendorItemId: item.external_vendor_item_id,
-        sellerProductItemId: item.seller_product_item_id,
-        vendorItemName: item.vendor_item_name,
-        cancelCount: item.cancel_count,
-      })),
-    })),
     allocationLinks: allocationLinks.map((link) => ({
       returnAllocationId: link.coupang_return_allocation_id,
       returnRawId: link.coupang_return_raw_id,
@@ -2017,6 +2061,7 @@ export async function loadReturnStatisticsInput(
       externalReceiptId: link.external_receipt_id,
       pgNo: link.pg_no,
       actionType: link.action_type,
+      createdAt: requiredApiDateTime(link.created_at),
     })),
     inspections: inspections.flatMap((inspection) =>
       inspection.coupang_return_allocation_id === null
@@ -2054,9 +2099,13 @@ export async function getReturnStatisticsData(
   prisma: PrismaClient,
   options: { now?: Date; period?: StatisticsPeriodContext } = {}
 ) {
-  const input = await loadReturnStatisticsInput(prisma);
+  const now = options.now ?? quickHackClock.nowDate();
+  const period = options.period ?? resolveClosedStatisticsPeriod({ now });
+  const asOf = createReturnStatisticsAsOfContext(period);
+  const input = await loadReturnStatisticsInput(prisma, { asOf });
   return aggregateReturnStatistics(input, {
-    now: options.now,
-    period: options.period,
+    now,
+    period,
+    asOf,
   });
 }

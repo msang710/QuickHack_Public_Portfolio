@@ -120,6 +120,7 @@ assert.deepEqual(
 assert.equal(linuxClient.adbExecutableResolver.descriptor.state, "READY");
 assert.equal(linuxClient.printerBackend.descriptor.state, "READY");
 assert.equal(linuxOperator.packageLifecycle.descriptor.state, "READY");
+assert.equal(linuxOperator.processExecution.descriptor.state, "READY");
 const linuxStageCommand = linuxOperator.packageLifecycle.stageCommand("demo-client");
 assert.equal(linuxStageCommand.executable, process.execPath);
 assert.match(

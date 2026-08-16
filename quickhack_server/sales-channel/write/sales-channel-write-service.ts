@@ -744,20 +744,23 @@ async function createWriteRequest(command: SalesChannelWriteCommand) {
     });
 
     if (existing) {
-      if (
+      const retryable = isSalesChannelWriteRequestRetryable(
+        existing.request_status
+      );
+      const hasDifferentOperationIdentity =
         existing.channel !== command.channel ||
-        existing.request_type !== command.requestType ||
-        existing.request_digest !== requestDigest
+        existing.request_type !== command.requestType;
+      const hasChangedSnapshot = existing.request_digest !== requestDigest;
+
+      if (
+        hasDifferentOperationIdentity ||
+        (hasChangedSnapshot && !retryable)
       ) {
         throw new SalesChannelWriteReviewRequiredError(
           existing.sales_channel_write_request_id,
           "같은 멱등 키가 다른 외부 API 작업에 사용되었습니다. 처리 확인 메뉴에서 기존 요청을 확인하세요."
         );
       }
-
-      const retryable = isSalesChannelWriteRequestRetryable(
-        existing.request_status
-      );
 
       if (retryable) {
         const claimed = await tx.sales_channel_write_requests.updateMany({
@@ -785,39 +788,62 @@ async function createWriteRequest(command: SalesChannelWriteCommand) {
           );
         }
 
-        const [targetCount, resetTargets] = await Promise.all([
-          tx.sales_channel_write_request_targets.count({
-            where: {
-              sales_channel_write_request_id:
-                existing.sales_channel_write_request_id,
-            },
-          }),
-          tx.sales_channel_write_request_targets.updateMany({
-            where: {
-              sales_channel_write_request_id:
-                existing.sales_channel_write_request_id,
-              external_result_status:
-                SALES_CHANNEL_WRITE_TARGET_EXTERNAL_STATUS.notApplied,
-              local_finalization_status:
-                SALES_CHANNEL_WRITE_TARGET_LOCAL_STATUS.notRequired,
-            },
-            data: {
-              external_result_status:
-                SALES_CHANNEL_WRITE_TARGET_EXTERNAL_STATUS.pending,
-              external_result_code: null,
-              external_result_message: null,
-              retry_required: 0,
-              result_received_at: null,
-              local_finalization_status:
-                SALES_CHANNEL_WRITE_TARGET_LOCAL_STATUS.pending,
-              local_finalized_at: null,
-            },
-          }),
-        ]);
-        if (targetCount === 0 || resetTargets.count !== targetCount) {
+        const targetWhere = {
+          sales_channel_write_request_id:
+            existing.sales_channel_write_request_id,
+        };
+        const targetCount = await tx.sales_channel_write_request_targets.count({
+          where: targetWhere,
+        });
+        if (targetCount === 0) {
           throw new Error(
             "Retryable sales-channel write targets are inconsistent."
           );
+        }
+
+        if (hasChangedSnapshot) {
+          const deletedTargets =
+            await tx.sales_channel_write_request_targets.deleteMany({
+              where: targetWhere,
+            });
+          if (deletedTargets.count !== targetCount) {
+            throw new Error(
+              "Retryable sales-channel write targets are inconsistent."
+            );
+          }
+          await createWriteRequestTargets({
+            tx,
+            requestId: existing.sales_channel_write_request_id,
+            targets: writeCommandTargets(command),
+            createdAt: timestamp,
+          });
+        } else {
+          const resetTargets =
+            await tx.sales_channel_write_request_targets.updateMany({
+              where: {
+                ...targetWhere,
+                external_result_status:
+                  SALES_CHANNEL_WRITE_TARGET_EXTERNAL_STATUS.notApplied,
+                local_finalization_status:
+                  SALES_CHANNEL_WRITE_TARGET_LOCAL_STATUS.notRequired,
+              },
+              data: {
+                external_result_status:
+                  SALES_CHANNEL_WRITE_TARGET_EXTERNAL_STATUS.pending,
+                external_result_code: null,
+                external_result_message: null,
+                retry_required: 0,
+                result_received_at: null,
+                local_finalization_status:
+                  SALES_CHANNEL_WRITE_TARGET_LOCAL_STATUS.pending,
+                local_finalized_at: null,
+              },
+            });
+          if (resetTargets.count !== targetCount) {
+            throw new Error(
+              "Retryable sales-channel write targets are inconsistent."
+            );
+          }
         }
 
         const request = await tx.sales_channel_write_requests.update({
@@ -826,6 +852,12 @@ async function createWriteRequest(command: SalesChannelWriteCommand) {
               existing.sales_channel_write_request_id,
           },
           data: {
+            ...(hasChangedSnapshot
+              ? {
+                  request_digest: requestDigest,
+                  ...snapshotData,
+                }
+              : {}),
             request_status: SALES_CHANNEL_WRITE_REQUEST_STATUS.pending,
             revision: { increment: 1 },
             failure_stage: null,

@@ -26,6 +26,7 @@ import {
   type CoupangApiCredentialContext,
 } from "@/quickhack_server/sales-channel/coupang/api-client";
 import { recordValidatedIntegrationInboxEvidence } from "@/quickhack_server/integration/inbox-service";
+import { minimizeCoupangOrdersheetEvidenceForStorage } from "@/quickhack_server/integration/integration-evidence-lifecycle";
 import {
   claimIntegrationProjectionJob,
   claimIntegrationProjectionJobById,
@@ -1310,6 +1311,23 @@ async function ensureCoupangOrderReference(
   `;
 }
 
+function canonicalReturnHistoryItems(
+  items: NormalizedCoupangReturnItem[]
+) {
+  const rows = items.map((item) => ({
+    externalVendorItemId: item.externalVendorItemId,
+    sellerProductItemId: item.sellerProductItemId,
+    vendorItemName: item.vendorItemName,
+    cancelCount: Math.max(0, Math.trunc(item.cancelCount)),
+  }));
+  rows.sort((left, right) => {
+    const leftKey = JSON.stringify(left);
+    const rightKey = JSON.stringify(right);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
+  return JSON.stringify(rows);
+}
+
 function returnHistorySnapshot(
   returnRequest: NormalizedCoupangReturn
 ): CoupangReturnHistorySnapshot {
@@ -1327,6 +1345,7 @@ function returnHistorySnapshot(
     reason_category: returnRequest.reasonCategory,
     reason_detail: returnRequest.historyReasonDetail,
     cancel_count: String(Math.max(0, returnRequest.cancelCount)),
+    items_json: canonicalReturnHistoryItems(returnRequest.items),
   };
 }
 
@@ -2474,6 +2493,11 @@ async function syncOrdersheetStatuses(input: {
             rawPayloadText,
             occurredAt: receivedAt,
             validate: validateCoupangOrdersheetPage,
+            storagePolicy: {
+              retainRawPayload: false,
+              minimizeNormalizedResult:
+                minimizeCoupangOrdersheetEvidenceForStorage,
+            },
           });
           const page = inbox.normalizedResult;
 

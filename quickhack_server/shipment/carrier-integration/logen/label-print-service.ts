@@ -998,6 +998,18 @@ export async function failLogenLabelPrint(input: {
               item.label_print_status === LOGEN_LABEL_PRINT_STATUS.failed
           );
       if (
+        uncertain &&
+        activeRequestMatches(
+          batch,
+          requestKey,
+          payloadHash,
+          printAttemptCount
+        ) &&
+        replayMatches
+      ) {
+        return;
+      }
+      if (
         completedAttemptMatches(batch, payloadHash, printAttemptCount) &&
         replayMatches
       ) {
@@ -1054,7 +1066,7 @@ export async function failLogenLabelPrint(input: {
         },
         data: {
           label_print_status: nextStatus,
-          label_active_request_key: null,
+          label_active_request_key: uncertain ? requestKey : null,
           label_last_error_code: errorCode,
           label_last_error_message: errorMessage,
           updated_at: now,
@@ -1149,8 +1161,7 @@ export async function resolveUnknownLogenLabelPrint(input: {
         return;
       }
       if (
-        batch.label_print_status !== LOGEN_LABEL_PRINT_STATUS.unknown ||
-        batch.label_active_request_key !== null
+        batch.label_print_status !== LOGEN_LABEL_PRINT_STATUS.unknown
       ) {
         throw labelPrintStateConflict(
           "Only the current unknown label print attempt can be resolved."
@@ -1183,10 +1194,11 @@ export async function resolveUnknownLogenLabelPrint(input: {
           carrier_invoice_issue_batch_id: issueBatchId,
           label_print_attempt_count: printAttemptCount,
           label_print_status: LOGEN_LABEL_PRINT_STATUS.unknown,
-          label_active_request_key: null,
+          label_active_request_key: batch.label_active_request_key,
         },
         data: {
           label_print_status: nextStatus,
+          label_active_request_key: null,
           label_confirmed_at:
             nextStatus === LOGEN_LABEL_PRINT_STATUS.confirmed ? now : null,
           ...(printed ? { label_last_spooled_at: now } : {}),
@@ -1243,6 +1255,7 @@ export async function resolveUnknownLogenLabelPrint(input: {
           ...activityLogChangeData(null, {
             printed,
             printAttemptCount,
+            requestKey: batch.label_active_request_key,
             issueItemIds: targetItems.map(
               (item) => item.carrier_invoice_issue_item_id
             ),

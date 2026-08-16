@@ -163,7 +163,7 @@ try {
       },
     });
   assert.equal(firstBatch.status, "COMPLETE");
-  assert.equal(firstBatch.calculation_version, "statistics-daily-v2");
+  assert.equal(firstBatch.calculation_version, "statistics-daily-v3");
   assert.equal(firstBatch.items.length, 4);
   assert.equal(
     firstBatch.items.every((item) => item.payload_schema_version === 2),

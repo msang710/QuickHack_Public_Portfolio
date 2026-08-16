@@ -26,6 +26,10 @@ import {
   authorizeAccountMutation,
   lockAccountTarget,
 } from "@/quickhack_server/auth/account-security-aggregate";
+import {
+  createMutationReceipt,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -160,55 +164,6 @@ async function recoveryCodeCountsByUser(
   });
 
   return new Map(rows.map((row) => [row.user_id, row._count._all]));
-}
-
-async function loadUserSnapshot(
-  prisma: typeof import("@/quickhack_server/core/prisma").prisma,
-  userId: number
-) {
-  const [user, recoveryCounts] = await Promise.all([
-    prisma.users.findUnique({
-      where: { user_id: userId },
-      select: {
-        user_id: true,
-        username: true,
-        role: true,
-        is_developer: true,
-        mobile_packing_enabled: true,
-        must_change_password: true,
-        is_active: true,
-        revision: true,
-        created_at: true,
-        updated_at: true,
-        user_totp_credentials: {
-          select: {
-            enabled: true,
-            verified_at: true,
-            locked_until: true,
-          },
-        },
-        employee_profiles: {
-          select: {
-            display_name: true,
-            phone: true,
-            email: true,
-            birth_date: true,
-            hire_date: true,
-          },
-        },
-      },
-    }),
-    recoveryCodeCountsByUser(prisma),
-  ]);
-
-  if (!user) {
-    throw publicNotFound("ACCOUNT_NOT_FOUND", "계정을 찾을 수 없습니다.");
-  }
-
-  return userSnapshot({
-    ...user,
-    unusedRecoveryCodeCount: recoveryCounts.get(user.user_id) ?? 0,
-  });
 }
 
 async function auth(request: NextRequest) {
@@ -599,13 +554,32 @@ async function handleAdminUsersPost(
           }
         );
 
-        return after;
+        const unusedRecoveryCodeCount = before
+          ? await tx.user_totp_recovery_codes.count({
+              where: { user_id: after.user_id, used_at: null },
+            })
+          : 0;
+
+        return userSnapshot({
+          ...after,
+          user_totp_credentials: before?.user_totp_credentials ?? null,
+          unusedRecoveryCodeCount,
+        });
+      });
+
+      const receipt = createMutationReceipt(saved, {
+        operationId: stableMutationOperationId("admin-account-save", [
+          saved.userId,
+          saved.revision,
+        ]),
+        committedAt: saved.updatedAt,
       });
 
       return NextResponse.json({
         ok: true,
-        message: inputMessage(saved.user_id === input.userId, Boolean(input.tempPassword)),
-        item: await loadUserSnapshot(authResult.prisma, saved.user_id),
+        message: inputMessage(saved.userId === input.userId, Boolean(input.tempPassword)),
+        item: saved,
+        receipt,
       });
     }
 
@@ -669,13 +643,30 @@ async function handleAdminUsersPost(
           accountAuditSnapshot(after)
         );
 
-        return after;
+        const unusedRecoveryCodeCount = await tx.user_totp_recovery_codes.count({
+          where: { user_id: after.user_id, used_at: null },
+        });
+
+        return userSnapshot({
+          ...after,
+          user_totp_credentials: before.user_totp_credentials,
+          unusedRecoveryCodeCount,
+        });
+      });
+
+      const receipt = createMutationReceipt(updated, {
+        operationId: stableMutationOperationId("admin-account-deactivate", [
+          updated.userId,
+          updated.revision,
+        ]),
+        committedAt: updated.updatedAt,
       });
 
       return NextResponse.json({
         ok: true,
         message: "계정을 비활성화했습니다.",
-        item: await loadUserSnapshot(authResult.prisma, updated.user_id),
+        item: updated,
+        receipt,
       });
     }
 
@@ -692,7 +683,7 @@ async function handleAdminUsersPost(
 
       const { resetUserTotpState } = await loadTotpService();
 
-      await authResult.prisma.$transaction(async (tx) => {
+      const updated = await authResult.prisma.$transaction(async (tx) => {
         await authorizeAccountMutation(tx, authResult.securityContext);
         const target = await lockAccountTarget(tx, userId, expectedRevision);
 
@@ -704,7 +695,7 @@ async function handleAdminUsersPost(
         }
 
         await resetUserTotpState(tx, userId);
-        await tx.users.update({
+        const after = await tx.users.update({
           where: { user_id: userId },
           data: {
             revision: { increment: 1 },
@@ -729,12 +720,28 @@ async function handleAdminUsersPost(
             recoveryCodeCount: 0,
           }
         );
+
+        return userSnapshot({
+          ...after,
+          employee_profiles: target.employee_profiles,
+          user_totp_credentials: null,
+          unusedRecoveryCodeCount: 0,
+        });
+      });
+
+      const receipt = createMutationReceipt(updated, {
+        operationId: stableMutationOperationId("admin-account-reset-totp", [
+          updated.userId,
+          updated.revision,
+        ]),
+        committedAt: updated.updatedAt,
       });
 
       return NextResponse.json({
         ok: true,
         message: "OTP 설정을 초기화했습니다. 대상 계정은 다시 로그인해야 합니다.",
-        item: await loadUserSnapshot(authResult.prisma, userId),
+        item: updated,
+        receipt,
       });
     }
 
@@ -752,7 +759,7 @@ async function handleAdminUsersPost(
       const { replaceUserTotpRecoveryCodes, requireTotpKeyReady } =
         await loadTotpService();
       await requireTotpKeyReady();
-      const recoveryCodes = await authResult.prisma.$transaction(async (tx) => {
+      const generated = await authResult.prisma.$transaction(async (tx) => {
         await authorizeAccountMutation(tx, authResult.securityContext);
         const target = await lockAccountTarget(tx, userId, expectedRevision);
 
@@ -771,7 +778,7 @@ async function handleAdminUsersPost(
         }
 
         const codes = await replaceUserTotpRecoveryCodes(tx, userId);
-        await tx.users.update({
+        const after = await tx.users.update({
           where: { user_id: userId },
           data: {
             revision: { increment: 1 },
@@ -797,14 +804,38 @@ async function handleAdminUsersPost(
           }
         );
 
-        return codes;
+        return {
+          recoveryCodes: codes,
+          item: userSnapshot({
+            ...after,
+            employee_profiles: target.employee_profiles,
+            user_totp_credentials: target.user_totp_credentials,
+            unusedRecoveryCodeCount: codes.length,
+          }),
+        };
       });
+
+      const receipt = createMutationReceipt(
+        {
+          item: generated.item,
+          recoveryCodeCount: generated.recoveryCodes.length,
+          oneTimeResultDelivered: true,
+        },
+        {
+          operationId: stableMutationOperationId(
+            "admin-account-recovery-codes",
+            [generated.item.userId, generated.item.revision]
+          ),
+          committedAt: generated.item.updatedAt,
+        }
+      );
 
       return NextResponse.json({
         ok: true,
         message: "OTP 복구코드를 발급했습니다. 이 코드는 지금 한 번만 표시됩니다.",
-        item: await loadUserSnapshot(authResult.prisma, userId),
-        recoveryCodes,
+        item: generated.item,
+        recoveryCodes: generated.recoveryCodes,
+        receipt,
       });
     }
 

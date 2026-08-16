@@ -141,9 +141,15 @@ try {
     (error) =>
       error?.status === 403 && error?.code === "MOBILE_DEVICE_AUTH_FAILED"
   );
-  const activated = await service.activateMobileDevice(activationInput, owner.context);
-  assert.equal(activated.registrationState, "ACTIVE");
-  assert.equal(activated.deviceToken, deviceToken);
+  // Simulate an ACTIVE commit whose response is lost before Android can save
+  // the final credential. The restarted client replays this durable request.
+  await service.activateMobileDevice(activationInput, owner.context);
+  assert.equal(
+    (await prisma.mobile_registered_devices.findUniqueOrThrow({
+      where: { device_id: first.bootstrap.deviceId },
+    })).registration_state,
+    "ACTIVE"
+  );
 
   const replay = await service.activateMobileDevice(activationInput, owner.context);
   assert.equal(replay.deviceToken, deviceToken);
@@ -181,7 +187,7 @@ try {
   const revoked = await service.revokeMobileDevice(
     {
       deviceId: first.bootstrap.deviceId,
-      expectedRegistrationRevision: activated.registrationRevision,
+      expectedRegistrationRevision: replay.registrationRevision,
     },
     owner.context
   );
@@ -191,6 +197,43 @@ try {
       where: { device_id: first.bootstrap.deviceId },
     })).device_token_hash,
     null
+  );
+  await assert.rejects(
+    () => service.activateMobileDevice(activationInput, owner.context),
+    (error) =>
+      error?.status === 409 &&
+      error?.code === "MOBILE_DEVICE_PROVISIONING_INVALIDATED"
+  );
+
+  const expiring = await service.beginMobileDeviceProvisioning(
+    { userId: owner.row.user_id, adbSerial: "PHYSICAL-USB-EXPIRED", label: "expired" },
+    owner.context,
+    keyAccess
+  );
+  await prisma.mobile_registered_devices.update({
+    where: { device_id: expiring.bootstrap.deviceId },
+    data: { provisioning_expires_at: new Date("2000-01-01T00:00:00Z") },
+  });
+  const expiredToken = crypto.randomBytes(32).toString("base64url");
+  const expiredInput = {
+    deviceId: expiring.bootstrap.deviceId,
+    registrationRevision: expiring.bootstrap.registrationRevision,
+    provisioningToken: expiring.bootstrap.provisioningToken,
+    appInstanceId: "app-instance-expired",
+    deviceToken: expiredToken,
+    ...proof({
+      deviceId: expiring.bootstrap.deviceId,
+      registrationRevision: expiring.bootstrap.registrationRevision,
+      provisioningToken: expiring.bootstrap.provisioningToken,
+      appInstanceId: "app-instance-expired",
+      deviceToken: expiredToken,
+    }),
+  };
+  await assert.rejects(
+    () => service.activateMobileDevice(expiredInput, owner.context),
+    (error) =>
+      error?.status === 409 &&
+      error?.code === "MOBILE_DEVICE_PROVISIONING_EXPIRED"
   );
 
   const second = await service.beginMobileDeviceProvisioning(

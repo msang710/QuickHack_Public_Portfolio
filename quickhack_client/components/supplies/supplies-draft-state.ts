@@ -15,6 +15,11 @@ export type SupplyMovementDraft = {
   reason: string;
 };
 
+export type PendingSupplyMovementOperation = {
+  fingerprint: string;
+  operationId: string;
+};
+
 function normalizeSupplyMovementTargetId(supplyId: string) {
   return supplyId === "NONE" ? "" : supplyId;
 }
@@ -35,6 +40,35 @@ export function createSupplyMovementTargetState(
   return {
     current,
     baseline: { ...current },
+  };
+}
+
+export function supplyMovementCommandFingerprint(draft: SupplyMovementDraft) {
+  const normalizedQuantity = Number(draft.quantity);
+  return JSON.stringify({
+    supplyId: draft.supplyId.trim(),
+    movementType: draft.movementType.trim().toUpperCase(),
+    quantity:
+      draft.quantity.trim() && Number.isInteger(normalizedQuantity)
+        ? normalizedQuantity
+        : draft.quantity.trim(),
+    reason: draft.reason.trim(),
+  });
+}
+
+export function prepareSupplyMovementOperation(
+  draft: SupplyMovementDraft,
+  pending: PendingSupplyMovementOperation | null,
+  createUuid: () => string
+): PendingSupplyMovementOperation {
+  const fingerprint = supplyMovementCommandFingerprint(draft);
+  if (pending?.fingerprint === fingerprint) {
+    return pending;
+  }
+
+  return {
+    fingerprint,
+    operationId: `supply:movement:${createUuid()}`,
   };
 }
 

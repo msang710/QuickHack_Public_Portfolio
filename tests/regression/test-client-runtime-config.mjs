@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -7,8 +7,11 @@ import {
   CLIENT_RUNTIME_PORT,
   clientRuntimePortForArtifact,
   normalizeServerUrl,
+  resolveClientCaCertificateFile,
   resolveClientServerUrl,
+  resolveClientTrustBundle,
 } from "../../tools/client-runtime-config.mjs";
+import { writeClientTrustBundleSync } from "../../tools/trust-bundle.mjs";
 
 const root = mkdtempSync(path.join(os.tmpdir(), "quickhack-client-runtime-config-"));
 const configDirectory = path.join(root, "config");
@@ -29,38 +32,56 @@ try {
     (error) => error?.code === "PACKAGE_ARTIFACT_INVALID"
   );
 
-  writeFileSync(
-    path.join(configDirectory, "server-url.txt"),
-    "https://quickhack.example:3443\r\n",
+  const sourceCa = readFileSync(
+    "quickhack_android/app/src/test/resources/managed-ca-one.pem",
     "utf8"
   );
+  writeClientTrustBundleSync(configDirectory, {
+    origin: "https://quickhack.example:3443",
+    currentCaPem: sourceCa,
+    generatedAt: new Date().toISOString(),
+  });
   assert.equal(
     resolveClientServerUrl(root),
     "https://quickhack.example:3443",
     "The trusted server-url.txt value was not used."
   );
+  assert.equal(resolveClientTrustBundle(root).origin, "https://quickhack.example:3443");
+  assert.equal(
+    resolveClientCaCertificateFile(root),
+    path.join(configDirectory, "quickhack-ca-bundle.pem")
+  );
 
-  assert.throws(() => normalizeServerUrl("http://quickhack.example:3443"), /https/);
+  assert.throws(() => normalizeServerUrl("http://quickhack.example:3443"), /https/i);
   assert.throws(
     () => normalizeServerUrl("https://user:password@quickhack.example:3443"),
-    /protocol, host, and port/
+    /HTTPS origin/
   );
   assert.throws(
     () => normalizeServerUrl("https://quickhack.example:3443/path"),
-    /protocol, host, and port/
+    /HTTPS origin/
   );
 
-  rmSync(path.join(configDirectory, "server-url.txt"));
+  const legacyRoot = path.join(root, "legacy");
+  const legacyConfig = path.join(legacyRoot, "config");
+  mkdirSync(legacyConfig, { recursive: true });
   writeFileSync(
-    path.join(configDirectory, "client-url.txt"),
+    path.join(legacyConfig, "server-url.txt"),
     "https://legacy.example:3443\r\n",
     "utf8"
   );
   assert.throws(
-    () => resolveClientServerUrl(root),
-    /server-url\.txt/,
-    "The removed client-url.txt compatibility path was still accepted."
+    () => resolveClientServerUrl(legacyRoot),
+    /trust-bundle\.json|Trust bundle file is missing/,
+    "A legacy URL-only client configuration was still accepted."
   );
+
+  writeFileSync(
+    path.join(configDirectory, "server-url.txt"),
+    "https://attacker.invalid\r\n",
+    "utf8"
+  );
+  assert.throws(() => resolveClientTrustBundle(root), /does not match/);
 
   console.log("Client runtime file-owned configuration verified.");
 } finally {

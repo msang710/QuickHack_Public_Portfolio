@@ -237,6 +237,7 @@ try {
       reason: "audit convergence",
       sourceType: "TEST",
       sourceId: "movement-1",
+      idempotencyKey: "supply:movement:convergence-audit",
     },
     user
   );

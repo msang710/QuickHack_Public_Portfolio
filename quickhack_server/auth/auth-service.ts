@@ -18,6 +18,12 @@ import {
 import type { SensitiveAction } from "@/quickhack_shared/auth/sensitive-auth";
 import type { Prisma } from "@/generated/prisma/client";
 import { lockServerSecurityState } from "@/quickhack_server/auth/security-state";
+import { getRuntimeConfig } from "@/quickhack_shared/core/runtime";
+import {
+  QUICKHACK_HTTPS_TERMINATION_ENV,
+  QUICKHACK_PUBLIC_ORIGIN_ENV,
+  resolveTransportSecurityPolicy,
+} from "@/quickhack_shared/security/transport-security-policy.mjs";
 
 export {
   AUTH_COOKIE_NAME,
@@ -37,11 +43,13 @@ function expiresAtSql() {
 }
 
 function shouldUseSecureCookie() {
-  const value = String(process.env.QUICKHACK_COOKIE_SECURE || "")
-    .trim()
-    .toLowerCase();
-
-  return ["1", "true", "yes", "y"].includes(value);
+  const runtimeConfig = getRuntimeConfig();
+  return resolveTransportSecurityPolicy({
+    runtimeRole: runtimeConfig.role,
+    production: runtimeConfig.production,
+    httpsTerminated: process.env[QUICKHACK_HTTPS_TERMINATION_ENV],
+    publicOrigin: process.env[QUICKHACK_PUBLIC_ORIGIN_ENV],
+  }).secureSessionCookie;
 }
 
 export function createSessionToken() {

@@ -18,22 +18,47 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import javax.net.ssl.HttpsURLConnection;
+
 final class QuickHackApi {
     private String baseUrl;
     private String cookieHeader = "";
+    private ManagedTrustBundle trustBundle;
 
     QuickHackApi(String baseUrl) {
+        this(baseUrl, null);
+    }
+
+    QuickHackApi(String baseUrl, ManagedTrustBundle trustBundle) {
         this.baseUrl = baseUrl == null || baseUrl.trim().isEmpty()
             ? ""
             : ServerOrigin.normalize(baseUrl);
+        setManagedTrustBundle(trustBundle);
     }
 
     boolean setBaseUrl(String value) {
         String next = ServerOrigin.normalize(value);
         boolean changed = !baseUrl.isEmpty() && !ServerOrigin.same(baseUrl, next);
-        if (changed) cookieHeader = "";
+        if (changed || (trustBundle != null && !ServerOrigin.same(trustBundle.origin, next))) {
+            cookieHeader = "";
+            trustBundle = null;
+        }
         baseUrl = next;
         return changed;
+    }
+
+    void setManagedTrustBundle(ManagedTrustBundle value) {
+        if (value != null && !baseUrl.isEmpty() && !ServerOrigin.same(baseUrl, value.origin)) {
+            throw new IllegalArgumentException("Managed trust bundle origin does not match the API origin.");
+        }
+        if (
+            trustBundle != null &&
+            value != null &&
+            !trustBundle.identityDigestSha256.equals(value.identityDigestSha256)
+        ) {
+            cookieHeader = "";
+        }
+        trustBundle = value;
     }
 
     String getBaseUrl() {
@@ -75,7 +100,22 @@ final class QuickHackApi {
 
     private HttpURLConnection open(String path, String method) throws IOException {
         if (baseUrl.isEmpty()) throw new IOException("QuickHack server origin is not configured.");
-        HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
+        URL target = new URL(baseUrl + path);
+        HttpURLConnection connection = (HttpURLConnection) target.openConnection();
+        if (connection instanceof HttpsURLConnection) {
+            if (trustBundle == null || !ServerOrigin.same(baseUrl, trustBundle.origin)) {
+                throw new IOException("Authenticated QuickHack managed trust is required for this origin.");
+            }
+            try {
+                ((HttpsURLConnection) connection).setSSLSocketFactory(
+                    trustBundle.socketFactory()
+                );
+            } catch (Exception error) {
+                throw new IOException("QuickHack managed TLS could not be initialized.", error);
+            }
+        } else if (!BuildConfig.DEBUG) {
+            throw new IOException("Release builds require HTTPS managed trust.");
+        }
         connection.setInstanceFollowRedirects(false);
         connection.setRequestMethod(method);
         connection.setConnectTimeout(15000);
