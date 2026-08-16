@@ -1,0 +1,88 @@
+/* QuickHack note: QuickHack 웹 UI의 전역 Tailwind 스타일과 공통 화면 효과를 정의합니다. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 222 30% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 30% 12%;
+  --primary: 178 63% 28%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 18% 94%;
+  --secondary-foreground: 222 24% 18%;
+  --muted: 210 16% 92%;
+  --muted-foreground: 215 12% 42%;
+  --accent: 38 88% 54%;
+  --accent-foreground: 222 30% 12%;
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 18% 84%;
+  --input: 214 18% 84%;
+  --ring: 178 63% 28%;
+  --radius: 6px;
+}
+
+* {
+  @apply border-border;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family:
+    "Malgun Gothic",
+    "Apple SD Gothic Neo",
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@keyframes quickhack-status-flash-success {
+  0% {
+    box-shadow: 0 0 0 0 hsl(160 84% 39% / 0.45);
+  }
+
+  35% {
+    box-shadow: 0 0 0 5px hsl(160 84% 39% / 0.22);
+    background-color: hsl(151 81% 96%);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 hsl(160 84% 39% / 0);
+  }
+}
+
+@keyframes quickhack-status-flash-warning {
+  0% {
+    box-shadow: 0 0 0 0 hsl(38 92% 50% / 0.55);
+  }
+
+  35% {
+    box-shadow: 0 0 0 5px hsl(38 92% 50% / 0.28);
+    background-color: hsl(48 96% 89%);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 hsl(38 92% 50% / 0);
+  }
+}
+
+.quickhack-status-flash-success {
+  animation: quickhack-status-flash-success 900ms ease-out;
+}
+
+.quickhack-status-flash-warning {
+  animation: quickhack-status-flash-warning 900ms ease-out;
+}

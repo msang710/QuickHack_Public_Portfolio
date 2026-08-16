@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "plugins": [],
+    "types": ["node"]
+  },
+  "include": [
+    "quickhack_server/shipment/carrier-integration/**/*.ts",
+    "quickhack_server/core/prisma.ts",
+    "quickhack_shared/core/runtime.ts",
+    "quickhack_shared/core/time.ts",
+    "generated/prisma/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "tools/node-portable"
+  ]
+}

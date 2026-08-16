@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "capabilities": [
+    { "role": "server", "key": "postgresql", "ownerStage": "PR-04" },
+    { "role": "operator", "key": "owned-process-termination", "ownerStage": "PR-04" },
+    { "role": "server", "key": "secret-protection", "ownerStage": "PR-05" },
+    { "role": "client", "key": "printer-and-adb", "ownerStage": "PR-07" },
+    { "role": "operator", "key": "removable-volume", "ownerStage": "PR-08" },
+    { "role": "operator", "key": "service-and-launcher", "ownerStage": "PR-09" },
+    { "role": "operator", "key": "package-lifecycle", "ownerStage": "PR-10" }
+  ]
+}

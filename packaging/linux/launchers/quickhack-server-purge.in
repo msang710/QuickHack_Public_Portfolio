@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "Purge is irreversible and removes only the selected QuickHack artifact state." >&2
+exec /usr/bin/sudo "@QUICKHACK_NODE_EXECUTABLE@" "@QUICKHACK_PACKAGE_LIFECYCLE_ENTRY@" purge --artifact "@QUICKHACK_ARTIFACT_KIND@" "$@"

@@ -1,0 +1,125 @@
+# Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build and packaging outputs
+build/
+dist/
+release/
+*.egg-info/
+*.manifest
+*.spec
+
+# Native/binary artifacts
+*.exe
+*.dll
+*.pyd
+*.so
+*.dylib
+
+# ADB platform-tools
+# Required for local distribution, but do not publish vendor binaries to GitHub.
+platform-tools/
+tools/node-portable/
+tools/android-sdk/
+tools/android-avd/
+tools/gradle/
+tools/commandlinetools-*.zip
+
+# Android local build state
+quickhack_android/.gradle/
+quickhack_android/local.properties
+quickhack_android/**/build/
+
+# Node dependencies
+node_modules/
+generated/
+.next/
+.next-client/
+.next-verify-*/
+tsconfig.tsbuildinfo
+
+# Local reference documents (including carrier API specifications)
+docs/
+
+# Runtime logs and local data
+logs/
+screenshots/*
+
+# Local-only portfolio documents and visualization sources
+/portfolio/
+.tmp/
+.codex-temp/
+.tmp-*/
+.tmp-*-screenshot/
+.tmp-*-cdp/
+mock_server/database/
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.qhb
+*.csv
+!README*.csv
+!demo/
+
+# Local-only development helpers
+.codex-remote-attachments/
+.agents/
+tools/dev/
+tools/docs/
+tools/sync-coupang-open-api-reference.ps1
+
+# Product planning and implementation records live in the private SDD archive.
+/specs/
+
+# Secrets, credentials, and local environment files
+.env
+.env.*
+*.env
+*.pem
+!quickhack_android/app/src/main/res/raw/quickhack_ca.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.qhkey
+quickhack-keys/
+database/qhkey/
+database/security/
+credentials*.json
+credential*.json
+service-account*.json
+service_account*.json
+token*.json
+secret*.json
+client_secret*.json
+
+# Local-only config overrides
+config.local.py
+local_config.py
+settings.local.py
+*.local.json
+*.local.yaml
+*.local.yml
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+/generated/prisma

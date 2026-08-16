@@ -1,0 +1,26 @@
+[Unit]
+Description=QuickHack @QUICKHACK_PACKAGE_FLAVOR@ server console
+Requires=@QUICKHACK_POSTGRESQL_UNIT@ @QUICKHACK_MIGRATION_UNIT@
+After=@QUICKHACK_POSTGRESQL_UNIT@ @QUICKHACK_MIGRATION_UNIT@
+
+[Service]
+Type=simple
+User=@QUICKHACK_APPLICATION_USER@
+Group=@QUICKHACK_APPLICATION_GROUP@
+WorkingDirectory=@QUICKHACK_INSTALL_ROOT@
+ExecStart=@QUICKHACK_NODE_EXECUTABLE@ @QUICKHACK_CONSOLE_ENTRY@ --runtime-config @QUICKHACK_RUNTIME_CONFIG@ --package-manifest @QUICKHACK_PACKAGE_MANIFEST@ --system-service --no-open
+@QUICKHACK_APPLICATION_CREDENTIAL_DIRECTIVES@
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=240
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectProc=invisible
+ReadWritePaths=@QUICKHACK_CONFIG_DIR@ @QUICKHACK_DATA_DIR@ @QUICKHACK_STATE_DIR@ @QUICKHACK_LOG_DIR@ @QUICKHACK_CACHE_DIR@
+
+[Install]
+WantedBy=multi-user.target

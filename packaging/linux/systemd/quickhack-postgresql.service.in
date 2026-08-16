@@ -1,0 +1,24 @@
+[Unit]
+Description=QuickHack PostgreSQL 18 database
+After=local-fs.target
+Before=@QUICKHACK_APPLICATION_UNIT@
+ConditionPathIsDirectory=@QUICKHACK_PGDATA@
+
+[Service]
+Type=notify
+User=@QUICKHACK_POSTGRESQL_USER@
+Group=@QUICKHACK_POSTGRESQL_GROUP@
+ExecStart=@QUICKHACK_POSTGRES_EXECUTABLE@ -D @QUICKHACK_PGDATA@ -c config_file=@QUICKHACK_POSTGRESQL_CONFIG@
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGINT
+TimeoutStopSec=240
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=@QUICKHACK_PGDATA@ @QUICKHACK_POSTGRESQL_LOG_DIR@
+
+[Install]
+WantedBy=multi-user.target

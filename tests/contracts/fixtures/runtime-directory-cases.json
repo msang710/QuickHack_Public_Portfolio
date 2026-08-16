@@ -1,0 +1,200 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "windows-server-source",
+      "role": "server",
+      "platform": "win32",
+      "input": {
+        "appRoot": "C:\\work\\quickhack",
+        "dataDirectory": "D:\\QuickHackData",
+        "homeDirectory": "C:\\Users\\worker",
+        "deployment": "development",
+        "environment": {
+          "pRoGrAmDaTa": "C:\\ProgramData",
+          "localappdata": "C:\\Users\\worker\\AppData\\Local"
+        }
+      },
+      "expected": {
+        "appRoot": "C:\\work\\quickhack",
+        "runtimeDir": "C:\\work\\quickhack\\runtime",
+        "configDir": "C:\\ProgramData\\QuickHack\\config",
+        "dataDir": "D:\\QuickHackData",
+        "stateDir": "C:\\ProgramData\\QuickHack\\state",
+        "logDir": "C:\\ProgramData\\QuickHack\\logs",
+        "cacheDir": "C:\\ProgramData\\QuickHack\\cache",
+        "secretDir": "D:\\QuickHackData\\security",
+        "artifactDir": "C:\\Users\\worker\\AppData\\Local\\QuickHackArtifacts"
+      }
+    },
+    {
+      "name": "windows-client",
+      "role": "client",
+      "platform": "win32",
+      "input": {
+        "appRoot": "C:\\QuickHackClient",
+        "homeDirectory": "C:\\Users\\worker",
+        "deployment": "development",
+        "environment": {
+          "LOCALAPPDATA": "C:\\Users\\worker\\AppData\\Local"
+        }
+      },
+      "expected": {
+        "appRoot": "C:\\QuickHackClient",
+        "runtimeDir": "C:\\QuickHackClient\\runtime",
+        "configDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\client",
+        "dataDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\client",
+        "stateDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\client",
+        "logDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\client\\logs",
+        "cacheDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\client\\cache",
+        "secretDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\client\\security",
+        "artifactDir": "C:\\Users\\worker\\AppData\\Local\\QuickHackArtifacts"
+      }
+    },
+    {
+      "name": "linux-development-client",
+      "role": "client",
+      "platform": "linux",
+      "input": {
+        "appRoot": "/opt/quickhack-client",
+        "homeDirectory": "/home/worker",
+        "deployment": "development",
+        "environment": {
+          "XDG_CONFIG_HOME": "/home/worker/custom-config",
+          "XDG_DATA_HOME": "/home/worker/custom-data",
+          "XDG_STATE_HOME": "/home/worker/custom-state",
+          "XDG_CACHE_HOME": "/home/worker/custom-cache"
+        }
+      },
+      "expected": {
+        "appRoot": "/opt/quickhack-client",
+        "runtimeDir": "/opt/quickhack-client/runtime",
+        "configDir": "/home/worker/custom-config/quickhack",
+        "dataDir": "/home/worker/custom-data/quickhack",
+        "stateDir": "/home/worker/custom-state/quickhack",
+        "logDir": "/home/worker/custom-state/quickhack/logs",
+        "cacheDir": "/home/worker/custom-cache/quickhack",
+        "secretDir": "/home/worker/custom-data/quickhack/security",
+        "artifactDir": "/home/worker/custom-state/quickhack/artifacts"
+      }
+    },
+    {
+      "name": "linux-development-server",
+      "role": "server",
+      "platform": "linux",
+      "input": {
+        "appRoot": "/home/worker/src/quickhack",
+        "dataDirectory": "/home/worker/src/quickhack/database",
+        "homeDirectory": "/home/worker",
+        "deployment": "development",
+        "environment": {}
+      },
+      "expected": {
+        "appRoot": "/home/worker/src/quickhack",
+        "runtimeDir": "/home/worker/src/quickhack/runtime",
+        "configDir": "/home/worker/.config/quickhack",
+        "dataDir": "/home/worker/.local/share/quickhack",
+        "stateDir": "/home/worker/.local/state/quickhack",
+        "logDir": "/home/worker/.local/state/quickhack/logs",
+        "cacheDir": "/home/worker/.cache/quickhack",
+        "secretDir": "/home/worker/.local/share/quickhack/security",
+        "artifactDir": "/home/worker/.local/state/quickhack/artifacts"
+      }
+    },
+    {
+      "name": "linux-system-server",
+      "role": "server",
+      "platform": "linux",
+      "input": {
+        "appRoot": "/opt/quickhack",
+        "deployment": "system-service",
+        "artifactKind": "DEMONSTRATION_SERVER",
+        "environment": {}
+      },
+      "expected": {
+        "appRoot": "/opt/quickhack",
+        "runtimeDir": "/opt/quickhack/runtime",
+        "configDir": "/etc/quickhack/demonstration-server",
+        "dataDir": "/var/lib/quickhack/demonstration-server",
+        "stateDir": "/var/lib/quickhack/demonstration-server/state",
+        "logDir": "/var/log/quickhack/demonstration-server",
+        "cacheDir": "/var/cache/quickhack/demonstration-server",
+        "secretDir": "/var/lib/quickhack/demonstration-server/security",
+        "artifactDir": "/var/lib/quickhack/demonstration-server/artifacts"
+      }
+    },
+    {
+      "name": "windows-operational-system-server",
+      "role": "server",
+      "platform": "win32",
+      "input": {
+        "appRoot": "C:\\Program Files\\QuickHack Operational Server",
+        "deployment": "system-service",
+        "artifactKind": "OPERATIONAL_SERVER",
+        "environment": {
+          "ProgramData": "C:\\ProgramData",
+          "LOCALAPPDATA": "C:\\Users\\worker\\AppData\\Local"
+        }
+      },
+      "expected": {
+        "appRoot": "C:\\Program Files\\QuickHack Operational Server",
+        "runtimeDir": "C:\\Program Files\\QuickHack Operational Server\\runtime",
+        "configDir": "C:\\ProgramData\\QuickHack\\operational-server\\config",
+        "dataDir": "C:\\ProgramData\\QuickHack\\operational-server\\data",
+        "stateDir": "C:\\ProgramData\\QuickHack\\operational-server\\state",
+        "logDir": "C:\\ProgramData\\QuickHack\\operational-server\\logs",
+        "cacheDir": "C:\\ProgramData\\QuickHack\\operational-server\\cache",
+        "secretDir": "C:\\ProgramData\\QuickHack\\operational-server\\data\\security",
+        "artifactDir": "C:\\ProgramData\\QuickHack\\operational-server\\artifacts"
+      }
+    },
+    {
+      "name": "windows-demonstration-installed-client",
+      "role": "client",
+      "platform": "win32",
+      "input": {
+        "appRoot": "C:\\Users\\worker\\AppData\\Local\\Programs\\QuickHack Demo Client",
+        "homeDirectory": "C:\\Users\\worker",
+        "deployment": "system-service",
+        "artifactKind": "DEMONSTRATION_CLIENT",
+        "environment": {
+          "LOCALAPPDATA": "C:\\Users\\worker\\AppData\\Local"
+        }
+      },
+      "expected": {
+        "appRoot": "C:\\Users\\worker\\AppData\\Local\\Programs\\QuickHack Demo Client",
+        "runtimeDir": "C:\\Users\\worker\\AppData\\Local\\Programs\\QuickHack Demo Client\\runtime",
+        "configDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\demonstration-client",
+        "dataDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\demonstration-client",
+        "stateDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\demonstration-client",
+        "logDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\demonstration-client\\logs",
+        "cacheDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\demonstration-client\\cache",
+        "secretDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\demonstration-client\\security",
+        "artifactDir": "C:\\Users\\worker\\AppData\\Local\\QuickHack\\demonstration-client\\artifacts"
+      }
+    },
+    {
+      "name": "linux-operational-installed-client",
+      "role": "client",
+      "platform": "linux",
+      "input": {
+        "appRoot": "/usr/lib/quickhack/operational-client",
+        "homeDirectory": "/home/worker",
+        "deployment": "system-service",
+        "artifactKind": "OPERATIONAL_CLIENT",
+        "environment": {}
+      },
+      "expected": {
+        "appRoot": "/usr/lib/quickhack/operational-client",
+        "runtimeDir": "/usr/lib/quickhack/operational-client/runtime",
+        "configDir": "/home/worker/.config/quickhack/operational-client",
+        "dataDir": "/home/worker/.local/share/quickhack/operational-client",
+        "stateDir": "/home/worker/.local/state/quickhack/operational-client",
+        "logDir": "/home/worker/.local/state/quickhack/operational-client/logs",
+        "cacheDir": "/home/worker/.cache/quickhack/operational-client",
+        "secretDir": "/home/worker/.local/share/quickhack/operational-client/security",
+        "artifactDir": "/home/worker/.local/state/quickhack/operational-client/artifacts"
+      }
+    }
+  ]
+}

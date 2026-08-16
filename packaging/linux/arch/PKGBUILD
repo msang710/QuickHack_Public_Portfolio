@@ -1,0 +1,48 @@
+pkgbase=quickhack
+pkgname=(
+  quickhack-demonstration-server
+  quickhack-demonstration-client
+  quickhack-operational-server
+  quickhack-operational-client
+)
+pkgver="${QUICKHACK_PKGVER:-1.0.0}"
+pkgrel=1
+pkgdesc='QuickHack ERP/WMS runtime packages'
+arch=('x86_64')
+url='https://quickhack.local'
+license=('custom')
+options=('!strip')
+
+_stage_root="${startdir}/../../../release/linux"
+
+_install_staged_root() {
+  local target="$1"
+  local source_root="${_stage_root}/${target}/pkgroot"
+  [[ -d "${source_root}" ]] || { error "Missing staged package root: ${source_root}"; return 1; }
+  cp -a "${source_root}/." "${pkgdir}/"
+  find "${pkgdir}/usr/bin" -maxdepth 1 -type f -name 'quickhack-*' -exec chmod 0755 {} + 2>/dev/null || true
+}
+
+package_quickhack-demonstration-server() {
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'postgresql>=18' 'postgresql<19' 'systemd' 'openssl' 'polkit' 'sudo')
+  conflicts=('quickhack-operational-server')
+  install=quickhack-server.install
+  _install_staged_root demo-server
+}
+
+package_quickhack-demonstration-client() {
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'android-tools' 'cups')
+  _install_staged_root demo-client
+}
+
+package_quickhack-operational-server() {
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'postgresql>=18' 'postgresql<19' 'systemd' 'openssl' 'polkit' 'sudo')
+  conflicts=('quickhack-demonstration-server')
+  install=quickhack-server.install
+  _install_staged_root operational-server
+}
+
+package_quickhack-operational-client() {
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'android-tools' 'cups')
+  _install_staged_root operational-client
+}

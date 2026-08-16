@@ -1,0 +1,21 @@
+{
+  "cleanBaseline": [
+    "test-carrier-invoice-issue-ownership-migration.mjs",
+    "test-carrier-invoice-replacement-execution-ownership-migration.mjs",
+    "test-carrier-settings-policy-migration.mjs",
+    "test-inventory-verification-execution-ownership-migration.mjs",
+    "test-inventory-verification-state-revision-migration.mjs",
+    "test-inventory-write-invariants.mjs",
+    "test-logen-label-print-attempt-ownership-migration.mjs",
+    "test-logen-registration-execution-ownership-migration.mjs",
+    "test-sales-channel-write-target-results-migration.mjs",
+    "test-shipment-address-change-event-ownership-migration.mjs",
+    "test-shipment-print-batch-transition-guard-migration.mjs",
+    "test-sqlite-bootstrap.mjs",
+    "test-sqlite-migration-foreign-keys.mjs"
+  ],
+  "replacedByNativePostgresqlOperations": [
+    "test-sqlite-backup-core.mjs",
+    "test-quickhack-offline-restore.mjs"
+  ]
+}

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="qh_background">#F4F6F8</color>
+    <color name="qh_surface">#FFFFFF</color>
+    <color name="qh_surface_variant">#E9EEF2</color>
+    <color name="qh_primary">#26756F</color>
+    <color name="qh_on_primary">#FFFFFF</color>
+    <color name="qh_text">#15232D</color>
+    <color name="qh_muted">#5C6B75</color>
+    <color name="qh_border">#C9D2D9</color>
+    <color name="qh_success">#087A55</color>
+    <color name="qh_warning">#9A6700</color>
+    <color name="qh_error">#B42318</color>
+    <color name="qh_error_surface">#FDE7E5</color>
+    <color name="qh_signal_neutral">#172A36</color>
+    <color name="qh_camera_scrim">#99000000</color>
+    <color name="qh_white">#FFFFFF</color>
+</resources>

@@ -1,0 +1,28 @@
+title = "QuickHack secret scanning policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Android cryptographic transformation name is not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^quickhack_android/app/src/main/java/com/quickhack/mobile/MainActivity\.java$''',
+]
+regexes = [
+  '''DEVICE_TOKEN_CIPHER\s*=\s*"AES/GCM/NoPadding"''',
+]
+
+[[allowlists]]
+description = "The historical environment example used an intentionally empty access key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^\.env\.example$''',
+]
+regexes = [
+  '''COUPANG_ACCESS_KEY\s*=\s*""''',
+]

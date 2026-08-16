@@ -1,0 +1,16 @@
+[Unit]
+Description=QuickHack finite operator operation %i
+Requires=@QUICKHACK_POSTGRESQL_UNIT@
+After=@QUICKHACK_POSTGRESQL_UNIT@
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=@QUICKHACK_NODE_EXECUTABLE@ @QUICKHACK_OPERATOR_ENTRY@ run-one-shot --operation=%i --runtime-config @QUICKHACK_RUNTIME_CONFIG@
+@QUICKHACK_OPERATOR_CREDENTIAL_DIRECTIVES@
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=@QUICKHACK_CONFIG_DIR@ @QUICKHACK_DATA_DIR@ @QUICKHACK_STATE_DIR@ @QUICKHACK_LOG_DIR@

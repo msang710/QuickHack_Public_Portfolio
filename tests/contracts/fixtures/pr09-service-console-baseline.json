@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "ownerStage": "PR-09",
+  "before": {
+    "serverConsoleEntry": "tools/server-console.mjs",
+    "serverConsoleNativeBoundary": "transitional",
+    "postgresqlInstallerBoundary": "windows-mixed",
+    "linuxPostgresqlService": "unavailable",
+    "linuxOperatorLauncher": "unavailable",
+    "trackedSystemdTemplates": 0
+  },
+  "target": {
+    "serverConsoleNativeBoundary": "adapter-owned",
+    "postgresqlInstallerBoundary": "common-core-and-os-controller",
+    "linuxPostgresqlService": "ready",
+    "linuxOperatorLauncher": "ready",
+    "logicalServices": ["POSTGRESQL", "APPLICATION"],
+    "physicalInstallOwner": "PR-10"
+  }
+}

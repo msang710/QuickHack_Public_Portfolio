@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "providers": ["COUPANG", "LOGEN"],
+  "relativePaths": {
+    "COUPANG": "quickhack-keys/coupang.qhkey",
+    "LOGEN": "quickhack-keys/logen.qhkey"
+  },
+  "states": [
+    "PREPARED",
+    "AUTHORIZATION_REQUIRED",
+    "PUBLISHING",
+    "PUBLISHED",
+    "CANCELLED",
+    "FAILED",
+    "EXPIRED",
+    "RECOVERY_REQUIRED"
+  ],
+  "errorCodes": [
+    "QHKEY_VOLUME_MISSING",
+    "QHKEY_VOLUME_AMBIGUOUS",
+    "QHKEY_VOLUME_IDENTITY_CHANGED",
+    "QHKEY_VOLUME_PERMISSION_DENIED",
+    "QHKEY_MASTER_PROVISIONING_REQUIRED",
+    "QHKEY_AUTHORIZATION_REQUIRED",
+    "QHKEY_AUTHORIZATION_CANCELLED",
+    "QHKEY_TRANSACTION_EXPIRED",
+    "QHKEY_TARGET_CHANGED",
+    "QHKEY_PUBLISH_FAILED",
+    "QHKEY_PUBLISH_RECOVERY_REQUIRED"
+  ]
+}
