@@ -41,6 +41,8 @@ try {
     isExpectedPostgresqlUniqueViolation,
     isPostgresqlForeignKeyViolation,
     isRetryablePostgresqlTransactionError,
+    postgresqlSqlState,
+    prismaErrorCode,
   } = await import("@/quickhack_server/core/database/postgres-errors");
   const { resolveOrCreateInventorySku } = await import(
     "@/quickhack_server/catalog/inventory-sku-service"
@@ -104,6 +106,28 @@ try {
     isRetryablePostgresqlTransactionError({ code: "P2002" }),
     false,
     "Unique violations must not enter the transaction retry loop."
+  );
+  assert.equal(
+    postgresqlSqlState({
+      code: "P2039",
+      meta: {
+        driverAdapterError: {
+          cause: { originalCode: "P0001", severity: "ERROR" },
+        },
+      },
+    }),
+    "P0001",
+    "Wrapped PL/pgSQL exceptions must preserve their PostgreSQL SQLSTATE."
+  );
+  assert.equal(
+    postgresqlSqlState({ code: "P2002" }),
+    null,
+    "Prisma client codes must not be classified as PostgreSQL SQLSTATEs."
+  );
+  assert.equal(
+    prismaErrorCode({ code: "P0001", severity: "ERROR" }),
+    null,
+    "Native PostgreSQL SQLSTATEs must not be classified as Prisma client codes."
   );
 
   await prisma.product_criteria_options.createMany({

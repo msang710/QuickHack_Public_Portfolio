@@ -33,7 +33,10 @@ export type OperatorProcessExecution = Readonly<{
     executableDirectories?: readonly string[];
     overrides?: Record<string, string | number | boolean | undefined>;
   }>): NodeJS.ProcessEnv;
+  spawnOwnedDetached(executable: string, argumentsList?: readonly string[], options?: Record<string, unknown>): Readonly<{ pid?: number; unref(): void }>;
+  spawnOwnedChild(executable: string, argumentsList?: readonly string[], options?: Record<string, unknown>): Readonly<{ pid?: number; kill(signal?: string): boolean; once(event: string, listener: (...args: unknown[]) => void): unknown }>;
   terminateOwnedProcess(pid: number): void;
+  terminateOwnedDetachedProcess(pid: number, options?: Readonly<{ force?: boolean }>): void;
   sameExecutablePath(left: string, right: string): boolean;
 }>;
 

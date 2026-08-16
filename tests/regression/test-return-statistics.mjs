@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import {
   aggregateReturnStatistics,
+  createReturnStatisticsAsOfContext,
 } from "../../quickhack_server/statistics/return-statistics-service.ts";
 import { resolveClosedStatisticsPeriod } from "../../quickhack_shared/statistics/statistics-period.ts";
 
 const NOW = new Date("2026-07-27T00:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HISTORICAL_LINK_CREATED_AT = "2026-04-01T00:00:00.000Z";
 let nextEventId = 1;
 
 function dateFromNow(days, hours = 0) {
@@ -27,6 +30,7 @@ function sale({
   saleGrade = "A",
   salesPrice = 1_000,
   purchasePrice = 700,
+  soldAt,
 }) {
   return {
     saleRecordId: id,
@@ -36,7 +40,7 @@ function sale({
     externalOrderId: orderId,
     externalShipmentId: shipmentId,
     externalVendorItemId: vendorItemId,
-    soldAt: dateFromNow(-daysAgo),
+    soldAt: soldAt ?? dateFromNow(-daysAgo),
     saleStatus: "SOLD",
     salesPrice,
     purchasePrice,
@@ -67,6 +71,7 @@ function returnEvent({
   reasonLabel = "단순 변심",
   cancelCount = 1,
   completedAt = null,
+  items = [],
 }) {
   return {
     eventId: nextEventId++,
@@ -91,8 +96,17 @@ function returnEvent({
       reason_category: reasonLabel,
       reason_detail: reasonLabel,
       cancel_count: cancelCount,
+      items_json: JSON.stringify(items),
     }),
   };
+}
+
+function semanticResultHash(result) {
+  const semanticResult = { ...result };
+  delete semanticResult.generatedAt;
+  return createHash("sha256")
+    .update(JSON.stringify(semanticResult))
+    .digest("hex");
 }
 
 function withdrawalEvent({
@@ -309,6 +323,14 @@ const events = [
     shipmentId: "SHIP-AUTO",
     detectedAt: dateFromNow(-29),
     createdAt: dateFromNow(-30),
+    items: [
+      {
+        externalVendorItemId: "ITEM-AUTO",
+        sellerProductItemId: null,
+        vendorItemName: "Auto Model 256GB",
+        cancelCount: 1,
+      },
+    ],
   }),
   returnEvent({
     receiptId: "R-AMB",
@@ -316,6 +338,14 @@ const events = [
     shipmentId: "SHIP-AMB",
     detectedAt: dateFromNow(-29),
     createdAt: dateFromNow(-30),
+    items: [
+      {
+        externalVendorItemId: "ITEM-AMB",
+        sellerProductItemId: null,
+        vendorItemName: "ITEM-AMB",
+        cancelCount: 1,
+      },
+    ],
   }),
   returnEvent({
     receiptId: "R-NO",
@@ -348,6 +378,14 @@ const events = [
     receiptType: "CANCEL",
     reasonLabel: "배송 전 취소",
     cancelCount: 2,
+    items: [
+      {
+        externalVendorItemId: "ITEM-C",
+        sellerProductItemId: null,
+        vendorItemName: "취소 상품",
+        cancelCount: 2,
+      },
+    ],
   }),
   exchangeEvent({
     exchangeId: "E-1",
@@ -367,81 +405,9 @@ const events = [
   }),
 ];
 
-const returnRaws = [
-  raw({
-    id: 1,
-    receiptId: "R-1",
-    orderId: "ORDER-1",
-    shipmentId: "SHIP-1",
-    vendorItemId: "ITEM-1",
-  }),
-  raw({
-    id: 2,
-    receiptId: "R-2",
-    orderId: "ORDER-2",
-    shipmentId: "SHIP-2",
-    vendorItemId: "ITEM-2",
-  }),
-  raw({
-    id: 3,
-    receiptId: "R-2B",
-    orderId: "ORDER-2",
-    shipmentId: "SHIP-2",
-    vendorItemId: "ITEM-2",
-  }),
-  raw({
-    id: 4,
-    receiptId: "R-AUTO",
-    orderId: "ORDER-AUTO",
-    shipmentId: "SHIP-AUTO",
-    vendorItemId: "ITEM-AUTO",
-    productName: "Auto Model 256GB",
-  }),
-  raw({
-    id: 5,
-    receiptId: "R-AMB",
-    orderId: "ORDER-AMB",
-    shipmentId: "SHIP-AMB",
-    vendorItemId: "ITEM-AMB",
-  }),
-  raw({
-    id: 6,
-    receiptId: "R-NO",
-    orderId: "ORDER-NO",
-    shipmentId: "SHIP-NO",
-    vendorItemId: null,
-    withItems: false,
-  }),
-  raw({
-    id: 7,
-    receiptId: "R-AFTER-30",
-    orderId: "ORDER-2",
-    shipmentId: "SHIP-2",
-    vendorItemId: "ITEM-2",
-  }),
-  raw({
-    id: 8,
-    receiptId: "R-BEFORE",
-    orderId: "ORDER-3",
-    shipmentId: "SHIP-3",
-    vendorItemId: "ITEM-3",
-  }),
-  raw({
-    id: 9,
-    receiptId: "C-1",
-    orderId: "ORDER-C",
-    shipmentId: "SHIP-C",
-    receiptType: "CANCEL",
-    vendorItemId: "ITEM-C",
-    productName: "취소 상품",
-    cancelCount: 2,
-  }),
-];
-
 const input = {
   sales,
   events,
-  returnRaws,
   allocationLinks: [
     {
       returnAllocationId: 1,
@@ -450,6 +416,7 @@ const input = {
       externalReceiptId: "R-1",
       pgNo: "PG-1",
       actionType: "approve",
+      createdAt: HISTORICAL_LINK_CREATED_AT,
     },
     {
       returnAllocationId: 2,
@@ -458,6 +425,7 @@ const input = {
       externalReceiptId: "R-2",
       pgNo: "PG-2",
       actionType: "approve",
+      createdAt: HISTORICAL_LINK_CREATED_AT,
     },
     {
       returnAllocationId: 3,
@@ -466,6 +434,7 @@ const input = {
       externalReceiptId: "R-2B",
       pgNo: "PG-2",
       actionType: "approve",
+      createdAt: HISTORICAL_LINK_CREATED_AT,
     },
     {
       returnAllocationId: 4,
@@ -474,6 +443,7 @@ const input = {
       externalReceiptId: "R-AFTER-30",
       pgNo: "PG-2",
       actionType: "approve",
+      createdAt: HISTORICAL_LINK_CREATED_AT,
     },
     {
       returnAllocationId: 5,
@@ -482,6 +452,7 @@ const input = {
       externalReceiptId: "R-BEFORE",
       pgNo: "PG-3",
       actionType: "approve",
+      createdAt: HISTORICAL_LINK_CREATED_AT,
     },
   ],
   inspections: [
@@ -683,22 +654,6 @@ const splitPopulationInput = {
       receiptStatus: "RETURNS_COMPLETED",
     }),
   ],
-  returnRaws: [
-    raw({
-      id: 301,
-      receiptId: "R-COHORT-LATER",
-      orderId: "ORDER-COHORT",
-      shipmentId: "SHIP-COHORT",
-      vendorItemId: "ITEM-COHORT",
-    }),
-    raw({
-      id: 302,
-      receiptId: "R-OCCURRENCE",
-      orderId: "ORDER-OCCURRENCE",
-      shipmentId: "SHIP-OCCURRENCE",
-      vendorItemId: "ITEM-OCCURRENCE",
-    }),
-  ],
   allocationLinks: [
     {
       returnAllocationId: 301,
@@ -707,6 +662,7 @@ const splitPopulationInput = {
       externalReceiptId: "R-COHORT-LATER",
       pgNo: "PG-301",
       actionType: "approve",
+      createdAt: HISTORICAL_LINK_CREATED_AT,
     },
     {
       returnAllocationId: 302,
@@ -715,6 +671,7 @@ const splitPopulationInput = {
       externalReceiptId: "R-OCCURRENCE",
       pgNo: "PG-302",
       actionType: "approve",
+      createdAt: HISTORICAL_LINK_CREATED_AT,
     },
   ],
   inspections: [
@@ -760,11 +717,188 @@ assert.equal(
   0
 );
 
+const cutoffBoundaryInput = {
+  sales: [
+    sale({
+      id: 401,
+      daysAgo: 40,
+      orderId: "ORDER-ASOF-BEFORE",
+      shipmentId: "SHIP-ASOF-BEFORE",
+      vendorItemId: "ITEM-ASOF-BEFORE",
+    }),
+    sale({
+      id: 402,
+      daysAgo: 40,
+      orderId: "ORDER-ASOF-EXACT",
+      shipmentId: "SHIP-ASOF-EXACT",
+      vendorItemId: "ITEM-ASOF-EXACT",
+    }),
+    sale({
+      id: 403,
+      daysAgo: 40,
+      orderId: "ORDER-ASOF-AFTER",
+      shipmentId: "SHIP-ASOF-AFTER",
+      vendorItemId: "ITEM-ASOF-AFTER",
+    }),
+    sale({
+      id: 410,
+      daysAgo: 0,
+      orderId: "ORDER-SALE-BEFORE",
+      shipmentId: "SHIP-SALE-BEFORE",
+      vendorItemId: "ITEM-SALE-BEFORE",
+      soldAt: "2026-07-26T14:59:59.999Z",
+    }),
+    sale({
+      id: 411,
+      daysAgo: 0,
+      orderId: "ORDER-SALE-EXACT",
+      shipmentId: "SHIP-SALE-EXACT",
+      vendorItemId: "ITEM-SALE-EXACT",
+      soldAt: "2026-07-26T15:00:00.000Z",
+    }),
+    sale({
+      id: 412,
+      daysAgo: 0,
+      orderId: "ORDER-SALE-AFTER",
+      shipmentId: "SHIP-SALE-AFTER",
+      vendorItemId: "ITEM-SALE-AFTER",
+      soldAt: "2026-07-26T18:29:00.000Z",
+    }),
+  ],
+  events: [
+    returnEvent({
+      receiptId: "R-ASOF-BEFORE",
+      orderId: "ORDER-ASOF-BEFORE",
+      shipmentId: "SHIP-ASOF-BEFORE",
+      detectedAt: "2026-07-26T14:00:00.000Z",
+      createdAt: "2026-07-26T13:00:00.000Z",
+    }),
+    returnEvent({
+      receiptId: "R-ASOF-EXACT",
+      orderId: "ORDER-ASOF-EXACT",
+      shipmentId: "SHIP-ASOF-EXACT",
+      detectedAt: "2026-07-26T14:00:00.000Z",
+      createdAt: "2026-07-26T13:00:00.000Z",
+    }),
+    returnEvent({
+      receiptId: "R-ASOF-AFTER",
+      orderId: "ORDER-ASOF-AFTER",
+      shipmentId: "SHIP-ASOF-AFTER",
+      detectedAt: "2026-07-26T14:00:00.000Z",
+      createdAt: "2026-07-26T13:00:00.000Z",
+    }),
+    returnEvent({
+      receiptId: "C-EVENT-BEFORE",
+      orderId: "ORDER-EVENT-BEFORE",
+      shipmentId: "SHIP-EVENT-BEFORE",
+      receiptType: "CANCEL",
+      detectedAt: "2026-07-26T14:59:59.999Z",
+      createdAt: "2026-07-26T13:00:00.000Z",
+    }),
+    returnEvent({
+      receiptId: "C-EVENT-EXACT",
+      orderId: "ORDER-EVENT-EXACT",
+      shipmentId: "SHIP-EVENT-EXACT",
+      receiptType: "CANCEL",
+      detectedAt: "2026-07-26T15:00:00.000Z",
+      createdAt: "2026-07-26T13:00:00.000Z",
+    }),
+    returnEvent({
+      receiptId: "C-EVENT-AFTER",
+      orderId: "ORDER-EVENT-AFTER",
+      shipmentId: "SHIP-EVENT-AFTER",
+      receiptType: "CANCEL",
+      detectedAt: "2026-07-26T18:29:00.000Z",
+      createdAt: "2026-07-26T13:00:00.000Z",
+    }),
+  ],
+  // Deliberately outside ReturnStatisticsAggregateInput: mutable raw data
+  // must not participate in historical reconstruction.
+  returnRaws: [
+    raw({
+      id: 401,
+      receiptId: "R-ASOF-BEFORE",
+      orderId: "ORDER-ASOF-BEFORE",
+      shipmentId: "SHIP-ASOF-BEFORE",
+      vendorItemId: "ITEM-ASOF-BEFORE",
+    }),
+    raw({
+      id: 402,
+      receiptId: "R-ASOF-EXACT",
+      orderId: "ORDER-ASOF-EXACT",
+      shipmentId: "SHIP-ASOF-EXACT",
+      vendorItemId: "ITEM-ASOF-EXACT",
+    }),
+    raw({
+      id: 403,
+      receiptId: "R-ASOF-AFTER",
+      orderId: "ORDER-ASOF-AFTER",
+      shipmentId: "SHIP-ASOF-AFTER",
+      vendorItemId: "ITEM-ASOF-AFTER",
+    }),
+  ],
+  allocationLinks: [
+    {
+      returnAllocationId: 401,
+      returnRawId: 401,
+      allocationId: 401,
+      externalReceiptId: "R-ASOF-BEFORE",
+      pgNo: "PG-401",
+      actionType: "approve",
+      createdAt: "2026-07-26T14:59:59.999Z",
+    },
+    {
+      returnAllocationId: 402,
+      returnRawId: 402,
+      allocationId: 402,
+      externalReceiptId: "R-ASOF-EXACT",
+      pgNo: "PG-402",
+      actionType: "approve",
+      createdAt: "2026-07-26T15:00:00.000Z",
+    },
+    {
+      returnAllocationId: 403,
+      returnRawId: 403,
+      allocationId: 403,
+      externalReceiptId: "R-ASOF-AFTER",
+      pgNo: "PG-403",
+      actionType: "approve",
+      createdAt: "2026-07-26T18:29:00.000Z",
+    },
+  ],
+  inspections: [],
+  approvals: [],
+};
+const earlyAsOfNow = new Date("2026-07-26T15:01:00.000Z");
+const scheduledAsOfNow = new Date("2026-07-26T18:30:00.000Z");
+const asOfPeriod = resolveClosedStatisticsPeriod({ now: earlyAsOfNow });
+const immutableAsOf = createReturnStatisticsAsOfContext(asOfPeriod);
+immutableAsOf.cutoffExclusive.setTime(0);
+const earlyAsOfResult = aggregateReturnStatistics(cutoffBoundaryInput, {
+  now: earlyAsOfNow,
+  period: asOfPeriod,
+  asOf: immutableAsOf,
+});
+const scheduledAsOfResult = aggregateReturnStatistics(cutoffBoundaryInput, {
+  now: scheduledAsOfNow,
+  period: asOfPeriod,
+});
+assert.equal(earlyAsOfResult.source.confirmedAllocationLinkCount, 1);
+assert.equal(earlyAsOfResult.source.uniqueExternalKeyLinkCount, 0);
+assert.equal(earlyAsOfResult.source.cohortSalesCount, 4);
+assert.equal(earlyAsOfResult.source.observedCancellationReceiptCount, 1);
+assert.equal(earlyAsOfResult.overview.linkedReceiptCount, 1);
+assert.equal(earlyAsOfResult.source.unlinkedReceiptCount, 2);
+assert.equal(
+  semanticResultHash(earlyAsOfResult),
+  semanticResultHash(scheduledAsOfResult),
+  "The same closed-day cutoff changed when recalculated later."
+);
+
 const empty = aggregateReturnStatistics(
   {
     sales: [],
     events: [],
-    returnRaws: [],
     allocationLinks: [],
     inspections: [],
     approvals: [],
@@ -820,7 +954,6 @@ const performanceResult = aggregateReturnStatistics(
   {
     sales: performanceSales,
     events: performanceEvents,
-    returnRaws: [],
     allocationLinks: [],
     inspections: [],
     approvals: [],

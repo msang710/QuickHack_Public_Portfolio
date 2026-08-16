@@ -47,6 +47,7 @@ import {
 } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { unsavedFormSnapshotsEqual } from "@/quickhack_client/lib/unsaved-changes";
 import { cn } from "@/quickhack_shared/core/utils";
+import type { MutationReceipt } from "@/quickhack_shared/core/mutation-receipt";
 
 type ProductCriteriaForm = {
   category: ProductCriteriaCategory;
@@ -62,6 +63,8 @@ type ProductCriteriaApiResponse = {
   message?: string;
   data?: ProductCriteriaPayload;
   option?: ProductCriteriaOptionDto;
+  relation?: ProductCriteriaOptionDto;
+  receipt?: MutationReceipt<unknown>;
 };
 
 function emptyProductCriteriaForm(): ProductCriteriaForm {
@@ -458,9 +461,11 @@ function ProductCameraRuleChecklist({
 function ProductCriteriaRelationEditor({
   criteria,
   onSaved,
+  onRefresh,
 }: {
   criteria: ProductCriteriaPayload | null;
   onSaved: (data: ProductCriteriaPayload) => void;
+  onRefresh: () => Promise<boolean>;
 }) {
   const { runGuardedAction } = useUnsavedChanges();
   const models = React.useMemo(
@@ -611,22 +616,43 @@ function ProductCriteriaRelationEditor({
         | ProductCriteriaApiResponse
         | null;
 
-      if (!response.ok || !payload?.ok || !payload.data) {
+      if (!response.ok || !payload?.ok) {
         throw new Error(payload?.message || "연결된 기준값 저장에 실패했습니다.");
       }
 
-      const nextRelations = relationSnapshot(
-        payload.data,
-        effectiveSelectedModelId
-      );
+      const refreshDeferred = payload.receipt?.refreshRequired === true;
+      const refreshed = payload.data
+        ? true
+        : refreshDeferred
+          ? await onRefresh()
+          : false;
+      const nextRelations = payload.data
+        ? relationSnapshot(payload.data, effectiveSelectedModelId)
+        : payload.relation
+          ? currentRelationSnapshot({
+              relationRevision: payload.relation.relationRevision,
+              storageOptionIds,
+              colorOptionIds,
+              cameraRules,
+            })
+          : null;
+      if (!nextRelations) {
+        throw new Error("저장된 연결 기준값을 확인하지 못했습니다.");
+      }
       setStorageOptionIds(nextRelations?.storageOptionIds ?? []);
       setColorOptionIds(nextRelations?.colorOptionIds ?? []);
       setCameraRules(nextRelations?.cameraRules ?? []);
       setLoadedRelationModelId(effectiveSelectedModelId);
       setLoadedRelations(nextRelations);
-      onSaved(payload.data);
-      setMessage(payload.message || "연결된 기준값을 저장했습니다.");
-      setMessageTone("success");
+      if (payload.data) {
+        onSaved(payload.data);
+      }
+      setMessage(
+        refreshed
+          ? payload.message || "연결된 기준값을 저장했습니다."
+          : `${payload.message || "연결된 기준값을 저장했습니다."} 전체 기준값은 새로고침해 확인하세요.`
+      );
+      setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setMessageTone("warning");
@@ -817,9 +843,11 @@ export function ProductCriteriaManagerView() {
         );
       }
       setMessage("");
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setMessageTone("warning");
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -1059,11 +1087,19 @@ export function ProductCriteriaManagerView() {
         | ProductCriteriaApiResponse
         | null;
 
-      if (!response.ok || !payload?.ok || !payload.data) {
+      if (!response.ok || !payload?.ok) {
         throw new Error(payload?.message || "상품 기준값 저장에 실패했습니다.");
       }
 
-      setCriteria(payload.data);
+      const refreshDeferred = payload.receipt?.refreshRequired === true;
+      const refreshed = payload.data
+        ? true
+        : refreshDeferred
+          ? await loadCriteria(true)
+          : false;
+      if (payload.data) {
+        setCriteria(payload.data);
+      }
 
       if (payload.option) {
         selectedOptionIdRef.current = payload.option.optionId;
@@ -1071,8 +1107,12 @@ export function ProductCriteriaManagerView() {
         setForm(productCriteriaFormFromOption(payload.option));
       }
 
-      setMessage(payload.message || "상품 기준값을 저장했습니다.");
-      setMessageTone("success");
+      setMessage(
+        refreshed
+          ? payload.message || "상품 기준값을 저장했습니다."
+          : `${payload.message || "상품 기준값을 저장했습니다."} 목록 새로고침이 필요합니다.`
+      );
+      setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setMessageTone("warning");
@@ -1099,11 +1139,28 @@ export function ProductCriteriaManagerView() {
         | ProductCriteriaApiResponse
         | null;
 
-      if (!response.ok || !payload?.ok || !payload.data) {
+      if (!response.ok || !payload?.ok) {
         throw new Error(payload?.message || "기본 기준값 확인에 실패했습니다.");
       }
 
-      setCriteria(payload.data);
+      const refreshDeferred = payload.receipt?.refreshRequired === true;
+      const refreshed = payload.data
+        ? true
+        : refreshDeferred
+          ? await loadCriteria(true)
+          : false;
+      if (payload.data) {
+        setCriteria(payload.data);
+      }
+      if (!payload.data) {
+        setMessage(
+          refreshed
+            ? payload.message || "기본 상품 기준값을 확인했습니다."
+            : `${payload.message || "기본 상품 기준값을 확인했습니다."} 목록 새로고침이 필요합니다.`
+        );
+        setMessageTone(refreshed ? "success" : "warning");
+        return;
+      }
       const currentOptionId = selectedOptionIdRef.current;
       const nextOption =
         payload.data.rawOptions.find(
@@ -1319,6 +1376,7 @@ export function ProductCriteriaManagerView() {
         <ProductCriteriaRelationEditor
           criteria={criteria}
           onSaved={(data) => setCriteria(data)}
+          onRefresh={() => loadCriteria(false)}
         />
       </TabsContent>
     </Tabs>

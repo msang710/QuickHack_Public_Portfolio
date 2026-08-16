@@ -55,6 +55,13 @@ export async function recordValidatedIntegrationInboxEvidence<
   }) => TNormalized;
   projectionHandlerKeys?: readonly string[];
   projectionContext?: IntegrationJsonValue;
+  storagePolicy?: {
+    retainRawPayload?: boolean;
+    minimizeNormalizedResult?: (input: {
+      outcome: "SUCCEEDED" | "FAILED_LOCAL";
+      normalizedResult: IntegrationJsonValue;
+    }) => IntegrationJsonValue;
+  };
 }) {
   const provider = input.provider.trim();
   const endpoint = input.endpoint.trim();
@@ -99,6 +106,15 @@ export async function recordValidatedIntegrationInboxEvidence<
           reason: "VALIDATOR_FAILED",
         }
       : null;
+  const resultForStorage = (validationResult ??
+    normalizedResult ??
+    null) as IntegrationJsonValue;
+  const normalizedResultForStorage = input.storagePolicy?.minimizeNormalizedResult
+    ? input.storagePolicy.minimizeNormalizedResult({
+        outcome: validationError ? "FAILED_LOCAL" : "SUCCEEDED",
+        normalizedResult: resultForStorage,
+      })
+    : resultForStorage;
   const result = await runRetriableMeasuredTransaction(
     input.owner ?? prisma,
     "integration_inbox.record_evidence",
@@ -110,15 +126,14 @@ export async function recordValidatedIntegrationInboxEvidence<
           provider,
           evidence_type: evidenceType,
           outcome: validationError ? "FAILED_LOCAL" : "SUCCEEDED",
-          raw_payload_text: input.rawPayloadText,
+          raw_payload_text:
+            input.storagePolicy?.retainRawPayload === false
+              ? null
+              : input.rawPayloadText,
           raw_payload_digest: digestRawIntegrationPayload(
             input.rawPayloadText
           ),
-          ...(validationResult
-            ? { normalized_result: validationResult }
-            : normalizedResult === undefined
-              ? {}
-              : { normalized_result: jsonData(normalizedResult) }),
+          normalized_result: jsonData(normalizedResultForStorage),
           occurred_at: input.occurredAt ?? null,
           received_at: now,
           created_at: now,

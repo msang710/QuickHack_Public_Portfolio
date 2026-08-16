@@ -33,6 +33,10 @@ import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { MasterDetailLayout } from "@/quickhack_client/components/ui/workspace-layout";
 import { cn } from "@/quickhack_shared/core/utils";
+import {
+  mutationWakeDeferred,
+  type MutationReceipt,
+} from "@/quickhack_shared/core/mutation-receipt";
 import { SALES_CHANNEL_WRITE_REQUEST_LABELS } from "@/quickhack_shared/sales-channel/write-requests";
 import {
   SALES_CHANNEL_SYNC_CHECK_KIND,
@@ -60,6 +64,7 @@ type ApiFailure = {
 type WriteActionResponse = {
   ok?: boolean;
   message?: string;
+  receipt?: MutationReceipt<unknown>;
 };
 
 type NoteDraft = {
@@ -468,7 +473,13 @@ export function SalesChannelSyncCheckView({
         throw new Error(responseMessage(payload, "쓰기 점검 처리에 실패했습니다."));
       }
 
-      setMessage(payload.message || "쓰기 점검 결과를 저장했습니다.");
+      const resultMessage =
+        payload.message || "쓰기 점검 결과를 저장했습니다.";
+      setMessage(
+        mutationWakeDeferred(payload.receipt)
+          ? `${resultMessage} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
+          : resultMessage
+      );
       onAccepted?.();
       await load();
       return true;

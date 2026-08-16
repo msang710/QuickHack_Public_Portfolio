@@ -23,13 +23,26 @@ export const registeredWorkers: RegisteredWorker[] = [
       const { createOperationalPostgresqlBackup } = await import(
         "@/quickhack_server/admin/postgresql-backup-service"
       );
-      const result = await createOperationalPostgresqlBackup();
+      const result = await createOperationalPostgresqlBackup({
+        operationId: context.runToken,
+      });
       await context.updateProgress(1, 1);
       return {
         summary: {
           fileName: result.backup.fileName,
           sizeBytes: result.backup.encryptedSize,
+          observed: result.observed,
+          verifiedCount: result.verifiedCount,
+          remainingVerifiedCount: result.remainingVerifiedCount,
+          quarantinedCount: result.quarantinedCount,
+          quarantined: result.quarantined.map((entry) => ({
+            fileName: entry.originalFileName,
+            reasonCode: entry.reasonCode,
+            quarantinedAt: entry.quarantinedAt,
+          })),
+          warningCount: result.warningCount,
           removedCount: result.retention.removed.length,
+          quarantineCleanup: result.quarantineCleanup,
         },
         progressCurrent: 1,
         progressTotal: 1,

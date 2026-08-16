@@ -4,8 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import {
   POSTGRESQL_MAJOR_VERSION,
+  PostgresqlNativeOperationError,
+  applyPostgresqlBackupRetention,
+  cleanupPostgresqlBackupQuarantine,
   createPostgresqlBackup,
   inspectPostgresqlToolchain,
+  listPostgresqlBackupQuarantines,
   listPostgresqlBackups,
   restorePostgresqlBackup,
   verifyPostgresqlBackupsAndApplyRetention,
@@ -142,6 +146,7 @@ try {
   });
   assert.match(first.backup.fileName, /^quickhack-postgresql-.+\.qhb$/);
   assert.equal(first.backup.postgresqlMajor, POSTGRESQL_MAJOR_VERSION);
+  assert.equal(first.observed, false);
   assert.equal(first.backup.postgresqlMajor, 18);
   assert.equal((await listPostgresqlBackups(backupDirectory)).length, 1);
   assert.equal(
@@ -210,6 +215,252 @@ try {
   const retained = await listPostgresqlBackups(backupDirectory);
   assert.equal(retained.length, 1);
   assert.notEqual(retained[0].fileName, first.backup.fileName);
+
+  const idempotentDirectory = path.join(root, "idempotent-publication");
+  const operationId = "123e4567-e89b-42d3-a456-426614174000";
+  const dumpCallsBefore = toolCalls.filter((call) => call.tool === "pg_dump").length;
+  const published = await createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: idempotentDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: fakeTool,
+    now: new Date("2026-08-15T12:00:00.000Z"),
+    operationId,
+  });
+  const observed = await createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: idempotentDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: fakeTool,
+    now: new Date("2026-08-16T12:00:00.000Z"),
+    operationId,
+  });
+  assert.equal(published.observed, false);
+  assert.equal(observed.observed, true);
+  assert.equal(observed.backup.fileName, published.backup.fileName);
+  assert.equal(observed.backup.encryptedSha256, published.backup.encryptedSha256);
+  assert.equal((await listPostgresqlBackups(idempotentDirectory)).length, 1);
+  assert.equal(
+    toolCalls.filter((call) => call.tool === "pg_dump").length,
+    dumpCallsBefore + 1,
+    "A logical backup retry published a duplicate dump."
+  );
+  const concurrentDirectory = path.join(root, "concurrent-publication");
+  const concurrentOperationId = "223e4567-e89b-42d3-a456-426614174000";
+  let releaseConcurrentDump;
+  let reportConcurrentDumpStarted;
+  let concurrentDumpCalls = 0;
+  const concurrentDumpStarted = new Promise((resolve) => {
+    reportConcurrentDumpStarted = resolve;
+  });
+  const concurrentDumpRelease = new Promise((resolve) => {
+    releaseConcurrentDump = resolve;
+  });
+  const blockingTool = async (input) => {
+    if (input.tool === "pg_dump") {
+      concurrentDumpCalls += 1;
+      reportConcurrentDumpStarted();
+      await concurrentDumpRelease;
+    }
+    return fakeTool(input);
+  };
+  const concurrentPublication = createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: concurrentDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: blockingTool,
+    now: new Date("2026-08-16T12:30:00.000Z"),
+    operationId: concurrentOperationId,
+  });
+  await concurrentDumpStarted;
+  await assert.rejects(
+    createPostgresqlBackup({
+      connectionString,
+      binDirectory: root,
+      privateDirectory,
+      backupDirectory: concurrentDirectory,
+      applicationVersion: "1.0.0",
+      schemaVersion: "20260811010000_postgresql_baseline",
+      encryptFile,
+      runTool: fakeTool,
+      now: new Date("2026-08-16T12:31:00.000Z"),
+      operationId: concurrentOperationId,
+    }),
+    (error) => error?.code === "POSTGRESQL_BACKUP_OPERATION_IN_PROGRESS"
+  );
+  releaseConcurrentDump();
+  const concurrentPublished = await concurrentPublication;
+  assert.equal(concurrentPublished.observed, false);
+  assert.equal(concurrentDumpCalls, 1);
+  const concurrentObserved = await createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: concurrentDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: fakeTool,
+    now: new Date("2026-08-16T12:32:00.000Z"),
+    operationId: concurrentOperationId,
+  });
+  assert.equal(concurrentObserved.observed, true);
+  assert.equal(
+    (await fs.readdir(concurrentDirectory)).some((name) => name.startsWith(".")),
+    false,
+    "A concurrent logical backup attempt left private candidate files behind."
+  );
+  await assert.rejects(
+    createPostgresqlBackup({
+      connectionString,
+      binDirectory: root,
+      privateDirectory,
+      backupDirectory: idempotentDirectory,
+      applicationVersion: "1.0.0",
+      schemaVersion: "20260811010000_postgresql_baseline",
+      encryptFile,
+      runTool: fakeTool,
+      operationId: "not-a-uuid",
+    }),
+    (error) => error?.code === "POSTGRESQL_BACKUP_OPERATION_ID_INVALID"
+  );
+  const operationPayload = await fs.readFile(published.backup.path);
+  operationPayload[operationPayload.length - 1] ^= 0xff;
+  await fs.writeFile(published.backup.path, operationPayload);
+  await assert.rejects(
+    verifyPostgresqlBackupsAndApplyRetention({
+      backupDirectory: idempotentDirectory,
+      connectionString,
+      binDirectory: root,
+      privateDirectory,
+      retentionCount: 30,
+      decryptFile,
+      runTool: fakeTool,
+      now: new Date("2026-08-16T13:00:00.000Z"),
+      requiredFileName: published.backup.fileName,
+    }),
+    (error) =>
+      error?.code === "POSTGRESQL_NEW_BACKUP_CORRUPT" &&
+      error?.details?.quarantinedCount === 1
+  );
+  const retriedAfterQuarantine = await createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: idempotentDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: fakeTool,
+    now: new Date("2026-08-16T14:00:00.000Z"),
+    operationId,
+  });
+  assert.equal(retriedAfterQuarantine.observed, false);
+  assert.equal(
+    retriedAfterQuarantine.backup.fileName,
+    published.backup.fileName
+  );
+  const checksumDamagedPayload = await fs.readFile(
+    retriedAfterQuarantine.backup.path
+  );
+  checksumDamagedPayload[checksumDamagedPayload.length - 1] ^= 0xff;
+  await fs.writeFile(
+    retriedAfterQuarantine.backup.path,
+    checksumDamagedPayload
+  );
+  const retriedAfterChecksumDamage = await createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: idempotentDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: fakeTool,
+    now: new Date("2026-08-16T14:30:00.000Z"),
+    operationId,
+  });
+  assert.equal(retriedAfterChecksumDamage.observed, false);
+  assert.equal(retriedAfterChecksumDamage.prePublicationQuarantined.length, 1);
+  assert.equal(
+    retriedAfterChecksumDamage.prePublicationQuarantined[0].reasonCode,
+    "POSTGRESQL_BACKUP_CORRUPT"
+  );
+  await fs.writeFile(
+    `${retriedAfterChecksumDamage.backup.path}.json`,
+    "{invalid"
+  );
+  const retriedAfterManifestDamage = await createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: idempotentDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: fakeTool,
+    now: new Date("2026-08-16T15:00:00.000Z"),
+    operationId,
+  });
+  assert.equal(retriedAfterManifestDamage.observed, false);
+  assert.equal(retriedAfterManifestDamage.prePublicationQuarantined.length, 1);
+  assert.equal(
+    retriedAfterManifestDamage.prePublicationQuarantined[0].reasonCode,
+    "POSTGRESQL_BACKUP_MANIFEST_INVALID"
+  );
+
+  const structuralCorruptionDirectory = path.join(
+    root,
+    "structural-corruption"
+  );
+  const structurallyCorrupt = await createPostgresqlBackup({
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    backupDirectory: structuralCorruptionDirectory,
+    applicationVersion: "1.0.0",
+    schemaVersion: "20260811010000_postgresql_baseline",
+    encryptFile,
+    runTool: fakeTool,
+    now: new Date("2026-08-16T16:00:00.000Z"),
+  });
+  await assert.rejects(
+    verifyPostgresqlBackupsAndApplyRetention({
+      backupDirectory: structuralCorruptionDirectory,
+      connectionString,
+      binDirectory: root,
+      privateDirectory,
+      retentionCount: 30,
+      decryptFile,
+      runTool: async (input) => {
+        if (input.tool === "pg_restore") {
+          throw new PostgresqlNativeOperationError(
+            "POSTGRESQL_NATIVE_TOOL_FAILED",
+            "fixture archive is unreadable"
+          );
+        }
+        return fakeTool(input);
+      },
+      now: new Date("2026-08-16T16:01:00.000Z"),
+      requiredFileName: structurallyCorrupt.backup.fileName,
+    }),
+    (error) =>
+      error?.code === "POSTGRESQL_NEW_BACKUP_CORRUPT" &&
+      error?.details?.quarantined?.[0]?.reasonCode ===
+        "POSTGRESQL_BACKUP_CORRUPT"
+  );
 
   const restoreSql = [];
   const cutoverPhases = [];
@@ -402,22 +653,211 @@ try {
   const corruptPayload = await fs.readFile(corruptPath);
   corruptPayload[corruptPayload.length - 1] ^= 0xff;
   await fs.writeFile(corruptPath, corruptPayload);
-  await assert.rejects(
-    verifyPostgresqlBackupsAndApplyRetention({
-      backupDirectory: retentionSafetyDirectory,
+  const quarantineNow = new Date("2026-08-18T00:00:00.000Z");
+  const degraded = await verifyPostgresqlBackupsAndApplyRetention({
+    backupDirectory: retentionSafetyDirectory,
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    retentionCount: 1,
+    decryptFile,
+    runTool: fakeTool,
+    now: quarantineNow,
+  });
+  assert.equal(degraded.candidateCount, 2);
+  assert.equal(degraded.verifiedCount, 1);
+  assert.equal(degraded.quarantinedCount, 1);
+  assert.equal(degraded.warningCount, 1);
+  assert.equal(degraded.retention.retainedCount, 1);
+  const visibleQuarantines = await listPostgresqlBackupQuarantines(
+    retentionSafetyDirectory
+  );
+  assert.equal(visibleQuarantines.length, 1);
+  assert.equal(visibleQuarantines[0].originalFileName, safetyCandidates[0].fileName);
+  assert.equal("directory" in visibleQuarantines[0], false);
+  assert.equal(
+    (await listPostgresqlBackups(retentionSafetyDirectory)).length,
+    1,
+    "A corrupt backup blocked verified-set retention."
+  );
+  const exactQuarantineCutoff = new Date(
+    quarantineNow.getTime() + 30 * 24 * 60 * 60 * 1_000
+  );
+  const dryRun = await cleanupPostgresqlBackupQuarantine({
+    backupDirectory: retentionSafetyDirectory,
+    now: new Date(exactQuarantineCutoff.getTime() + 1),
+    dryRun: true,
+  });
+  assert.equal(dryRun.attemptedCount, 1);
+  assert.equal(dryRun.changedCount, 0);
+  const exact = await cleanupPostgresqlBackupQuarantine({
+    backupDirectory: retentionSafetyDirectory,
+    now: exactQuarantineCutoff,
+  });
+  assert.equal(exact.changedCount, 0, "Exact-cutoff quarantine was deleted.");
+  const expired = await cleanupPostgresqlBackupQuarantine({
+    backupDirectory: retentionSafetyDirectory,
+    now: new Date(exactQuarantineCutoff.getTime() + 1),
+  });
+  assert.equal(expired.changedCount, 1);
+  assert.equal(expired.backlogCount, 0);
+
+  const boundedQuarantineDirectory = path.join(root, "bounded-quarantine");
+  for (let day = 1; day <= 4; day += 1) {
+    await createPostgresqlBackup({
       connectionString,
       binDirectory: root,
       privateDirectory,
-      retentionCount: 1,
+      backupDirectory: boundedQuarantineDirectory,
+      applicationVersion: "1.0.0",
+      schemaVersion: "20260811010000_postgresql_baseline",
+      encryptFile,
+      runTool: fakeTool,
+      now: new Date(`2026-08-0${day}T00:00:00.000Z`),
+    });
+  }
+  const boundedCandidates = await listPostgresqlBackups(
+    boundedQuarantineDirectory
+  );
+  for (const candidate of boundedCandidates.slice(0, 3)) {
+    const filename = path.join(
+      boundedQuarantineDirectory,
+      candidate.fileName
+    );
+    const payload = await fs.readFile(filename);
+    payload[payload.length - 1] ^= 0xff;
+    await fs.writeFile(filename, payload);
+  }
+  const boundedDegraded = await verifyPostgresqlBackupsAndApplyRetention({
+    backupDirectory: boundedQuarantineDirectory,
+    connectionString,
+    binDirectory: root,
+    privateDirectory,
+    retentionCount: 30,
+    decryptFile,
+    runTool: fakeTool,
+    now: quarantineNow,
+  });
+  assert.equal(boundedDegraded.quarantinedCount, 3);
+  assert.equal(boundedDegraded.verifiedCount, 1);
+  const boundedQuarantineRoot = path.join(
+    boundedQuarantineDirectory,
+    "quarantine"
+  );
+  const recoverableEntry = (await fs.readdir(boundedQuarantineRoot)).find(
+    (name) => name.startsWith("quarantine-")
+  );
+  assert.ok(recoverableEntry);
+  await fs.rename(
+    path.join(boundedQuarantineRoot, recoverableEntry),
+    path.join(boundedQuarantineRoot, ".pending-recovery-fixture")
+  );
+  const incompletePendingPath = path.join(
+    boundedQuarantineRoot,
+    ".pending-incomplete-fixture"
+  );
+  await fs.mkdir(incompletePendingPath);
+  await fs.writeFile(
+    path.join(incompletePendingPath, "quarantine.json"),
+    "{invalid"
+  );
+  const nonDirectoryPendingPath = path.join(
+    boundedQuarantineRoot,
+    ".pending-non-directory-fixture"
+  );
+  await fs.writeFile(nonDirectoryPendingPath, "preserve");
+  const malformedFinalPath = path.join(
+    boundedQuarantineRoot,
+    "quarantine-malformed-fixture"
+  );
+  await fs.mkdir(malformedFinalPath);
+  await fs.writeFile(
+    path.join(malformedFinalPath, "quarantine.json"),
+    "{invalid"
+  );
+  const recoveredQuarantine =
+    await verifyPostgresqlBackupsAndApplyRetention({
+      backupDirectory: boundedQuarantineDirectory,
+      connectionString,
+      binDirectory: root,
+      privateDirectory,
+      retentionCount: 30,
       decryptFile,
       runTool: fakeTool,
-    }),
-    (error) => error?.code === "POSTGRESQL_BACKUP_CORRUPT"
+      now: quarantineNow,
+    });
+  assert.equal(recoveredQuarantine.recoveredQuarantineCount, 1);
+  assert.equal(recoveredQuarantine.quarantinedCount, 0);
+  assert.equal((await fs.lstat(incompletePendingPath)).isDirectory(), true);
+  assert.equal((await fs.lstat(nonDirectoryPendingPath)).isFile(), true);
+  assert.equal((await fs.lstat(malformedFinalPath)).isDirectory(), true);
+  const boundedFirst = await cleanupPostgresqlBackupQuarantine({
+    backupDirectory: boundedQuarantineDirectory,
+    now: new Date(exactQuarantineCutoff.getTime() + 1),
+    maxBatchSize: 2,
+  });
+  assert.equal(boundedFirst.changedCount, 2);
+  assert.equal(boundedFirst.backlogCount, 1);
+  const boundedSecond = await cleanupPostgresqlBackupQuarantine({
+    backupDirectory: boundedQuarantineDirectory,
+    now: new Date(exactQuarantineCutoff.getTime() + 1),
+    maxBatchSize: 2,
+  });
+  assert.equal(boundedSecond.changedCount, 1);
+  assert.equal(boundedSecond.backlogCount, 0);
+  assert.equal(
+    (await fs.lstat(incompletePendingPath)).isDirectory(),
+    true,
+    "Cleanup deleted an incomplete active quarantine staging directory."
   );
   assert.equal(
-    (await listPostgresqlBackups(retentionSafetyDirectory)).length,
-    2,
-    "A failed integrity pass deleted a recoverable backup."
+    (await fs.lstat(nonDirectoryPendingPath)).isFile(),
+    true,
+    "Cleanup deleted a non-directory staging artifact."
+  );
+  assert.equal(
+    (await fs.lstat(malformedFinalPath)).isDirectory(),
+    true,
+    "Cleanup deleted malformed quarantine evidence."
+  );
+
+  const retentionAllowlistDirectory = path.join(root, "retention-allowlist");
+  for (let day = 1; day <= 3; day += 1) {
+    await createPostgresqlBackup({
+      connectionString,
+      binDirectory: root,
+      privateDirectory,
+      backupDirectory: retentionAllowlistDirectory,
+      applicationVersion: "1.0.0",
+      schemaVersion: "20260811010000_postgresql_baseline",
+      encryptFile,
+      runTool: fakeTool,
+      now: new Date(`2026-07-0${day}T00:00:00.000Z`),
+    });
+  }
+  const allowlistCandidates = await listPostgresqlBackups(
+    retentionAllowlistDirectory
+  );
+  const unverifiedConcurrentFileName = allowlistCandidates[0].fileName;
+  const allowlistedFileNames = allowlistCandidates
+    .slice(1)
+    .map((candidate) => candidate.fileName);
+  const allowlistedRetention = await applyPostgresqlBackupRetention(
+    retentionAllowlistDirectory,
+    1,
+    { verifiedFileNames: allowlistedFileNames }
+  );
+  assert.equal(allowlistedRetention.removed.length, 1);
+  const afterAllowlistedRetention = await listPostgresqlBackups(
+    retentionAllowlistDirectory
+  );
+  assert.equal(afterAllowlistedRetention.length, 2);
+  assert.equal(
+    afterAllowlistedRetention.some(
+      (candidate) => candidate.fileName === unverifiedConcurrentFileName
+    ),
+    true,
+    "Retention deleted a concurrently published unverified backup."
   );
 
   console.log(

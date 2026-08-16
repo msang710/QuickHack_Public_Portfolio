@@ -441,6 +441,12 @@ async function acquireWorkerLock(
           finished_at = NULL,
           locked_by = ${WORKER_INSTANCE_ID},
           lease_token = ${seed.leaseToken}::uuid,
+          run_token = CASE
+            WHEN job.status IN ('RETRY_WAITING', 'RUNNING')
+              AND job.run_token IS NOT NULL
+            THEN job.run_token
+            ELSE ${seed.leaseToken}::uuid
+          END,
           claim_generation = job.claim_generation + 1,
           locked_until = ${seed.lockedUntil},
           progress_current = 0,
@@ -519,6 +525,12 @@ async function acquireNextDueWorkerLock(
           finished_at = NULL,
           locked_by = ${WORKER_INSTANCE_ID},
           lease_token = ${seed.leaseToken}::uuid,
+          run_token = CASE
+            WHEN job.status IN ('RETRY_WAITING', 'RUNNING')
+              AND job.run_token IS NOT NULL
+            THEN job.run_token
+            ELSE ${seed.leaseToken}::uuid
+          END,
           claim_generation = job.claim_generation + 1,
           locked_until = ${seed.lockedUntil},
           progress_current = 0,
@@ -771,6 +783,7 @@ async function executeWorkerJob(
     lockedUntil,
     lockSeconds,
   } = acquired;
+  const runToken = lockedJob.run_token;
   const startedAt = lockedJob.started_at ?? databaseNow();
   const lease = createWorkerLease({
     workerKey: worker.key,
@@ -791,6 +804,9 @@ async function executeWorkerJob(
 
   try {
     assertWorkerRunsAllowed();
+    if (!runToken) {
+      throw new Error(`Worker ${worker.key} did not acquire a logical run token.`);
+    }
     activeWorker.throwIfAborted();
     await lease.assertActive();
     const rawResult = await runOperationTrace(
@@ -810,6 +826,7 @@ async function executeWorkerJob(
         return execute({
           workerJobId: lockedJob.worker_job_id,
           leaseToken,
+          runToken,
           claimGeneration,
           workerKey: worker.key,
           triggeredBy,

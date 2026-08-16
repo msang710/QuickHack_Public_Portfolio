@@ -758,11 +758,22 @@ export async function activateMobileDevice(
     if (
       before.registration_state !== "PROVISIONING" ||
       before.registration_revision !== expectedRevision ||
-      before.provisioning_token_hash !== provisionHash ||
+      before.provisioning_token_hash !== provisionHash
+    ) {
+      throw publicConflict(
+        "MOBILE_DEVICE_PROVISIONING_INVALIDATED",
+        "USB 기기 등록 요청이 취소되었거나 변경되었습니다. 새 등록을 시작하세요."
+      );
+    }
+
+    if (
       !before.provisioning_expires_at ||
       before.provisioning_expires_at <= databaseNow()
     ) {
-      throw new MobileDeviceAuthError("USB 기기 등록 요청이 만료되었거나 변경되었습니다.");
+      throw publicConflict(
+        "MOBILE_DEVICE_PROVISIONING_EXPIRED",
+        "USB 기기 등록 요청이 만료되었습니다. 새 등록을 시작하세요."
+      );
     }
 
     let row: NonNullable<MobileDeviceRow>;

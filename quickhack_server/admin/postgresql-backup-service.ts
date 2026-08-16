@@ -4,6 +4,7 @@ import packageJson from "@/package.json" with { type: "json" };
 import {
   createPostgresqlBackup,
   inspectPostgresqlToolchain,
+  listPostgresqlBackupQuarantines,
   listPostgresqlBackups,
   verifyPostgresqlBackupsAndApplyRetention,
 } from "@/quickhack_server/core/database/postgresql-native-operations.mjs";
@@ -74,7 +75,9 @@ export function postgresqlBackupPaths() {
   };
 }
 
-export async function createOperationalPostgresqlBackup() {
+export async function createOperationalPostgresqlBackup(input: {
+  operationId?: string;
+} = {}) {
   const paths = postgresqlBackupPaths();
   const created = await createPostgresqlBackup({
     connectionString: resolvePostgresqlConnectionStringSync({
@@ -85,9 +88,22 @@ export async function createOperationalPostgresqlBackup() {
     applicationVersion: packageJson.version,
     schemaVersion: QUICKHACK_POSTGRESQL_SCHEMA_VERSION,
     encryptFile: encryptBackupFile,
+    operationId: input.operationId,
   });
-  const integrity = await verifyOperationalPostgresqlBackups();
-  return { ...created, ...integrity };
+  const integrity = await verifyOperationalPostgresqlBackups({
+    requiredFileName: created.backup.fileName,
+  });
+  const quarantined = [
+    ...created.prePublicationQuarantined,
+    ...integrity.quarantined,
+  ];
+  return {
+    ...created,
+    ...integrity,
+    quarantined,
+    quarantinedCount: quarantined.length,
+    warningCount: quarantined.length,
+  };
 }
 
 export async function listOperationalPostgresqlBackups() {
@@ -101,7 +117,9 @@ export async function enforceOperationalPostgresqlBackupRetention() {
   return (await verifyOperationalPostgresqlBackups()).retention;
 }
 
-export async function verifyOperationalPostgresqlBackups() {
+export async function verifyOperationalPostgresqlBackups(input: {
+  requiredFileName?: string | null;
+} = {}) {
   const paths = postgresqlBackupPaths();
   const connectionString = resolvePostgresqlConnectionStringSync({
     role: "backup",
@@ -113,5 +131,13 @@ export async function verifyOperationalPostgresqlBackups() {
     connectionString,
     retentionCount: runtime.serverConfig?.backupRetentionCount ?? 30,
     decryptFile: decryptBackupFile,
+    requiredFileName: input.requiredFileName ?? null,
   });
+}
+
+export async function listOperationalPostgresqlBackupQuarantines() {
+  const runtime = getRuntimeConfig();
+  return listPostgresqlBackupQuarantines(
+    path.join(runtime.paths.dataDir, "backups")
+  );
 }

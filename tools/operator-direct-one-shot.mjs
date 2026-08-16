@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { defaultRestoreRequestHandoff } from "./operator-restore-handoff.mjs";
 
 const OPERATIONS = Object.freeze(["MIGRATE", "RESTORE", "PROVISION_INITIAL_LEADER"]);
 
@@ -13,43 +14,19 @@ function assertOperation(value) {
   return operation;
 }
 
-function restoreRequestPath(runtimeConfig) {
-  return path.join(path.resolve(runtimeConfig.dataDirectory), "state", "operator", "restore-request.json");
-}
-
 export function prepareOperatorOneShotRequest(operationValue, input, runtimeConfig) {
   const operation = assertOperation(operationValue);
   if (operation !== "RESTORE") return;
-  const backupFile = String(input.backupFile ?? "").trim();
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\.qhb$/u.test(backupFile)) {
-    const error = new Error("Restore requires a finite backup file name from the QuickHack backup directory.");
-    error.code = "RESTORE_REQUEST_INVALID";
-    throw error;
-  }
-  const requestPath = restoreRequestPath(runtimeConfig);
-  fs.mkdirSync(path.dirname(requestPath), { recursive: true, mode: 0o700 });
-  const handle = fs.openSync(requestPath, "wx", 0o600);
-  try {
-    fs.writeFileSync(handle, `${JSON.stringify({ schemaVersion: 1, backupFile })}\n`, "utf8");
-    fs.fsyncSync(handle);
-  } finally {
-    fs.closeSync(handle);
-  }
+  return defaultRestoreRequestHandoff.prepare(input.backupFile, runtimeConfig);
 }
 
-function readRestoreRequest(runtimeConfig) {
-  const requestPath = restoreRequestPath(runtimeConfig);
-  const stat = fs.lstatSync(requestPath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096) throw new Error("The restore request is invalid.");
-  const request = JSON.parse(fs.readFileSync(requestPath, "utf8"));
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\.qhb$/u.test(String(request.backupFile ?? ""))) {
-    throw new Error("The restore request backup file is invalid.");
-  }
-  return { requestPath, backupFile: request.backupFile };
+export function cleanupOperatorOneShotRequest(preparedRequest) {
+  return defaultRestoreRequestHandoff.cleanupUnclaimed(preparedRequest);
 }
 
 export function createDirectOperatorOneShot(options) {
   const runtime = options.runtime;
+  const restoreHandoff = options.restoreHandoff ?? defaultRestoreRequestHandoff;
   const root = path.resolve(options.root);
   const nodeExecutable = path.resolve(options.nodeExecutable ?? process.execPath);
   if (!runtime || typeof runtime.execFileText !== "function") throw new TypeError("The operator runtime is required.");
@@ -67,6 +44,7 @@ export function createDirectOperatorOneShot(options) {
     let entry;
     let args;
     let restoreRequest;
+    let restoreTerminalState = "FAILED";
     if (operation === "MIGRATE") {
       entry = path.join(root, "tools", "deploy-postgresql-migrations.mjs");
       args = [entry, "--runtime-config", runtimeConfigPath];
@@ -76,24 +54,25 @@ export function createDirectOperatorOneShot(options) {
       args = [entry, "--runtime-config", runtimeConfigPath, "--result-file", resultPath, "--allow-create"];
     } else {
       entry = path.join(root, "tools", "postgresql-restore.mjs");
-      restoreRequest = readRestoreRequest(runtimeConfig);
+      restoreRequest = restoreHandoff.claim(runtimeConfig);
       args = [entry, "--install-dir", installDir, "--runtime-config", runtimeConfigPath, "--backup-file", restoreRequest.backupFile];
     }
-    if (!fs.existsSync(entry)) {
-      const error = new Error("The packaged operator entry is unavailable.");
-      error.code = "DEPENDENCY_MISSING";
-      throw error;
-    }
     try {
+      if (!fs.existsSync(entry)) {
+        const error = new Error("The packaged operator entry is unavailable.");
+        error.code = "DEPENDENCY_MISSING";
+        throw error;
+      }
       const result = await runtime.execFileText(nodeExecutable, args, { cwd: root, env: environment, timeout: 60 * 60_000 });
       if (!result.ok) {
         const error = new Error("The one-shot operator process failed.");
         error.code = "OPERATION_FAILED";
         throw error;
       }
+      if (restoreRequest) restoreTerminalState = "SUCCEEDED";
       return Object.freeze({ operation, state: "COMPLETED" });
     } finally {
-      if (restoreRequest) fs.rmSync(restoreRequest.requestPath, { force: true });
+      if (restoreRequest) restoreHandoff.finalize(restoreRequest, restoreTerminalState);
     }
   }
 

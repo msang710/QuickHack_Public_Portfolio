@@ -42,7 +42,9 @@ import {
 import {
   SUPPLIES_FORM_IDS,
   createSupplyMovementTargetState,
+  prepareSupplyMovementOperation,
   suppliesDraftSnapshotsEqual,
+  type PendingSupplyMovementOperation,
   type SupplyMovementDraft,
 } from "@/quickhack_client/components/supplies/supplies-draft-state";
 import {
@@ -253,6 +255,8 @@ type SuppliesApiResponse = {
   ok: boolean;
   message?: string;
   data?: SupplyWorkspaceData;
+  result?: unknown;
+  receipt?: import("@/quickhack_shared/core/mutation-receipt").MutationReceipt<unknown>;
 };
 
 type SupplyForm = {
@@ -536,7 +540,7 @@ async function submitSupplies(method: "POST" | "PATCH", body: Record<string, unk
   });
   const payload = (await response.json()) as SuppliesApiResponse;
 
-  if (!response.ok || !payload.ok || !payload.data) {
+  if (!response.ok || !payload.ok) {
     throw new Error(payload.message || "비품관리 작업에 실패했습니다.");
   }
 
@@ -558,6 +562,8 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
     React.useState<MovementForm>(emptyMovementForm);
   const [movementBaseline, setMovementBaseline] =
     React.useState<MovementForm>(emptyMovementForm);
+  const pendingMovementOperation =
+    React.useRef<PendingSupplyMovementOperation | null>(null);
   const [ruleForm, setRuleForm] = React.useState<RuleForm>(emptyRuleForm);
   const [ruleBaseline, setRuleBaseline] =
     React.useState<RuleForm>(emptyRuleForm);
@@ -667,8 +673,22 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
 
     try {
       const payload = await submitSupplies(method, body);
-      setData(payload.data ?? null);
-      setMessage(payload.message || "비품관리 작업을 완료했습니다.");
+      let refreshed = Boolean(payload.data);
+      if (payload.data) {
+        setData(payload.data);
+      } else if (payload.receipt?.refreshRequired) {
+        try {
+          setData(await fetchSupplies());
+          refreshed = true;
+        } catch {
+          refreshed = false;
+        }
+      }
+      setMessage(
+        refreshed
+          ? payload.message || "비품관리 작업을 완료했습니다."
+          : `${payload.message || "비품관리 작업을 완료했습니다."} 전체 현황은 새로고침해 확인하세요.`
+      );
       return true;
     } catch (error) {
       const failureMessage = error instanceof Error ? error.message : String(error);
@@ -703,12 +723,20 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
 
   async function recordMovement() {
     const retainedSupplyId = movementForm.supplyId;
+    const operation = prepareSupplyMovementOperation(
+      movementForm,
+      pendingMovementOperation.current,
+      () => window.crypto.randomUUID()
+    );
+    pendingMovementOperation.current = operation;
     const ok = await runAction("recordMovement", "POST", {
       action: "recordMovement",
       ...movementForm,
+      idempotencyKey: operation.operationId,
     });
 
     if (ok) {
+      pendingMovementOperation.current = null;
       applyMovementSupplyTarget(retainedSupplyId);
     }
   }
@@ -1411,6 +1439,12 @@ function InventoryMode({
               <Field label={movementForm.movementType === SUPPLY_MOVEMENT_TYPE.adjustment ? "조정 후 수량" : "수량"}>
                 <Input
                   type="number"
+                  min={
+                    movementForm.movementType === SUPPLY_MOVEMENT_TYPE.adjustment
+                      ? 0
+                      : 1
+                  }
+                  step={1}
                   value={movementForm.quantity}
                   onChange={(event) =>
                     setMovementForm((current) => ({

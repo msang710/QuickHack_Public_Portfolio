@@ -12,6 +12,11 @@ import {
   setOperationTraceUserId,
   traceOperationSpan,
 } from "@/quickhack_server/observability/operation-trace";
+import {
+  createMutationReceipt,
+  settleOptionalWorkerWake,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -165,14 +170,31 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      await traceOperationSpan("SERVICE_WRITE", () =>
+      const result = await traceOperationSpan("SERVICE_WRITE", () =>
         resumeSalesChannelWriteControl({
           controlId: positiveId(body.controlId, "쓰기 제어 ID"),
           userId: user.userId,
           expectedRevision: nonnegativeRevision(body.expectedControlRevision),
         })
       );
-      return NextResponse.json({ ok: true, message: "외부 쓰기를 다시 열었습니다." });
+      const authoritativeResult = {
+        controlId: result.sales_channel_write_control_id,
+        revision: result.revision,
+        isPaused: result.is_paused === 1,
+      };
+      const receipt = createMutationReceipt(authoritativeResult, {
+        operationId: stableMutationOperationId("sales-channel-resume", [
+          result.sales_channel_write_control_id,
+          result.revision,
+        ]),
+        committedAt: result.updated_at,
+      });
+      return NextResponse.json({
+        ok: true,
+        message: "외부 쓰기를 다시 열었습니다.",
+        result: authoritativeResult,
+        receipt,
+      });
     }
 
     const requestId = positiveId(body.requestId, "쓰기 요청 ID");
@@ -184,19 +206,52 @@ export async function PATCH(request: NextRequest) {
           userId: user.userId,
         })
       );
-      if (result.confirmed) await wakeDependentWorkers();
-      return NextResponse.json({ ok: true, ...result });
+      const authoritativeResult = {
+        requestId,
+        confirmed: result.confirmed,
+      };
+      const receipt = createMutationReceipt(authoritativeResult, {
+        operationId: stableMutationOperationId("sales-channel-recheck", [
+          requestId,
+          result.confirmed,
+        ]),
+      });
+      const settledReceipt = result.confirmed
+        ? await settleOptionalWorkerWake(receipt, wakeDependentWorkers)
+        : receipt;
+      return NextResponse.json({ ok: true, ...result, receipt: settledReceipt });
     }
 
     if (action === "retryLocal") {
-      await traceOperationSpan("SERVICE_WRITE", () =>
+      const result = await traceOperationSpan("SERVICE_WRITE", () =>
         retrySalesChannelLocalFinalization({
           requestId,
           userId: user.userId,
         })
       );
-      await wakeDependentWorkers();
-      return NextResponse.json({ ok: true, message: "QuickHack 내부 확정을 완료했습니다." });
+      const authoritativeResult = {
+        requestId,
+        requestStatus:
+          result && typeof result === "object" && "request_status" in result
+            ? String(result.request_status)
+            : "COMPLETED",
+      };
+      const receipt = createMutationReceipt(authoritativeResult, {
+        operationId: stableMutationOperationId("sales-channel-retry-local", [
+          requestId,
+          authoritativeResult.requestStatus,
+        ]),
+      });
+      const settledReceipt = await settleOptionalWorkerWake(
+        receipt,
+        wakeDependentWorkers
+      );
+      return NextResponse.json({
+        ok: true,
+        message: "QuickHack 내부 확정을 완료했습니다.",
+        result: authoritativeResult,
+        receipt: settledReceipt,
+      });
     }
 
     if (action === "decision") {
@@ -210,7 +265,7 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      await traceOperationSpan("SERVICE_WRITE", () =>
+      const result = await traceOperationSpan("SERVICE_WRITE", () =>
         recordManualWriteDecision({
           requestId,
           userId: user.userId,
@@ -219,10 +274,29 @@ export async function PATCH(request: NextRequest) {
           note: body.note,
         })
       );
-      if (decision !== SALES_CHANNEL_WRITE_MANUAL_VERIFICATION.undecidable) {
-        await wakeDependentWorkers();
-      }
-      return NextResponse.json({ ok: true, message: "직접 확인 결과를 저장했습니다." });
+      const authoritativeResult = {
+        requestId,
+        requestStatus: result.request_status,
+        manualVerificationStatus: result.manual_verification_status,
+      };
+      const receipt = createMutationReceipt(authoritativeResult, {
+        operationId: stableMutationOperationId("sales-channel-decision", [
+          requestId,
+          decision,
+          result.request_status,
+        ]),
+        committedAt: result.updated_at,
+      });
+      const settledReceipt =
+        decision !== SALES_CHANNEL_WRITE_MANUAL_VERIFICATION.undecidable
+          ? await settleOptionalWorkerWake(receipt, wakeDependentWorkers)
+          : receipt;
+      return NextResponse.json({
+        ok: true,
+        message: "직접 확인 결과를 저장했습니다.",
+        result: authoritativeResult,
+        receipt: settledReceipt,
+      });
     }
 
     return NextResponse.json(

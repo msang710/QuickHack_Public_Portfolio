@@ -22,8 +22,12 @@ assert.match(
   /const instanceId = crypto\.randomBytes\(24\)\.toString\("hex"\)/
 );
 assert.match(launcher, /QUICKHACK_CLIENT_INSTANCE_ID: instanceId/);
-assert.match(launcher, /state\.instanceId !== existing\.instanceId/);
-assert.match(launcher, /probe\.instanceId === instanceId/);
+assert.match(launcher, /assertObservedClientRuntimeOwnership/);
+assert.match(launcher, /launchClientRuntimeWithOwnerState/);
+assert.match(launcher, /spawnOwnedDetached/);
+assert.match(launcher, /terminateOwnedDetachedProcess/);
+assert.doesNotMatch(launcher, /writeFileSync\(statePath/);
+assert.doesNotMatch(launcher, /node:child_process/);
 assert.doesNotMatch(launcher, /instanceToken|QUICKHACK_CLIENT_INSTANCE_TOKEN/);
 
 assert.match(mainCommand, /client-runtime-launcher\.mjs/);

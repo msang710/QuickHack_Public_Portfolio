@@ -13,6 +13,7 @@ import {
   mutateServerJson,
   ServerProxyError,
 } from "@/quickhack_shared/core/server-proxy";
+import { loadMobileManagedTrustBundle } from "@/quickhack_client/security/mobile-trust-bundle";
 
 export const runtime = "nodejs";
 
@@ -84,6 +85,22 @@ export async function POST(request: NextRequest) {
     );
   }
   const deviceId = body.deviceId == null ? null : Number(body.deviceId);
+  const serverOrigin = getRemoteServerOrigin();
+  let trustBundle;
+  try {
+    trustBundle = loadMobileManagedTrustBundle(serverOrigin);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "클라이언트의 HTTPS 신뢰 번들이 완전하지 않아 USB 등록을 시작하지 않았습니다.",
+        code: error && typeof error === "object" && "code" in error
+          ? String(error.code)
+          : "TRUST_BUNDLE_INVALID",
+      },
+      { status: 503 }
+    );
+  }
   const action = deviceId ? "reprovision" : "beginProvisioning";
   const pathname = scope === "ADMIN" ? "/api/admin/mobile-devices" : "/api/auth/mobile-devices";
   const mainBody = {
@@ -128,8 +145,9 @@ export async function POST(request: NextRequest) {
   try {
     await deliverMobileProvisioningBootstrap({
       serial,
-      serverOrigin: getRemoteServerOrigin(),
+      serverOrigin,
       bootstrap: provisioned.bootstrap,
+      trustBundle,
     });
   } catch (deliveryError) {
     let compensated = false;

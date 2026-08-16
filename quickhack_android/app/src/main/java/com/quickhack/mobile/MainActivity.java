@@ -68,11 +68,15 @@ public final class MainActivity extends AppCompatActivity {
 
     private final MobileProofKey proofKey = new MobileProofKey();
     private MobileCredentialStore credentialStore;
+    private MobileTrustStore trustStore;
+    private ManagedTrustBundle managedTrustBundle;
     private QuickHackApi api;
     private BarcodeCameraController cameraController;
     private String clientId;
     private String deviceToken;
     private ProvisioningRequest provisioningRequest;
+    private PendingActivationRecord pendingActivation;
+    private boolean pendingRecoveryBlocked;
     private boolean signalMode;
     private boolean busy;
     private CameraTarget pendingCameraTarget = CameraTarget.NONE;
@@ -91,6 +95,7 @@ public final class MainActivity extends AppCompatActivity {
     private TextView shipmentValueText;
     private TextView allValuesText;
     private MaterialButton loginButton;
+    private MaterialButton cancelActivationButton;
     private CircularProgressIndicator setupProgress;
     private PreviewView signalCameraPreview;
     private View cameraResultCover;
@@ -101,8 +106,16 @@ public final class MainActivity extends AppCompatActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
         credentialStore = new MobileCredentialStore(this, proofKey);
+        trustStore = new MobileTrustStore(this);
         String storedOrigin = credentialStore.serverOrigin();
-        api = new QuickHackApi(storedOrigin);
+        try {
+            managedTrustBundle = storedOrigin.isEmpty()
+                ? null
+                : trustStore.load(storedOrigin);
+        } catch (Exception ignored) {
+            managedTrustBundle = null;
+        }
+        api = new QuickHackApi(storedOrigin, managedTrustBundle);
         clientId = storedOrigin.isEmpty() ? "" : credentialStore.clientId(storedOrigin);
         deviceToken = storedOrigin.isEmpty() ? "" : credentialStore.loadDeviceToken(storedOrigin);
 
@@ -192,6 +205,7 @@ public final class MainActivity extends AppCompatActivity {
         shipmentValueText = findViewById(R.id.shipment_value_text);
         allValuesText = findViewById(R.id.all_values_text);
         loginButton = findViewById(R.id.login_button);
+        cancelActivationButton = findViewById(R.id.cancel_activation_button);
         setupProgress = findViewById(R.id.setup_progress);
         signalCameraPreview = findViewById(R.id.signal_camera_preview);
         cameraResultCover = findViewById(R.id.camera_result_cover);
@@ -227,6 +241,7 @@ public final class MainActivity extends AppCompatActivity {
         setupProgress.setIndeterminate(true);
 
         loginButton.setOnClickListener(view -> login());
+        cancelActivationButton.setOnClickListener(view -> cancelPendingActivation());
         passwordInput.setOnEditorActionListener((view, actionId, event) -> {
             if (actionId != EditorInfo.IME_ACTION_DONE) {
                 return false;
@@ -247,10 +262,26 @@ public final class MainActivity extends AppCompatActivity {
         }
 
         hideKeyboard();
-        credentialStore.switchOrigin(serverUrl);
-        api.setBaseUrl(serverUrl);
-        clientId = credentialStore.clientId(api.getBaseUrl());
-        deviceToken = credentialStore.loadDeviceToken(api.getBaseUrl());
+        try {
+            if (pendingActivation != null
+                && !ServerOrigin.same(pendingActivation.serverOrigin, serverUrl)) {
+                discardPendingActivation(pendingActivation);
+            } else if (pendingRecoveryBlocked
+                && !ServerOrigin.same(credentialStore.serverOrigin(), serverUrl)) {
+                ProvisioningInbox.clear(this);
+                credentialStore.clearCredentialMaterial();
+                resetPendingActivationState();
+            }
+            credentialStore.switchOrigin(serverUrl);
+            api.setBaseUrl(serverUrl);
+            managedTrustBundle = trustStore.load(serverUrl);
+            api.setManagedTrustBundle(managedTrustBundle);
+            clientId = credentialStore.clientId(api.getBaseUrl());
+            deviceToken = credentialStore.loadDeviceToken(api.getBaseUrl());
+        } catch (Exception error) {
+            setSetupStatus(userMessage(error), true);
+            return;
+        }
         runSetupApi(getString(R.string.login_in_progress), () -> {
             QuickHackApi.ApiResponse response = api.login(username, password);
             if (!response.isHttpOk() || !response.isQuickHackOk()) {
@@ -277,75 +308,237 @@ public final class MainActivity extends AppCompatActivity {
         if (request == null || !ServerOrigin.same(request.serverOrigin, api.getBaseUrl())) {
             throw new IllegalStateException("현재 서버에 대한 USB 기기 등록 요청이 없습니다.");
         }
-        proofKey.ensureCreated();
-        if (request.deviceToken.isEmpty()) {
-            byte[] tokenBytes = new byte[32];
-            new SecureRandom().nextBytes(tokenBytes);
-            request.deviceToken = Base64.encodeToString(
-                tokenBytes,
-                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING
-            );
+        PendingActivationRecord record = preparePendingActivation(request);
+        String currentProofSpki = proofKey.publicKeySpkiBase64();
+        if (!record.proofPublicKeySpki.equals(currentProofSpki)) {
+            pendingRecoveryBlocked = true;
+            updateCancelActivationButton();
+            throw new IllegalStateException(getString(R.string.activation_proof_changed));
         }
         String tokenDigest = Base64.encodeToString(
             MessageDigest.getInstance("SHA-256").digest(
-                request.deviceToken.getBytes(StandardCharsets.UTF_8)
+                record.deviceToken.getBytes(StandardCharsets.UTF_8)
             ),
             Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING
         );
         String proofMessage = "QH-MOBILE-PROVISION-V1\n"
-            + request.deviceId + "\n"
-            + request.registrationRevision + "\n"
-            + request.provisioningToken + "\n"
-            + clientId + "\n"
+            + record.deviceId + "\n"
+            + record.registrationRevision + "\n"
+            + record.provisioningToken + "\n"
+            + record.appInstanceId + "\n"
             + tokenDigest;
         JSONObject body = new JSONObject();
-        body.put("deviceId", request.deviceId);
-        body.put("registrationRevision", request.registrationRevision);
-        body.put("provisioningToken", request.provisioningToken);
-        body.put("appInstanceId", clientId);
-        body.put("deviceToken", request.deviceToken);
-        body.put("devicePublicKeySpki", proofKey.publicKeySpkiBase64());
+        body.put("deviceId", record.deviceId);
+        body.put("registrationRevision", record.registrationRevision);
+        body.put("provisioningToken", record.provisioningToken);
+        body.put("appInstanceId", record.appInstanceId);
+        body.put("deviceToken", record.deviceToken);
+        body.put("devicePublicKeySpki", record.proofPublicKeySpki);
         body.put("signature", proofKey.signBase64(proofMessage));
         QuickHackApi.ApiResponse response = api.activateDevice(body);
         if (!response.isHttpOk() || !response.isQuickHackOk()) {
+            if (ActivationRecoveryPolicy.isTerminalFailure(response)) {
+                discardPendingActivation(record);
+            }
             throw new IllegalStateException(
                 response.messageOrDefault(getString(R.string.activation_failed))
             );
         }
         JSONObject data = response.json == null ? null : response.json.optJSONObject("data");
         String returnedToken = data == null ? "" : data.optString("deviceToken", "");
-        if (!request.deviceToken.equals(returnedToken)) {
+        if (!record.deviceToken.equals(returnedToken)) {
             throw new IllegalStateException(getString(R.string.activation_token_missing));
         }
-        credentialStore.saveDeviceToken(api.getBaseUrl(), clientId, request.deviceToken);
-        deviceToken = request.deviceToken;
-        provisioningRequest = null;
+        credentialStore.saveDeviceToken(
+            record.serverOrigin,
+            record.appInstanceId,
+            record.deviceToken
+        );
+        deviceToken = record.deviceToken;
+        finalizePendingActivation(record);
     }
 
     private void handleProvisioningInbox() {
-        String encoded = ProvisioningInbox.take(this);
-        if (encoded.isEmpty()) return;
         try {
+            PendingActivationRecord recovered = credentialStore.loadPendingActivation();
+            if (recovered != null) {
+                restorePendingActivation(recovered);
+                return;
+            }
+
+            String encoded = ProvisioningInbox.peek(this);
+            if (encoded.isEmpty()) {
+                updateCancelActivationButton();
+                return;
+            }
             String json = new String(
                 Base64.decode(encoded, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING),
                 StandardCharsets.UTF_8
             );
-            ProvisioningRequest parsed = ProvisioningRequest.parse(new JSONObject(json));
+            ProvisioningRequest parsed = ProvisioningRequest.parse(new JSONObject(json), encoded);
             if (!isAllowedServerUrl(parsed.serverOrigin)) {
                 throw new IllegalArgumentException(serverUrlValidationMessage());
             }
+            trustStore.save(parsed.trustBundle);
+            managedTrustBundle = parsed.trustBundle;
             credentialStore.switchOrigin(parsed.serverOrigin);
             api.setBaseUrl(parsed.serverOrigin);
+            api.setManagedTrustBundle(managedTrustBundle);
             clientId = credentialStore.clientId(parsed.serverOrigin);
             deviceToken = credentialStore.loadDeviceToken(parsed.serverOrigin);
             provisioningRequest = parsed;
+            pendingActivation = null;
+            pendingRecoveryBlocked = false;
             serverUrlInput.setText(parsed.serverOrigin);
             api.clearSession();
-            showSetup("USB 기기 확인이 완료되었습니다. 등록할 계정으로 로그인하세요.");
+            showSetup(getString(R.string.setup_initial_activation));
+            updateCancelActivationButton();
         } catch (Exception error) {
+            pendingRecoveryBlocked = credentialStore.hasPendingActivation();
+            if (!pendingRecoveryBlocked) {
+                try {
+                    String invalidPayload = ProvisioningInbox.peek(this);
+                    if (!invalidPayload.isEmpty()) {
+                        ProvisioningInbox.removeIfMatches(this, invalidPayload);
+                    }
+                } catch (Exception ignored) {
+                    pendingRecoveryBlocked = true;
+                }
+            }
             provisioningRequest = null;
-            setSetupStatus("USB 기기 등록 정보를 확인할 수 없습니다.", true);
+            pendingActivation = null;
+            setSetupStatus(
+                pendingRecoveryBlocked
+                    ? getString(R.string.activation_recovery_blocked)
+                    : getString(R.string.activation_failed),
+                true
+            );
+            updateCancelActivationButton();
         }
+    }
+
+    private PendingActivationRecord preparePendingActivation(ProvisioningRequest request)
+        throws Exception {
+        if (pendingActivation != null) return pendingActivation;
+        proofKey.ensureCreated();
+        byte[] tokenBytes = new byte[32];
+        new SecureRandom().nextBytes(tokenBytes);
+        String generatedToken = Base64.encodeToString(
+            tokenBytes,
+            Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING
+        );
+        PendingActivationRecord created = PendingActivationRecord.create(
+            request.serverOrigin,
+            request.deviceId,
+            request.registrationRevision,
+            request.provisioningToken,
+            clientId,
+            generatedToken,
+            proofKey.publicKeySpkiBase64(),
+            request.trustBundle.identityDigestSha256,
+            request.inboxPayload,
+            System.currentTimeMillis()
+        );
+        credentialStore.savePendingActivation(created);
+        pendingActivation = created;
+        pendingRecoveryBlocked = false;
+        updateCancelActivationButton();
+        return created;
+    }
+
+    private void restorePendingActivation(PendingActivationRecord record) throws Exception {
+        if (!isAllowedServerUrl(record.serverOrigin)) {
+            throw new IllegalArgumentException(serverUrlValidationMessage());
+        }
+        credentialStore.switchOrigin(record.serverOrigin);
+        ManagedTrustBundle recoveredTrust = trustStore.load(record.serverOrigin);
+        if (
+            recoveredTrust == null ||
+            record.trustBundleDigestSha256.isEmpty() ||
+            !record.trustBundleDigestSha256.equals(recoveredTrust.identityDigestSha256)
+        ) {
+            throw new IllegalStateException("Pending activation trust identity cannot be recovered.");
+        }
+        managedTrustBundle = recoveredTrust;
+        api.setBaseUrl(record.serverOrigin);
+        api.setManagedTrustBundle(managedTrustBundle);
+        clientId = record.appInstanceId;
+        deviceToken = credentialStore.loadDeviceToken(record.serverOrigin);
+        pendingActivation = record;
+        provisioningRequest = ProvisioningRequest.fromPending(record, recoveredTrust);
+        pendingRecoveryBlocked = false;
+        serverUrlInput.setText(record.serverOrigin);
+        api.clearSession();
+
+        ActivationRecoveryPolicy.StartupAction recoveryAction =
+            ActivationRecoveryPolicy.startupAction(
+                record,
+                deviceToken,
+                proofKey.publicKeySpkiBase64()
+            );
+        if (recoveryAction == ActivationRecoveryPolicy.StartupAction.BLOCK_PROOF_MISMATCH) {
+            pendingRecoveryBlocked = true;
+            showSetup(getString(R.string.activation_proof_changed));
+            updateCancelActivationButton();
+            return;
+        }
+        if (recoveryAction
+            == ActivationRecoveryPolicy.StartupAction.FINALIZE_SAVED_CREDENTIAL) {
+            finalizePendingActivation(record);
+            showSetup(getString(R.string.setup_initial_login));
+            return;
+        }
+        showSetup(getString(R.string.activation_recovery_ready));
+        updateCancelActivationButton();
+    }
+
+    private void finalizePendingActivation(PendingActivationRecord record) throws Exception {
+        ProvisioningInbox.removeIfMatches(this, record.inboxPayload);
+        if (!credentialStore.clearPendingActivation(record)) {
+            throw new IllegalStateException("Pending activation owner changed during finalization.");
+        }
+        resetPendingActivationState();
+    }
+
+    private void discardPendingActivation(PendingActivationRecord record) throws Exception {
+        ProvisioningInbox.removeIfMatches(this, record.inboxPayload);
+        credentialStore.clearCredentialMaterial();
+        clientId = "";
+        deviceToken = "";
+        resetPendingActivationState();
+    }
+
+    private void cancelPendingActivation() {
+        runSetupApi(getString(R.string.activation_cancelling), () -> {
+            PendingActivationRecord record = pendingActivation;
+            if (record != null) {
+                discardPendingActivation(record);
+            } else {
+                ProvisioningInbox.clear(this);
+                credentialStore.clearCredentialMaterial();
+                clientId = "";
+                deviceToken = "";
+                resetPendingActivationState();
+            }
+            api.clearSession();
+            mainHandler.post(() -> showSetup(getString(R.string.activation_cancelled)));
+        });
+    }
+
+    private void resetPendingActivationState() {
+        pendingActivation = null;
+        provisioningRequest = null;
+        pendingRecoveryBlocked = false;
+        updateCancelActivationButton();
+    }
+
+    private void updateCancelActivationButton() {
+        if (cancelActivationButton == null) return;
+        mainHandler.post(() -> cancelActivationButton.setVisibility(
+            pendingActivation != null || provisioningRequest != null || pendingRecoveryBlocked
+                ? View.VISIBLE
+                : View.GONE
+        ));
     }
 
     private void enterSignalMode() {
@@ -602,6 +795,7 @@ public final class MainActivity extends AppCompatActivity {
     private void setSetupBusy(boolean busyValue) {
         setupProgress.setVisibility(busyValue ? View.VISIBLE : View.GONE);
         loginButton.setEnabled(!busyValue);
+        cancelActivationButton.setEnabled(!busyValue);
         serverUrlInput.setEnabled(!busyValue);
         usernameInput.setEnabled(!busyValue);
         passwordInput.setEnabled(!busyValue);
@@ -734,21 +928,26 @@ public final class MainActivity extends AppCompatActivity {
         final int deviceId;
         final int registrationRevision;
         final String provisioningToken;
-        String deviceToken = "";
+        final ManagedTrustBundle trustBundle;
+        final String inboxPayload;
 
         ProvisioningRequest(
             String serverOrigin,
             int deviceId,
             int registrationRevision,
-            String provisioningToken
+            String provisioningToken,
+            ManagedTrustBundle trustBundle,
+            String inboxPayload
         ) {
             this.serverOrigin = serverOrigin;
             this.deviceId = deviceId;
             this.registrationRevision = registrationRevision;
             this.provisioningToken = provisioningToken;
+            this.trustBundle = trustBundle;
+            this.inboxPayload = inboxPayload;
         }
 
-        static ProvisioningRequest parse(JSONObject json) {
+        static ProvisioningRequest parse(JSONObject json, String inboxPayload) {
             if (json.optInt("version", 0) != 1) {
                 throw new IllegalArgumentException("Unsupported provisioning version.");
             }
@@ -756,10 +955,40 @@ public final class MainActivity extends AppCompatActivity {
             int deviceId = json.optInt("deviceId", 0);
             int revision = json.optInt("registrationRevision", -1);
             String token = json.optString("provisioningToken", "");
+            ManagedTrustBundle trustBundle;
+            try {
+                trustBundle = ManagedTrustBundle.parse(json.getJSONObject("trustBundle"));
+            } catch (Exception error) {
+                throw new IllegalArgumentException("Invalid managed trust bundle.", error);
+            }
+            if (!ServerOrigin.same(origin, trustBundle.origin)) {
+                throw new IllegalArgumentException("Provisioning origin does not match managed trust.");
+            }
             if (deviceId <= 0 || revision < 0 || token.length() < 32) {
                 throw new IllegalArgumentException("Invalid provisioning payload.");
             }
-            return new ProvisioningRequest(origin, deviceId, revision, token);
+            return new ProvisioningRequest(
+                origin,
+                deviceId,
+                revision,
+                token,
+                trustBundle,
+                inboxPayload
+            );
+        }
+
+        static ProvisioningRequest fromPending(
+            PendingActivationRecord record,
+            ManagedTrustBundle trustBundle
+        ) {
+            return new ProvisioningRequest(
+                record.serverOrigin,
+                record.deviceId,
+                record.registrationRevision,
+                record.provisioningToken,
+                trustBundle,
+                record.inboxPayload
+            );
         }
     }
 

@@ -19,6 +19,7 @@ import { composeClientPlatform } from "@/quickhack_client/platform/compose-clien
 import { LOGEN_LABEL_TEMPLATE } from "@/quickhack_shared/shipment/logen-label";
 import {
   ClientPrintSpoolError,
+  acknowledgeClientPrintSpoolRecovery,
   armClientPrintSpoolAttempt,
   createPrivatePrintSpoolFile,
   initializeClientPrintSpool,
@@ -56,6 +57,7 @@ export type LocalLabelBitmap = {
 type PrintJobLedger = {
   requestKey: string;
   payloadHash: string;
+  contentHash: string;
   printerName: string;
   status: "SPOOLED" | "FAILED" | "UNKNOWN";
   labelCount: number;
@@ -65,6 +67,10 @@ type PrintJobLedger = {
   errorMessage: string | null;
   nativeJobId: string | null;
   createdAt: string;
+  acknowledgement?: {
+    resolution: "CONFIRMED" | "PRINTED" | "NOT_PRINTED";
+    acknowledgedAt: string;
+  };
 };
 
 const DEFAULT_SETTINGS: PrinterSettings = {
@@ -372,6 +378,89 @@ export function getLocalPrintJob(requestKey: unknown) {
   return readLedger(normalized);
 }
 
+export async function acknowledgeLocalPrintJob(input: {
+  requestKey?: unknown;
+  resolution?: unknown;
+}) {
+  const requestKey = String(input.requestKey ?? "").trim();
+  const resolution = String(input.resolution ?? "") as
+    | "CONFIRMED"
+    | "PRINTED"
+    | "NOT_PRINTED";
+  if (!JOB_KEY_PATTERN.test(requestKey)) {
+    throw new LocalPrinterError(
+      "INVALID_PRINT_REQUEST_KEY",
+      "The print request key is invalid."
+    );
+  }
+  if (!["CONFIRMED", "PRINTED", "NOT_PRINTED"].includes(resolution)) {
+    throw new LocalPrinterError(
+      "INVALID_PRINT_RESOLUTION",
+      "The print resolution is invalid."
+    );
+  }
+  await ensurePrintSpoolReady();
+  const ledger = readLedger(requestKey);
+  if (
+    !ledger ||
+    ledger.requestKey !== requestKey ||
+    !HASH_PATTERN.test(String(ledger.contentHash || ""))
+  ) {
+    throw new LocalPrinterError(
+      "PRINT_LEDGER_NOT_ACKNOWLEDGEABLE",
+      "The local print ledger cannot be acknowledged safely."
+    );
+  }
+  if (
+    (resolution === "CONFIRMED" && ledger.status !== "SPOOLED") ||
+    (resolution !== "CONFIRMED" && ledger.status !== "UNKNOWN")
+  ) {
+    throw new LocalPrinterError(
+      "PRINT_LEDGER_STATUS_CONFLICT",
+      "The local print ledger status does not match the resolution."
+    );
+  }
+  if (
+    ledger.acknowledgement &&
+    ledger.acknowledgement.resolution !== resolution
+  ) {
+    throw new LocalPrinterError(
+      "PRINT_LEDGER_ACKNOWLEDGEMENT_CONFLICT",
+      "The local print ledger was already acknowledged differently."
+    );
+  }
+  if (
+    ledger.acknowledgement &&
+    (!Number.isFinite(Date.parse(ledger.acknowledgement.acknowledgedAt)) ||
+      new Date(ledger.acknowledgement.acknowledgedAt).toISOString() !==
+        ledger.acknowledgement.acknowledgedAt)
+  ) {
+    throw new LocalPrinterError(
+      "PRINT_LEDGER_ACKNOWLEDGEMENT_INVALID",
+      "The local print acknowledgement timestamp is invalid."
+    );
+  }
+  const acknowledgedAt =
+    ledger.acknowledgement?.acknowledgedAt ?? new Date().toISOString();
+  const acknowledgedLedger: PrintJobLedger = {
+    ...ledger,
+    acknowledgement: { resolution, acknowledgedAt },
+  };
+  writeLedger(acknowledgedLedger);
+  try {
+    await acknowledgeClientPrintSpoolRecovery({
+      clientDataDir: clientDataDir(),
+      requestKey,
+      contentHash: ledger.contentHash,
+      resolution,
+      acknowledgedAt,
+    });
+  } catch (error) {
+    throw printSpoolError(error, true);
+  }
+  return acknowledgedLedger;
+}
+
 export async function printLogenLabels(input: {
   requestKey?: unknown;
   payloadHash?: unknown;
@@ -466,6 +555,7 @@ export async function printLogenLabels(input: {
     const ledger: PrintJobLedger = {
       requestKey,
       payloadHash,
+      contentHash,
       printerName,
       status: "UNKNOWN",
       labelCount: labels.length,
@@ -521,6 +611,7 @@ export async function printLogenLabels(input: {
     ledger = {
       requestKey,
       payloadHash,
+      contentHash,
       printerName,
       status: result.status,
       labelCount: labels.length,
@@ -535,6 +626,7 @@ export async function printLogenLabels(input: {
     ledger = {
       requestKey,
       payloadHash,
+      contentHash,
       printerName,
       status: "UNKNOWN",
       labelCount: labels.length,
@@ -571,6 +663,7 @@ export async function printLogenLabels(input: {
     ledger = {
       requestKey,
       payloadHash,
+      contentHash,
       printerName,
       status: "UNKNOWN",
       labelCount: labels.length,

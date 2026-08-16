@@ -4,6 +4,15 @@ import { apiErrorResponse } from "@/quickhack_server/api/error-response";
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isClientRuntime } from "@/quickhack_shared/core/runtime";
 import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
+import {
+  createMutationReceipt,
+  settleOptionalMutationRefresh,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
+import {
+  MUTATION_RECEIPT_OUTCOMES,
+  type MutationReceiptOutcome,
+} from "@/quickhack_shared/core/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -131,12 +140,22 @@ export async function POST(request: NextRequest) {
     ]);
     let result: unknown = null;
     let message = "비품관리 작업을 완료했습니다.";
+    let receiptOperationId: string | null = null;
+    let receiptOutcome: MutationReceiptOutcome =
+      MUTATION_RECEIPT_OUTCOMES.committed;
+    let receiptCommittedAt: Date | string | undefined;
 
     if (action === "saveSupply") {
       result = await saveSupply(prisma, body, auth.user);
       message = "비품 정보를 저장했습니다.";
     } else if (action === "recordMovement") {
-      result = await recordSupplyMovement(prisma, body, auth.user);
+      const command = await recordSupplyMovement(prisma, body, auth.user);
+      result = command.movement;
+      receiptOperationId = command.operationId;
+      receiptOutcome = command.observed
+        ? MUTATION_RECEIPT_OUTCOMES.observed
+        : MUTATION_RECEIPT_OUTCOMES.committed;
+      receiptCommittedAt = command.movement.created_at;
       message = "비품 재고 수량 변동을 저장했습니다.";
     } else if (action === "saveConsumptionRule") {
       result = await saveSupplyConsumptionRule(prisma, body, auth.user);
@@ -154,11 +173,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const receipt = createMutationReceipt(result, {
+      operationId:
+        receiptOperationId ??
+        stableMutationOperationId(`supplies-${action}`, [
+          JSON.stringify(result),
+        ]),
+      outcome: receiptOutcome,
+      committedAt: receiptCommittedAt,
+    });
+    const refresh = await settleOptionalMutationRefresh(receipt, () =>
+      getSupplyWorkspaceData(prisma)
+    );
+
     return NextResponse.json({
       ok: true,
       message,
       result,
-      data: await getSupplyWorkspaceData(prisma),
+      ...(refresh.completed ? { data: refresh.value } : {}),
+      receipt: refresh.receipt,
     });
   } catch (error) {
     return apiErrorResponse(error);
@@ -216,11 +249,21 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const receipt = createMutationReceipt(result, {
+      operationId: stableMutationOperationId(`supplies-${action}`, [
+        JSON.stringify(result),
+      ]),
+    });
+    const refresh = await settleOptionalMutationRefresh(receipt, () =>
+      getSupplyWorkspaceData(prisma)
+    );
+
     return NextResponse.json({
       ok: true,
       message,
       result,
-      data: await getSupplyWorkspaceData(prisma),
+      ...(refresh.completed ? { data: refresh.value } : {}),
+      receipt: refresh.receipt,
     });
   } catch (error) {
     return apiErrorResponse(error);

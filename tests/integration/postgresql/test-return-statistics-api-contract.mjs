@@ -42,6 +42,12 @@ try {
   const snapshotStore = await import(
     "@/quickhack_server/statistics/statistics-snapshot-store"
   );
+  const returnStatisticsService = await import(
+    "@/quickhack_server/statistics/return-statistics-service"
+  );
+  const statisticsPeriod = await import(
+    "@/quickhack_shared/statistics/statistics-period"
+  );
   const timestamp = databaseDateTime("2026-07-27 09:00:00");
   const roles = ["LEADER", "MANAGER", "STAFF", "VIEWER"];
   const tokens = new Map();
@@ -259,6 +265,14 @@ try {
           reason_category: "상품 문제",
           reason_detail: "전원 불량",
           cancel_count: "1",
+          items_json: JSON.stringify([
+            {
+              externalVendorItemId: "API-ITEM-1",
+              sellerProductItemId: null,
+              vendorItemName: "API Model 256GB",
+              cancelCount: 1,
+            },
+          ]),
         }).map(([field_name, after_value]) => ({
           field_name,
           before_value: null,
@@ -280,8 +294,74 @@ try {
       pg_no: device.pg_no,
       action_type: "approve",
       linked_at: databaseDateTime("2026-06-18 09:00:00"),
+      created_at: databaseDateTime("2026-06-18 09:00:00"),
+      updated_at: databaseDateTime("2026-06-18 09:00:00"),
     },
   });
+  const boundaryAllocations = await Promise.all(
+    ["EXACT", "AFTER"].map((suffix) =>
+      prisma.match_worker_allocation.create({
+        data: {
+          external_order_id: "API-ORDER-1",
+          external_shipment_id: "API-SHIP-1",
+          external_vendor_item_id: `API-ITEM-${suffix}`,
+          vendor_item_name: `API Model ${suffix}`,
+          pg_no: device.pg_no,
+          allocation_status: "CANCELED",
+        },
+      })
+    )
+  );
+  const [exactCutoffAllocation, afterCutoffAllocation] = boundaryAllocations;
+  await Promise.all([
+    prisma.coupang_return_allocation.create({
+      data: {
+        coupang_return_raw_id: returnRaw.coupang_return_raw_id,
+        allocation_id: exactCutoffAllocation.allocation_id,
+        external_receipt_id: "API-RETURN-1",
+        external_order_id: "API-ORDER-1",
+        external_shipment_id: "API-SHIP-1",
+        external_vendor_item_id: "API-ITEM-EXACT",
+        pg_no: device.pg_no,
+        action_type: "approve",
+        linked_at: databaseDateTime("2026-07-26 15:00:00"),
+        created_at: databaseDateTime("2026-07-26 15:00:00"),
+        updated_at: databaseDateTime("2026-07-26 15:00:00"),
+      },
+    }),
+    prisma.coupang_return_allocation.create({
+      data: {
+        coupang_return_raw_id: returnRaw.coupang_return_raw_id,
+        allocation_id: afterCutoffAllocation.allocation_id,
+        external_receipt_id: "API-RETURN-1",
+        external_order_id: "API-ORDER-1",
+        external_shipment_id: "API-SHIP-1",
+        external_vendor_item_id: "API-ITEM-AFTER",
+        pg_no: device.pg_no,
+        action_type: "approve",
+        linked_at: databaseDateTime("2026-07-26 18:29:00"),
+        created_at: databaseDateTime("2026-07-26 18:29:00"),
+        updated_at: databaseDateTime("2026-07-26 18:29:00"),
+      },
+    }),
+  ]);
+  const boundaryPeriod = statisticsPeriod.resolveClosedStatisticsPeriod({
+    now: new Date("2026-07-26T15:01:00.000Z"),
+  });
+  const boundaryInput = await returnStatisticsService.loadReturnStatisticsInput(
+    prisma,
+    {
+      asOf:
+        returnStatisticsService.createReturnStatisticsAsOfContext(
+          boundaryPeriod
+        ),
+    }
+  );
+  assert.deepEqual(
+    boundaryInput.allocationLinks.map((link) => link.returnAllocationId),
+    [returnAllocation.coupang_return_allocation_id],
+    "The PostgreSQL loader did not apply the exclusive allocation cutoff."
+  );
   await prisma.inspections.create({
     data: {
       pg_no: device.pg_no,
@@ -351,7 +431,7 @@ try {
     periodFrom: snapshotCalculation.period.fromDate,
     periodTo: snapshotCalculation.period.toDate,
     dayCount: snapshotCalculation.period.dayCount,
-    calculationVersion: "statistics-daily-v2",
+    calculationVersion: "statistics-daily-v3",
   };
   const snapshotBatch =
     await snapshotStore.createStatisticsSnapshotBatch(

@@ -38,7 +38,10 @@ import {
   databaseDateTime,
   databaseNow,
 } from "@/quickhack_server/core/database/time-boundary";
-import { insertOrObserve } from "@/quickhack_server/core/database/aggregate-command";
+import {
+  insertOrObserve,
+  lockAggregateKey,
+} from "@/quickhack_server/core/database/aggregate-command";
 import { isPostgresqlUniqueViolation } from "@/quickhack_server/core/database/postgres-errors";
 import {
   publicBadRequest,
@@ -150,6 +153,44 @@ function positiveInteger(value: unknown, label: string) {
   return number;
 }
 
+function strictMovementInteger(value: unknown) {
+  if (
+    (typeof value !== "number" && typeof value !== "string") ||
+    (typeof value === "string" && !value.trim())
+  ) {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isInteger(number) ? number : null;
+}
+
+function strictNonNegativeInteger(value: unknown, label: string) {
+  const number = strictMovementInteger(value);
+
+  if (number === null || number < 0) {
+    throw publicBadRequest(
+      "INVALID_SUPPLY_NON_NEGATIVE_INTEGER",
+      `${label} 값은 0 이상의 정수여야 합니다.`
+    );
+  }
+
+  return number;
+}
+
+function strictPositiveMovementInteger(value: unknown, label: string) {
+  const number = strictMovementInteger(value);
+
+  if (number === null || number <= 0) {
+    throw publicBadRequest(
+      "INVALID_SUPPLY_POSITIVE_INTEGER",
+      `${label} 값은 1 이상의 정수여야 합니다.`
+    );
+  }
+
+  return number;
+}
+
 function roundedPositiveInteger(value: unknown, label: string) {
   const number = normalizeSupplyConsumptionQuantity(value);
 
@@ -166,6 +207,31 @@ function roundedPositiveInteger(value: unknown, label: string) {
 function idFromBody(input: SupplyInput, key: string) {
   const id = integer(input[key], 0);
   return id > 0 ? id : null;
+}
+
+function optionalMovementId(
+  input: SupplyInput,
+  key: string,
+  label: string
+) {
+  const value = input[key];
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && !value.trim())
+  ) {
+    return null;
+  }
+
+  const id = strictMovementInteger(value);
+  if (id === null || id <= 0) {
+    throw publicBadRequest(
+      "INVALID_SUPPLY_MOVEMENT_REFERENCE_ID",
+      `${label} 값은 1 이상의 정수여야 합니다.`
+    );
+  }
+
+  return id;
 }
 
 function requiredExpectedRevision(input: SupplyInput, label: string) {
@@ -414,6 +480,29 @@ function movementType(value: unknown): SupplyMovementType {
     "INVALID_SUPPLY_MOVEMENT_TYPE",
     "지원하지 않는 비품 수량 변동 유형입니다."
   );
+}
+
+function supplyMovementOperationId(value: unknown) {
+  const operationId = typeof value === "string" ? value.trim() : "";
+
+  if (!operationId) {
+    throw publicBadRequest(
+      "SUPPLY_MOVEMENT_OPERATION_ID_REQUIRED",
+      "비품 수량 변경 작업 ID가 필요합니다."
+    );
+  }
+
+  if (
+    operationId.length > 200 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(operationId)
+  ) {
+    throw publicBadRequest(
+      "INVALID_SUPPLY_MOVEMENT_OPERATION_ID",
+      "비품 수량 변경 작업 ID 형식이 올바르지 않습니다."
+    );
+  }
+
+  return operationId;
 }
 
 function triggerType(value: unknown): SupplyConsumptionTrigger {
@@ -1111,28 +1200,66 @@ export async function recordSupplyMovementInTransaction(
 ) {
   const supplyId = positiveInteger(input.supplyId, "비품 ID");
   const type = movementType(input.movementType);
-  const quantity = positiveInteger(input.quantity, "수량");
-  const idempotencyKey = nullableText(input.idempotencyKey);
+  const quantity =
+    type === SUPPLY_MOVEMENT_TYPE.adjustment
+      ? strictNonNegativeInteger(input.quantity, "조정 후 수량")
+      : strictPositiveMovementInteger(input.quantity, "수량");
+  const operationId = supplyMovementOperationId(input.idempotencyKey);
+  const reason = nullableText(input.reason);
+  const sourceType = nullableText(input.sourceType);
+  const sourceId = nullableText(input.sourceId);
+  const pgNo = nullableText(input.pgNo);
+  const shipmentId = optionalMovementId(input, "shipmentId", "출고 ID");
+  const orderId = optionalMovementId(input, "orderId", "주문 ID");
+  const allocationId = optionalMovementId(input, "allocationId", "배정 ID");
+  const coupangReturnAllocationId = optionalMovementId(
+    input,
+    "coupangReturnAllocationId",
+    "반품 배정 ID"
+  );
+  const reversalOfConsumptionEventId = optionalMovementId(
+    input,
+    "reversalOfConsumptionEventId",
+    "소모 취소 이벤트 ID"
+  );
 
-  if (idempotencyKey) {
-    const existingMovement = await tx.supply_stock_movements.findUnique({
-      where: { idempotency_key: idempotencyKey },
-    });
+  await lockAggregateKey(tx, {
+    namespace: "supply-stock-movement",
+    key: operationId,
+  });
+  const existingMovement = await tx.supply_stock_movements.findUnique({
+    where: { idempotency_key: operationId },
+  });
 
-    if (existingMovement) {
-      if (
-        existingMovement.supply_id !== supplyId ||
-        existingMovement.movement_type !== type ||
-        existingMovement.quantity !== quantity
-      ) {
-        throw publicConflict(
-          "SUPPLY_MOVEMENT_IDEMPOTENCY_CONFLICT",
-          "같은 비품 수량 변경 요청이 서로 다른 내용으로 중복되었습니다."
-        );
-      }
-
-      return existingMovement;
+  if (existingMovement) {
+    const quantityMatches =
+      type === SUPPLY_MOVEMENT_TYPE.adjustment
+        ? existingMovement.after_quantity === quantity
+        : existingMovement.quantity === quantity;
+    if (
+      existingMovement.supply_id !== supplyId ||
+      existingMovement.movement_type !== type ||
+      !quantityMatches ||
+      existingMovement.reason !== reason ||
+      existingMovement.source_type !== sourceType ||
+      existingMovement.source_id !== sourceId ||
+      existingMovement.pg_no !== pgNo ||
+      existingMovement.shipment_id !== shipmentId ||
+      existingMovement.order_id !== orderId ||
+      existingMovement.allocation_id !== allocationId ||
+      existingMovement.coupang_return_allocation_id !==
+        coupangReturnAllocationId ||
+      existingMovement.reversal_of_consumption_event_id !==
+        reversalOfConsumptionEventId ||
+      existingMovement.created_by_user_id !== user.userId
+    ) {
+      throw publicConflict(
+        "SUPPLY_MOVEMENT_IDEMPOTENCY_CONFLICT",
+        "같은 비품 수량 변경 요청이 서로 다른 내용으로 중복되었습니다."
+      );
     }
+
+    return { movement: existingMovement, observed: true, operationId } as const;
   }
 
   const inventory = await ensureSupplyInventory(tx, supplyId);
@@ -1193,22 +1320,16 @@ export async function recordSupplyMovementInTransaction(
           : quantity,
       before_quantity: beforeQuantity,
       after_quantity: afterQuantity,
-      reason: nullableText(input.reason),
-      source_type: nullableText(input.sourceType),
-      source_id: nullableText(input.sourceId),
-      pg_no: nullableText(input.pgNo),
-      shipment_id: idFromBody(input, "shipmentId"),
-      order_id: idFromBody(input, "orderId"),
-      allocation_id: idFromBody(input, "allocationId"),
-      coupang_return_allocation_id: idFromBody(
-        input,
-        "coupangReturnAllocationId"
-      ),
-      reversal_of_consumption_event_id: idFromBody(
-        input,
-        "reversalOfConsumptionEventId"
-      ),
-      idempotency_key: idempotencyKey,
+      reason,
+      source_type: sourceType,
+      source_id: sourceId,
+      pg_no: pgNo,
+      shipment_id: shipmentId,
+      order_id: orderId,
+      allocation_id: allocationId,
+      coupang_return_allocation_id: coupangReturnAllocationId,
+      reversal_of_consumption_event_id: reversalOfConsumptionEventId,
+      idempotency_key: operationId,
       created_by_user_id: user.userId,
       created_at: timestamp,
     },
@@ -1231,7 +1352,7 @@ export async function recordSupplyMovementInTransaction(
     ].join(" / "),
   });
 
-  return movement;
+  return { movement, observed: false, operationId } as const;
 }
 
 export async function recordSupplyMovement(

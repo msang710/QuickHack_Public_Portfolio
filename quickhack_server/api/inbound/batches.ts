@@ -13,6 +13,11 @@ import {
   setOperationTraceUserId,
   traceOperationSpan,
 } from "@/quickhack_server/observability/operation-trace";
+import {
+  createMutationReceipt,
+  settleOptionalMutationRefresh,
+  stableMutationOperationId,
+} from "@/quickhack_server/api/mutation-receipt";
 
 export const runtime = "nodejs";
 
@@ -169,15 +174,23 @@ export async function POST(request: NextRequest) {
     const batch = await traceOperationSpan("SERVICE_WRITE", () =>
       createInboundBatch(prisma, body, authResult.user)
     );
-    const batches = await traceOperationSpan("SERVICE_READ", () =>
-      listInboundBatchPlanRows(prisma)
+    const receipt = createMutationReceipt(batch, {
+      operationId: stableMutationOperationId("inbound-batch-create", [
+        batch.id,
+        batch.revision,
+      ]),
+      committedAt: batch.updatedAt,
+    });
+    const refresh = await settleOptionalMutationRefresh(receipt, () =>
+      traceOperationSpan("SERVICE_READ", () => listInboundBatchPlanRows(prisma))
     );
 
     return NextResponse.json({
       ok: true,
       message: `${batch.batchDate} ${batch.batchNo}차 입고 계획을 저장했습니다.`,
       batch,
-      batches,
+      ...(refresh.completed ? { batches: refresh.value } : {}),
+      receipt: refresh.receipt,
     });
   } catch (error) {
     return apiErrorResponse(error);
@@ -240,15 +253,23 @@ export async function PATCH(request: NextRequest) {
     const batch = await traceOperationSpan("SERVICE_WRITE", () =>
       updateInboundBatch(prisma, id, body, authResult.user)
     );
-    const batches = await traceOperationSpan("SERVICE_READ", () =>
-      listInboundBatchPlanRows(prisma)
+    const receipt = createMutationReceipt(batch, {
+      operationId: stableMutationOperationId("inbound-batch-update", [
+        batch.id,
+        batch.revision,
+      ]),
+      committedAt: batch.updatedAt,
+    });
+    const refresh = await settleOptionalMutationRefresh(receipt, () =>
+      traceOperationSpan("SERVICE_READ", () => listInboundBatchPlanRows(prisma))
     );
 
     return NextResponse.json({
       ok: true,
       message: `${batch.batchDate} ${batch.batchNo}차 입고 계획을 수정했습니다.`,
       batch,
-      batches,
+      ...(refresh.completed ? { batches: refresh.value } : {}),
+      receipt: refresh.receipt,
     });
   } catch (error) {
     return apiErrorResponse(error);
@@ -311,15 +332,23 @@ export async function DELETE(request: NextRequest) {
     const batch = await traceOperationSpan("SERVICE_WRITE", () =>
       deleteInboundBatch(prisma, id, body, authResult.user)
     );
-    const batches = await traceOperationSpan("SERVICE_READ", () =>
-      listInboundBatchPlanRows(prisma)
+    const receipt = createMutationReceipt(batch, {
+      operationId: stableMutationOperationId("inbound-batch-delete", [
+        batch.id,
+        batch.revision,
+      ]),
+      committedAt: batch.updatedAt,
+    });
+    const refresh = await settleOptionalMutationRefresh(receipt, () =>
+      traceOperationSpan("SERVICE_READ", () => listInboundBatchPlanRows(prisma))
     );
 
     return NextResponse.json({
       ok: true,
       message: `${batch.batchDate} ${batch.batchNo}차 입고 계획을 삭제했습니다.`,
       batch,
-      batches,
+      ...(refresh.completed ? { batches: refresh.value } : {}),
+      receipt: refresh.receipt,
     });
   } catch (error) {
     return apiErrorResponse(error);

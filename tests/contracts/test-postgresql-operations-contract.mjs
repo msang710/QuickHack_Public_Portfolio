@@ -36,7 +36,14 @@ assert.match(operatorSource, /deploy-postgresql-migrations\.mjs/);
 assert.match(operatorSource, /postgresql-restore\.mjs/);
 assert.match(operatorSource, /provision-initial-leader\.mjs/);
 assert.match(operatorSource, /CREDENTIALS_DIRECTORY/);
-assert.match(operatorSource, /restore-request\.json/);
+assert.match(operatorSource, /defaultRestoreRequestHandoff/);
+assert.match(operatorSource, /restoreHandoff\.claim\(runtimeConfig\)/);
+assert.match(operatorSource, /restoreHandoff\.finalize\(restoreRequest, restoreTerminalState\)/);
+assert.doesNotMatch(
+  operatorSource,
+  /writeFileSync\([^\n]*restore-request\.json/,
+  "The direct operator must not bypass the durable restore handoff abstraction."
+);
 assert.match(serviceSource, /listen_addresses = '127\.0\.0\.1'/);
 assert.match(serviceSource, /scram-sha-256/);
 assert.match(serviceSource, /quickhack_operator/);

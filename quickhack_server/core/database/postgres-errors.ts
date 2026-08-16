@@ -39,18 +39,33 @@ function errorChain(error: unknown) {
 export function prismaErrorCode(error: unknown) {
   for (const record of errorChain(error)) {
     const code = stringField(record, "code");
-    if (code?.startsWith("P")) return code;
+    if (
+      code &&
+      /^P\d{4}$/.test(code) &&
+      stringField(record, "severity") === null
+    ) {
+      return code;
+    }
   }
   return null;
 }
 
 export function postgresqlSqlState(error: unknown) {
   for (const record of errorChain(error)) {
-    for (const key of ["sqlState", "sqlstate", "originalCode", "code"]) {
+    for (const key of ["sqlState", "sqlstate", "originalCode"]) {
       const value = stringField(record, key)?.toUpperCase();
-      if (value && /^[0-9A-Z]{5}$/.test(value) && !value.startsWith("P")) {
+      if (value && /^[0-9A-Z]{5}$/.test(value)) {
         return value;
       }
+    }
+
+    const code = stringField(record, "code")?.toUpperCase();
+    if (
+      code &&
+      /^[0-9A-Z]{5}$/.test(code) &&
+      (!/^P\d{4}$/.test(code) || stringField(record, "severity") !== null)
+    ) {
+      return code;
     }
   }
   return null;

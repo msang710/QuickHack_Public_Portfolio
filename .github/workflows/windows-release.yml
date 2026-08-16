@@ -43,7 +43,7 @@ jobs:
           if (-not $run) { throw "No successful Final Integration run exists for $env:GITHUB_SHA." }
           "run_id=$($run.databaseId)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - name: Download exact verified Windows package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-${{ matrix.target }}
           path: release/distribution/windows/${{ matrix.target }}
@@ -53,18 +53,22 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
         run: >-
           node tools/verify-package-release-artifact.mjs
           --release-version="$env:RELEASE_VERSION"
-          --artifact-dir=release/distribution/windows/${{ matrix.target }}
+          --artifact-dir="release/distribution/windows/$env:QUICKHACK_PACKAGE_TARGET"
           --platform=windows
-          --target=${{ matrix.target }}
+          --target="$env:QUICKHACK_PACKAGE_TARGET"
       - name: Publish tag artifacts
         if: github.ref_type == 'tag'
         shell: pwsh
+        env:
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $artifacts = Get-ChildItem -LiteralPath "release\distribution\windows\${{ matrix.target }}" -File
+          $tag = $env:QUICKHACK_RELEASE_TAG
+          $artifacts = Get-ChildItem -LiteralPath "release\distribution\windows\$env:QUICKHACK_PACKAGE_TARGET" -File
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --verify-tag --title $tag --generate-notes

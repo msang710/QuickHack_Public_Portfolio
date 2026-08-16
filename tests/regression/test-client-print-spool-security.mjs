@@ -13,12 +13,14 @@ import os from "node:os";
 import path from "node:path";
 import {
   ClientPrintSpoolError,
+  acknowledgeClientPrintSpoolRecovery,
   armClientPrintSpoolAttempt,
   createPrivatePrintSpoolFile,
   getClientPrintSpoolPaths,
   initializeClientPrintSpool,
   inspectClientPrintSpoolRecovery,
   parseClientPrintSpoolFileName,
+  pruneAcknowledgedClientPrintArtifacts,
   removePrivatePrintSpoolFile,
 } from "../../tools/client-print-spool-core.mjs";
 import { LOGEN_LABEL_TEMPLATE } from "@/quickhack_shared/shipment/logen-label";
@@ -97,7 +99,7 @@ try {
       error.code === "PRINT_SPOOL_FILE_CREATE_FAILED"
   );
 
-  const { spoolDir, recoveryDir, recoveryIndexDir } =
+  const { spoolDir, recoveryDir, recoveryIndexDir, jobsDir } =
     getClientPrintSpoolPaths({ clientDataDir });
   await writeFile(path.join(spoolDir, "do-not-delete.txt"), sensitiveText);
   const outsideTarget = path.join(root, "outside-sensitive.txt");
@@ -257,6 +259,15 @@ try {
     "UNKNOWN",
     "The recovered request did not remain idempotently UNKNOWN."
   );
+  const acknowledgedRecoveredJob =
+    await printerService.acknowledgeLocalPrintJob({
+      requestKey,
+      resolution: "PRINTED",
+    });
+  assert.equal(
+    acknowledgedRecoveredJob.acknowledgement?.resolution,
+    "PRINTED"
+  );
 
   const crashWindowRequestKey =
     "LOGEN-LABEL-80-123e4567-e89b-42d3-a456-426614174003";
@@ -274,7 +285,6 @@ try {
   });
   assert.equal(armedMarker.reasonCode, "PRINT_ATTEMPT_STARTED");
   await removePrivatePrintSpoolFile(crashWindowSpool, { clientDataDir });
-  const jobsDir = path.join(clientDataDir, "print-jobs");
   await mkdir(jobsDir, { recursive: true });
   await writeFile(
     path.join(jobsDir, `${crashWindowRequestKey}.json`),
@@ -291,6 +301,111 @@ try {
     crashWindowResult.errorCode,
     "ORPHANED_PRINT_SPOOL_RECOVERED",
     "A damaged ledger with no remaining spool was allowed to reprint."
+  );
+  await writeFile(
+    path.join(jobsDir, `${crashWindowRequestKey}.json`),
+    `${JSON.stringify({
+      ...crashWindowResult,
+      requestKey,
+      contentHash,
+    })}\n`,
+    "utf8"
+  );
+  await assert.rejects(
+    printerService.acknowledgeLocalPrintJob({
+      requestKey: crashWindowRequestKey,
+      resolution: "PRINTED",
+    }),
+    (error) => error?.code === "PRINT_LEDGER_NOT_ACKNOWLEDGEABLE",
+    "A ledger whose embedded identity differs from its filename was acknowledged."
+  );
+
+  async function createResolvedArtifact(requestKeyValue, acknowledgedAt) {
+    const spool = await createPrivatePrintSpoolFile({
+      clientDataDir,
+      requestKey: requestKeyValue,
+      contentHash,
+      payload,
+      platform: "linux",
+    });
+    await armClientPrintSpoolAttempt({
+      clientDataDir,
+      requestKey: requestKeyValue,
+      contentHash,
+    });
+    await removePrivatePrintSpoolFile(spool, { clientDataDir });
+    await acknowledgeClientPrintSpoolRecovery({
+      clientDataDir,
+      requestKey: requestKeyValue,
+      contentHash,
+      resolution: "CONFIRMED",
+      acknowledgedAt,
+    });
+    await writeFile(
+      path.join(jobsDir, `${requestKeyValue}.json`),
+      `${JSON.stringify({
+        requestKey: requestKeyValue,
+        contentHash,
+        status: "SPOOLED",
+        acknowledgement: {
+          resolution: "CONFIRMED",
+          acknowledgedAt,
+        },
+      })}\n`,
+      "utf8"
+    );
+  }
+
+  const oldArtifactKeys = [
+    "LOGEN-LABEL-90-123e4567-e89b-42d3-a456-426614174010",
+    "LOGEN-LABEL-91-123e4567-e89b-42d3-a456-426614174011",
+  ];
+  for (const oldArtifactKey of oldArtifactKeys) {
+    await createResolvedArtifact(
+      oldArtifactKey,
+      "2026-05-31T23:59:59.999Z"
+    );
+  }
+  const exactCutoffKey =
+    "LOGEN-LABEL-92-123e4567-e89b-42d3-a456-426614174012";
+  await createResolvedArtifact(exactCutoffKey, "2026-06-01T00:00:00.000Z");
+  const dryRunLifecycle = await pruneAcknowledgedClientPrintArtifacts({
+    clientDataDir,
+    now: new Date("2026-07-01T00:00:00.000Z"),
+    dryRun: true,
+    maxBatchSize: 1,
+  });
+  assert.equal(dryRunLifecycle.attemptedCount, 1);
+  assert.equal(dryRunLifecycle.changedCount, 0);
+  const firstLifecycle = await pruneAcknowledgedClientPrintArtifacts({
+    clientDataDir,
+    now: new Date("2026-07-01T00:00:00.000Z"),
+    maxBatchSize: 1,
+  });
+  assert.equal(firstLifecycle.changedCount, 1);
+  assert.equal(firstLifecycle.backlogCount, 1);
+  const secondLifecycle = await pruneAcknowledgedClientPrintArtifacts({
+    clientDataDir,
+    now: new Date("2026-07-01T00:00:00.000Z"),
+    maxBatchSize: 1,
+  });
+  assert.equal(secondLifecycle.changedCount, 1);
+  assert.equal(secondLifecycle.backlogCount, 0);
+  assert.equal(
+    (await lstat(path.join(jobsDir, `${exactCutoffKey}.json`))).isFile(),
+    true,
+    "An acknowledgement exactly at the strict cutoff was deleted."
+  );
+  assert.equal(
+    (
+      await inspectClientPrintSpoolRecovery({
+        clientDataDir,
+        requestKey: crashWindowRequestKey,
+        contentHash,
+      })
+    ).status,
+    "MATCH",
+    "An unacknowledged UNKNOWN marker was deleted."
   );
 
   process.env.QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_CODE =
@@ -347,6 +462,7 @@ try {
     expectedAclPaths.spoolDir,
     expectedAclPaths.recoveryDir,
     expectedAclPaths.recoveryIndexDir,
+    expectedAclPaths.jobsDir,
   ]);
 
   const launcherSource = await readFile(
@@ -360,7 +476,7 @@ try {
     "await initializeClientPrintSpool"
   );
   const runtimeSpawn = launcherSource.indexOf(
-    "const child = spawn(process.execPath"
+    "return processExecution.spawnOwnedDetached(process.execPath"
   );
   assert(reuseReturn >= 0 && startupCleanup > reuseReturn);
   assert(runtimeSpawn > startupCleanup);
@@ -393,7 +509,9 @@ try {
     spoolCoreSource.indexOf(
       "export async function inspectClientPrintSpoolRecovery"
     ),
-    spoolCoreSource.indexOf("export async function createPrivatePrintSpoolFile")
+    spoolCoreSource.indexOf(
+      "export async function acknowledgeClientPrintSpoolRecovery"
+    )
   );
   assert.doesNotMatch(
     inspectSource,
