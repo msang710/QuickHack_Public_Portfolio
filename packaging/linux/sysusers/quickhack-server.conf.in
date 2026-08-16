@@ -1,0 +1,2 @@
+u @QUICKHACK_APPLICATION_USER@ - "QuickHack application service" @QUICKHACK_DATA_DIR@ /usr/bin/nologin
+u @QUICKHACK_POSTGRESQL_USER@ - "QuickHack PostgreSQL service" @QUICKHACK_PGDATA@ /usr/bin/nologin

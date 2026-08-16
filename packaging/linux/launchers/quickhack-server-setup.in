@@ -1,0 +1,6 @@
+#!/bin/sh
+if command -v pkexec >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+  exec /usr/bin/pkexec "@QUICKHACK_NODE_EXECUTABLE@" "@QUICKHACK_PACKAGE_LIFECYCLE_ENTRY@" setup --artifact "@QUICKHACK_ARTIFACT_KIND@"
+fi
+echo "Administrator authentication is required for one-time QuickHack setup." >&2
+exec /usr/bin/sudo "@QUICKHACK_NODE_EXECUTABLE@" "@QUICKHACK_PACKAGE_LIFECYCLE_ENTRY@" setup --artifact "@QUICKHACK_ARTIFACT_KIND@"

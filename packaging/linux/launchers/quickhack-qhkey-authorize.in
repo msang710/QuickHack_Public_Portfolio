@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "@QUICKHACK_NODE_EXECUTABLE@" "@QUICKHACK_OPERATOR_ENTRY@" authorize-qhkey --runtime-config "@QUICKHACK_RUNTIME_CONFIG@" --transaction "$1"

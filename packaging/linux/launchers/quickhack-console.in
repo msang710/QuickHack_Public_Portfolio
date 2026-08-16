@@ -1,0 +1,7 @@
+#!/bin/sh
+if [ ! -f "@QUICKHACK_RUNTIME_CONFIG@" ]; then
+  echo "QuickHack server setup is required. Run the artifact-specific setup command with administrator authentication." >&2
+  exit 3
+fi
+export QUICKHACK_PACKAGE_MANIFEST="@QUICKHACK_PACKAGE_MANIFEST@"
+exec "@QUICKHACK_NODE_EXECUTABLE@" "@QUICKHACK_OPERATOR_ENTRY@" open-console --runtime-config "@QUICKHACK_RUNTIME_CONFIG@"

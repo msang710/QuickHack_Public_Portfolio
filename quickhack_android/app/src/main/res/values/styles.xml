@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.Material3.Light.NoActionBar">
+        <item name="fontFamily">sans-serif</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="colorPrimary">@color/qh_primary</item>
+        <item name="colorOnPrimary">@color/qh_on_primary</item>
+        <item name="colorSecondary">@color/qh_warning</item>
+        <item name="colorSurface">@color/qh_surface</item>
+        <item name="colorOnSurface">@color/qh_text</item>
+        <item name="colorOutline">@color/qh_border</item>
+        <item name="colorError">@color/qh_error</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/qh_background</item>
+        <item name="android:navigationBarColor">@color/qh_surface</item>
+        <item name="android:colorAccent">@color/qh_primary</item>
+        <item name="materialButtonStyle">@style/Widget.QuickHack.Button</item>
+        <item name="textInputStyle">@style/Widget.QuickHack.TextInputLayout</item>
+    </style>
+
+    <style name="ShapeAppearance.QuickHack.Small" parent="ShapeAppearance.Material3.Corner.Small">
+        <item name="cornerSize">6dp</item>
+    </style>
+
+    <style name="Widget.QuickHack.Button" parent="Widget.Material3.Button">
+        <item name="shapeAppearance">@style/ShapeAppearance.QuickHack.Small</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="Widget.QuickHack.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.QuickHack.Small</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="Widget.QuickHack.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="shapeAppearance">@style/ShapeAppearance.QuickHack.Small</item>
+        <item name="boxStrokeColor">@color/qh_primary</item>
+        <item name="hintTextColor">@color/qh_muted</item>
+    </style>
+</resources>

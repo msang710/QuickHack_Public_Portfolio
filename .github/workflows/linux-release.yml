@@ -1,0 +1,63 @@
+name: Arch four-artifact release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of the successful Final Integration artifact to verify
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  arch-release-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [demo-server, demo-client, operational-server, operational-client]
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - name: Resolve successful same-revision Final Integration run
+        id: integration
+        run: |
+          run_id="$(gh run list --workflow pull-request-checks.yml --commit "$GITHUB_SHA" --status success --json databaseId,headSha --limit 20 --jq 'map(select(.headSha == env.GITHUB_SHA))[0].databaseId // empty')"
+          [[ -n "$run_id" ]] || { echo "No successful Final Integration run exists for $GITHUB_SHA."; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download exact verified Arch package
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-${{ matrix.target }}
+          path: release/distribution/linux/${{ matrix.target }}
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.integration.outputs.run_id }}
+      - name: Verify package manifest, version, target, and hashes
+        env:
+          RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+        run: >-
+          node tools/verify-package-release-artifact.mjs
+          --release-version="$RELEASE_VERSION"
+          --artifact-dir=release/distribution/linux/${{ matrix.target }}
+          --platform=linux
+          --target=${{ matrix.target }}
+      - name: Publish tag artifacts
+        if: github.ref_type == 'tag'
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes || gh release view "$GITHUB_REF_NAME" >/dev/null
+          gh release upload "$GITHUB_REF_NAME" release/distribution/linux/${{ matrix.target }}/* --clobber

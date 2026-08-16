@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "windows": {
+    "appRoot": "C:\\QuickHack",
+    "runtimeDir": "C:\\QuickHack\\runtime",
+    "adbCandidates": [
+      "C:\\QuickHack\\runtime\\platform-tools\\adb.exe",
+      "C:\\QuickHack\\runtime\\adb\\adb.exe",
+      "C:\\QuickHack\\platform-tools\\adb.exe"
+    ],
+    "printerBridge": "C:\\QuickHack\\tools\\quickhack-raw-print.ps1",
+    "spoolPath": "C:\\QuickHackData\\print-spool\\job.bin"
+  },
+  "linux": {
+    "appRoot": "/opt/quickhack",
+    "runtimeDir": "/opt/quickhack/runtime",
+    "adbCandidates": [
+      "/opt/quickhack/runtime/platform-tools/adb",
+      "/opt/quickhack/runtime/adb/adb",
+      "/opt/quickhack/platform-tools/adb",
+      "/usr/bin/adb"
+    ],
+    "printerName": "QuickHack_Label_1",
+    "spoolPath": "/var/lib/quickhack/print-spool/job.bin"
+  }
+}

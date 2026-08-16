@@ -1,0 +1,2713 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// QuickHack model: 기기 실물의 마스터 데이터이며 모든 검수/재고/주문/반품 흐름의 중심 PG를 보관합니다.
+model devices {
+  revision                         Int                                   @default(0)
+  device_id                        Int                                   @id @default(autoincrement())
+  pg_no                            String                                @unique(map: "uq_devices_1")
+  imei                             String?                               @unique(map: "uq_devices_2")
+  adb_serial                       String?                               @unique(map: "uq_devices_3")
+  model                            String
+  model_code                       String?
+  model_seq                        Int?
+  storage                          String?
+  color                            String?
+  sale_grade                       String?
+  warranty                         String?
+  inventory_sku_id                 Int?
+  created_at                       DateTime                              @default(now()) @db.Timestamptz(3)
+  updated_at                       DateTime                              @default(now()) @updatedAt @db.Timestamptz(3)
+  inventory_sku                    inventory_skus?                       @relation(fields: [inventory_sku_id], references: [inventory_sku_id], onDelete: Restrict)
+  inbounds                         inbounds[]
+  inspections                      inspections[]
+  inventory                        inventory?
+  order_items                      order_items[]
+  match_worker_allocations         match_worker_allocation[]
+  sales_records                    sales_records[]
+  sales_channel_write_requests     sales_channel_write_requests[]
+  sales_channel_write_targets      sales_channel_write_request_targets[]
+  shipment_address_change_works    shipment_address_change_work[]
+  inventory_audit_location_changes inventory_audit_location_changes[]
+  supply_consumption_events        supply_consumption_events[]
+
+  @@unique([model, model_seq], map: "uq_devices_4")
+  @@index([model_code], map: "idx_devices_model_code")
+  @@index([model, model_seq], map: "idx_devices_model_seq")
+  @@index([pg_no], map: "idx_devices_pg_no")
+  @@index([inventory_sku_id], map: "idx_devices_inventory_sku_id")
+  @@index([updated_at, device_id], map: "idx_devices_updated_latest")
+}
+
+/// QuickHack model: 입고 차수, 매입처, 매입가 등 실물 입고 업무 정보를 PG 기준으로 보관합니다.
+model inbounds {
+  revision                          Int                   @default(0)
+  inbound_id                        Int                   @id @default(autoincrement())
+  pg_no                             String
+  inbound_batch_id                  Int?
+  supplier_name                     String?
+  purchase_price                    Int?
+  purchase_price_reference_rate_id  Int?
+  purchase_price_reference_amount   Int?
+  purchase_price_entry_mode         String?
+  received_at                       DateTime?             @db.Timestamptz(3)
+  price_agreed_at                   DateTime?             @db.Timestamptz(3)
+  supplier_returned_at              DateTime?             @db.Timestamptz(3)
+  inbound_status                    String                @default("RECEIVED")
+  note                              String?
+  created_at                        DateTime              @default(now()) @db.Timestamptz(3)
+  updated_at                        DateTime              @default(now()) @updatedAt @db.Timestamptz(3)
+  purchase_price_updated_by_user_id Int?
+  purchase_price_updated_at         DateTime?             @db.Timestamptz(3)
+  devices                           devices               @relation(fields: [pg_no], references: [pg_no])
+  inbound_batch                     inbound_batches?      @relation(fields: [inbound_batch_id], references: [inbound_batch_id], onDelete: Restrict)
+  users                             users?                @relation(fields: [purchase_price_updated_by_user_id], references: [user_id])
+  purchase_price_reference_rate     purchase_price_rates? @relation("InboundPurchasePriceReference", fields: [purchase_price_reference_rate_id], references: [purchase_price_rate_id], onDelete: SetNull)
+  inspections                       inspections[]         @relation("InboundInspections")
+  sales_records                     sales_records[]       @relation("SalesRecordPurchaseInbound")
+
+  @@index([supplier_name], map: "idx_inbounds_supplier_name")
+  @@index([inbound_batch_id], map: "idx_inbounds_inbound_batch_id")
+  @@index([pg_no], map: "idx_inbounds_pg_no")
+  @@index([pg_no, inbound_id], map: "idx_inbounds_pg_history")
+  @@index([inbound_status], map: "idx_inbounds_status")
+  @@index([inbound_status, pg_no, inbound_id], map: "idx_inbounds_status_pg_latest")
+  @@index([purchase_price_updated_by_user_id], map: "idx_inbounds_purchase_price_updated_by_user_id")
+  @@index([purchase_price_reference_rate_id], map: "idx_inbounds_purchase_price_reference_rate_id")
+}
+
+/// QuickHack model: 입고 업무일자별 차수 번호, 예정 대수, 메모를 보관합니다.
+model inbound_batches {
+  revision           Int        @default(0)
+  inbound_batch_id   Int        @id @default(autoincrement())
+  batch_date         DateTime   @db.Date
+  batch_no           Int
+  expected_quantity  Int
+  note               String?
+  created_by_user_id Int?
+  created_at         DateTime   @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime   @default(now()) @updatedAt @db.Timestamptz(3)
+  users              users?     @relation(fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  inbounds           inbounds[]
+
+  @@unique([batch_date, batch_no], map: "uq_inbound_batches_date_no")
+  @@index([batch_date], map: "idx_inbound_batches_batch_date")
+  @@index([batch_no], map: "idx_inbound_batches_batch_no")
+  @@index([expected_quantity], map: "idx_inbound_batches_expected_quantity")
+  @@index([created_by_user_id], map: "idx_inbound_batches_created_by_user_id")
+}
+
+/// QuickHack model: 외관 검수와 기능 검수의 이력을 별도 기록으로 남기는 검수 이력 테이블입니다.
+model inspections {
+  revision                     Int       @default(0)
+  inspection_id                Int       @id @default(autoincrement())
+  pg_no                        String
+  inbound_id                   Int?
+  inspection_type              String    @default("APPEARANCE")
+  inspection_round             Int       @default(1)
+  inspection_result            String?
+  source_type                  String    @default("INBOUND")
+  coupang_return_allocation_id Int?
+  checked_by_user_id           Int?
+  checked_at                   DateTime? @db.Timestamptz(3)
+  appearance_grade             String?
+  appearance_defect            String?
+  function_defect              String?
+  return_yn                    String    @default("N")
+  csc                          String?
+  first_call_date              DateTime? @db.Date
+  appearance_worker            String?
+  function_worker              String?
+  appearance_checked_at        DateTime? @db.Timestamptz(3)
+  function_checked_at          DateTime? @db.Timestamptz(3)
+  note                         String?
+  created_at                   DateTime  @default(now()) @db.Timestamptz(3)
+  devices                      devices   @relation(fields: [pg_no], references: [pg_no])
+  inbound                      inbounds? @relation("InboundInspections", fields: [inbound_id], references: [inbound_id], onDelete: Restrict)
+
+  @@index([pg_no], map: "idx_inspections_pg_no")
+  @@index([pg_no, inspection_id], map: "idx_inspections_pg_history")
+  @@index([pg_no, inspection_type, inspection_id], map: "idx_inspections_pg_type_latest")
+  @@index([inbound_id], map: "idx_inspections_inbound_id")
+  @@index([inspection_type], map: "idx_inspections_type")
+  @@index([source_type, coupang_return_allocation_id], map: "idx_inspections_source_return_allocation")
+  @@index([checked_by_user_id], map: "idx_inspections_checked_by_user_id")
+}
+
+/// QuickHack model: 현재 판매 가능 여부와 위치 등 기기별 현 재고 상태를 빠르게 조회하기 위한 테이블입니다.
+model inventory {
+  revision         Int       @default(0)
+  inventory_id     Int       @id @default(autoincrement())
+  pg_no            String    @unique(map: "uq_inventory_1")
+  inventory_status String
+  location         String?
+  stocked_at       DateTime? @db.Timestamptz(3)
+  created_at       DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  devices          devices   @relation(fields: [pg_no], references: [pg_no])
+
+  @@index([inventory_status], map: "idx_inventory_status")
+  @@index([inventory_status, pg_no], map: "idx_inventory_status_pg")
+  @@index([pg_no], map: "idx_inventory_pg_no")
+}
+
+/// QuickHack model: current inventory quantity by normalized sellable attributes and inventory status.
+model inventory_quantity_balances {
+  inventory_quantity_balance_id Int                            @id @default(autoincrement())
+  inventory_sku_id              Int
+  inventory_status              String
+  quantity                      Int                            @default(0)
+  version                       Int                            @default(0)
+  last_movement_at              DateTime?                      @db.Timestamptz(3)
+  created_at                    DateTime                       @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime                       @default(now()) @updatedAt @db.Timestamptz(3)
+  inventory_sku                 inventory_skus                 @relation(fields: [inventory_sku_id], references: [inventory_sku_id], onDelete: Restrict)
+  movements                     inventory_quantity_movements[]
+
+  @@unique([inventory_sku_id, inventory_status], map: "uq_inventory_quantity_balances_sku_status")
+  @@index([inventory_status, quantity], map: "idx_inventory_quantity_balances_status_quantity")
+  @@index([inventory_sku_id, quantity], map: "idx_inventory_quantity_balances_sku_quantity")
+  @@index([updated_at], map: "idx_inventory_quantity_balances_updated_at")
+}
+
+/// QuickHack model: append-only inventory quantity ledger for every balance change.
+model inventory_quantity_movements {
+  inventory_quantity_movement_id Int                         @id @default(autoincrement())
+  inventory_quantity_balance_id  Int
+  operation_key                  String
+  idempotency_key                String                      @unique(map: "uq_inventory_quantity_movements_idempotency_key")
+  movement_type                  String
+  pg_no                          String?
+  quantity_delta                 Int
+  before_quantity                Int
+  after_quantity                 Int
+  source_type                    String
+  source_id                      String?
+  reason                         String?
+  actor_user_id                  Int?
+  worker_job_id                  Int?
+  occurred_at                    DateTime                    @default(now()) @db.Timestamptz(3)
+  created_at                     DateTime                    @default(now()) @db.Timestamptz(3)
+  balance                        inventory_quantity_balances @relation(fields: [inventory_quantity_balance_id], references: [inventory_quantity_balance_id], onDelete: Restrict)
+  actor_user                     users?                      @relation("InventoryQuantityMovementActor", fields: [actor_user_id], references: [user_id], onDelete: Restrict)
+  worker_job                     server_worker_jobs?         @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: Restrict)
+
+  @@index([inventory_quantity_balance_id, occurred_at], map: "idx_inventory_quantity_movements_balance_time")
+  @@index([operation_key], map: "idx_inventory_quantity_movements_operation_key")
+  @@index([movement_type, occurred_at], map: "idx_inventory_quantity_movements_type_time")
+  @@index([source_type, source_id], map: "idx_inventory_quantity_movements_source")
+  @@index([pg_no], map: "idx_inventory_quantity_movements_pg_no")
+  @@index([actor_user_id], map: "idx_inventory_quantity_movements_actor_user_id")
+  @@index([worker_job_id], map: "idx_inventory_quantity_movements_worker_job_id")
+  @@index([occurred_at], map: "idx_inventory_quantity_movements_occurred_at")
+}
+
+/// QuickHack model: 판매 가능 재고 등록 시 모델별 고유번호를 순차 발급하기 위한 카운터 테이블입니다.
+model model_sequences {
+  model      String   @id
+  last_seq   Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+}
+
+/// QuickHack model: 기존 단순 주문 구조에서 주문별 상품 라인을 보관하는 호환용 테이블입니다.
+model order_items {
+  order_item_id      Int      @id @default(autoincrement())
+  order_id           Int
+  pg_no              String?
+  sale_product_name  String
+  sale_price         Int?
+  quantity           Int      @default(1)
+  matched_model      String?
+  matched_storage    String?
+  matched_color      String?
+  matched_sale_grade String?
+  match_status       String   @default("UNMATCHED")
+  created_at         DateTime @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  devices            devices? @relation(fields: [pg_no], references: [pg_no])
+  orders             orders   @relation(fields: [order_id], references: [order_id], onDelete: Cascade)
+
+  @@index([match_status], map: "idx_order_items_match_status")
+  @@index([pg_no], map: "idx_order_items_pg_no")
+  @@index([pg_no, order_item_id], map: "idx_order_items_pg_history")
+  @@index([order_id], map: "idx_order_items_order_id")
+}
+
+/// QuickHack model: 기존 단순 주문 구조에서 플랫폼 주문 헤더 정보를 보관하는 호환용 테이블입니다.
+model orders {
+  order_id          Int           @id @default(autoincrement())
+  platform          String
+  platform_order_id String
+  ordered_at        DateTime?     @db.Timestamptz(3)
+  buyer_name        String?
+  receiver_name     String?
+  phone             String?
+  shipping_address  String?
+  shipping_memo     String?
+  order_status      String        @default("NEW")
+  created_at        DateTime      @default(now()) @db.Timestamptz(3)
+  updated_at        DateTime      @default(now()) @updatedAt @db.Timestamptz(3)
+  order_items       order_items[]
+
+  @@unique([platform, platform_order_id], map: "uq_orders_1")
+  @@index([ordered_at], map: "idx_orders_ordered_at")
+  @@index([platform, platform_order_id], map: "idx_orders_platform_order_id")
+}
+
+/// QuickHack model: 직원 로그인 계정, 업무 권한, 개발자 권한을 보관합니다.
+model users {
+  revision                                Int                                         @default(0)
+  credential_revision                     Int                                         @default(0)
+  user_id                                 Int                                         @id @default(autoincrement())
+  username                                String                                      @unique(map: "uq_users_1")
+  password_hash                           String
+  must_change_password                    Int                                         @default(0)
+  role                                    String
+  is_developer                            Int                                         @default(0)
+  mobile_packing_enabled                  Int                                         @default(0)
+  is_active                               Int                                         @default(1)
+  created_at                              DateTime                                    @default(now()) @db.Timestamptz(3)
+  updated_at                              DateTime                                    @default(now()) @updatedAt @db.Timestamptz(3)
+  mobile_registered_devices               mobile_registered_devices[]                 @relation("MobileRegisteredDeviceUser")
+  mobile_registered_devices_registered    mobile_registered_devices[]                 @relation("MobileRegisteredDeviceRegisteredBy")
+  mobile_registered_devices_revoked       mobile_registered_devices[]                 @relation("MobileRegisteredDeviceRevokedBy")
+  employee_profiles                       employee_profiles?
+  user_preferences                        user_preferences?
+  user_shortcut_bindings                  user_shortcut_bindings[]
+  employee_activity_logs                  employee_activity_logs[]
+  inbounds                                inbounds[]
+  inbound_batches                         inbound_batches[]
+  product_camera_check_rules              product_camera_check_rules[]
+  product_criteria_options                product_criteria_options[]
+  product_criteria_option_links           product_criteria_option_links[]
+  inventory_skus_created                  inventory_skus[]                            @relation("InventorySkuCreatedBy")
+  inventory_skus_updated                  inventory_skus[]                            @relation("InventorySkuUpdatedBy")
+  sales_offers_created                    sales_offers[]                              @relation("SalesOfferCreatedBy")
+  sales_offers_updated                    sales_offers[]                              @relation("SalesOfferUpdatedBy")
+  sales_channel_product_mappings_mapped   sales_channel_product_mappings[]            @relation("SalesChannelProductMappingMappedBy")
+  purchase_price_rates                    purchase_price_rates[]
+  server_job_logs                         server_job_logs[]
+  client_http_trace_observations_reported client_http_trace_observations[]            @relation("ClientHttpTraceObservationReportedBy")
+  server_worker_jobs                      server_worker_jobs[]
+  supplies_updated                        supplies[]                                  @relation("SupplyUpdatedBy")
+  supply_consumption_rules_updated        supply_consumption_rules[]                  @relation("SupplyConsumptionRuleUpdatedBy")
+  supply_consumption_events_created       supply_consumption_events[]                 @relation("SupplyConsumptionEventCreatedBy")
+  supply_forecast_snapshots_created       supply_forecast_snapshots[]                 @relation("SupplyForecastCreatedBy")
+  supply_reorder_requests_created         supply_reorder_requests[]                   @relation("SupplyReorderCreatedBy")
+  supply_reorder_requests_approved        supply_reorder_requests[]                   @relation("SupplyReorderApprovedBy")
+  supply_stock_movements_created          supply_stock_movements[]                    @relation("SupplyMovementCreatedBy")
+  inventory_audit_sessions_created        inventory_audit_sessions[]                  @relation("InventoryAuditSessionCreatedBy")
+  inventory_quantity_movements_actor      inventory_quantity_movements[]              @relation("InventoryQuantityMovementActor")
+  shipment_list_print_batches_created     sales_channel_shipment_list_print_batches[] @relation("ShipmentListPrintBatchCreatedBy")
+  shipment_address_change_works_processed shipment_address_change_work[]              @relation("ShipmentAddressChangeProcessedBy")
+  carrier_invoice_replacements_requested  carrier_invoice_replacement_works[]         @relation("CarrierInvoiceReplacementRequestedBy")
+  carrier_invoice_replacements_resolved   carrier_invoice_replacement_works[]         @relation("CarrierInvoiceReplacementResolvedBy")
+  carrier_integration_settings_updated    carrier_integration_settings[]              @relation("CarrierIntegrationSettingsUpdatedBy")
+  coupang_return_allocations_linked       coupang_return_allocation[]                 @relation("CoupangReturnAllocationLinkedBy")
+  sales_channel_write_requests_requested  sales_channel_write_requests[]              @relation("SalesChannelWriteRequestedBy")
+  sales_channel_write_requests_verified   sales_channel_write_requests[]              @relation("SalesChannelWriteVerifiedBy")
+  sales_channel_write_controls_paused     sales_channel_write_controls[]              @relation("SalesChannelWriteControlPausedBy")
+  sales_channel_write_controls_resumed    sales_channel_write_controls[]              @relation("SalesChannelWriteControlResumedBy")
+  user_sessions                           user_sessions[]
+  user_totp_credentials                   user_totp_credentials?
+  user_totp_recovery_codes                user_totp_recovery_codes[]
+
+  @@index([is_active], map: "idx_users_is_active")
+  @@index([is_developer], map: "idx_users_is_developer")
+  @@index([mobile_packing_enabled], map: "idx_users_mobile_packing_enabled")
+  @@index([role], map: "idx_users_role")
+  @@index([username], map: "idx_users_username")
+}
+
+/// QuickHack model: 모바일 포장 검수 앱을 계정과 ADB 등록 증거에 연결합니다.
+model mobile_registered_devices {
+  registration_revision          Int       @default(0)
+  device_id                      Int       @id @default(autoincrement())
+  user_id                        Int
+  label                          String?
+  adb_serial_hmac                String
+  adb_serial_preview             String
+  registration_state             String    @default("PROVISIONING")
+  provisioning_token_hash        String?   @unique(map: "uq_mobile_registered_devices_provisioning_token_hash")
+  provisioning_expires_at        DateTime? @db.Timestamptz(3)
+  app_instance_id_hash           String?
+  device_public_key_spki         String?
+  device_public_key_fingerprint  String?
+  device_token_hash              String?   @unique(map: "uq_mobile_registered_devices_token_hash")
+  user_credential_revision       Int?
+  instance_epoch                 Int?
+  activated_at                   DateTime? @db.Timestamptz(3)
+  registered_by_user_id          Int?
+  revoked_by_user_id             Int?
+  revoked_at                     DateTime? @db.Timestamptz(3)
+  last_seen_at                   DateTime? @db.Timestamptz(3)
+  created_at                     DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at                     DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  user                           users     @relation("MobileRegisteredDeviceUser", fields: [user_id], references: [user_id], onDelete: Cascade)
+  registered_by                  users?    @relation("MobileRegisteredDeviceRegisteredBy", fields: [registered_by_user_id], references: [user_id], onDelete: SetNull)
+  revoked_by                     users?    @relation("MobileRegisteredDeviceRevokedBy", fields: [revoked_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([user_id, device_id], map: "idx_mobile_registered_devices_user_page")
+  @@index([adb_serial_hmac], map: "idx_mobile_registered_devices_adb_serial_hmac")
+  @@index([registration_state, device_id], map: "idx_mobile_registered_devices_state_page")
+  @@index([last_seen_at], map: "idx_mobile_registered_devices_last_seen_at")
+  @@index([registered_by_user_id], map: "idx_mobile_registered_devices_registered_by")
+  @@index([revoked_by_user_id], map: "idx_mobile_registered_devices_revoked_by")
+}
+
+model user_totp_credentials {
+  credential_id              Int                          @id @default(autoincrement())
+  user_id                    Int                          @unique(map: "uq_user_totp_credentials_1")
+  secret_ciphertext          String
+  secret_iv                  String
+  secret_auth_tag            String
+  enabled                    Int                          @default(0)
+  verified_at                DateTime?                    @db.Timestamptz(3)
+  last_used_step             Int?
+  failed_count               Int                          @default(0)
+  locked_until               DateTime?                    @db.Timestamptz(3)
+  created_at                 DateTime                     @default(now()) @db.Timestamptz(3)
+  updated_at                 DateTime                     @default(now()) @updatedAt @db.Timestamptz(3)
+  users                      users                        @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  user_sensitive_auth_grants user_sensitive_auth_grants[]
+
+  @@index([user_id], map: "idx_user_totp_credentials_user_id")
+  @@index([enabled], map: "idx_user_totp_credentials_enabled")
+  @@index([locked_until], map: "idx_user_totp_credentials_locked_until")
+}
+
+model user_totp_recovery_codes {
+  recovery_code_id Int       @id @default(autoincrement())
+  user_id          Int
+  code_hash        String    @unique(map: "uq_user_totp_recovery_codes_1")
+  used_at          DateTime? @db.Timestamptz(3)
+  created_at       DateTime  @default(now()) @db.Timestamptz(3)
+  users            users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id], map: "idx_user_totp_recovery_codes_user_id")
+  @@index([used_at], map: "idx_user_totp_recovery_codes_used_at")
+}
+
+/// QuickHack model: 로그인 계정에 연결되는 직원 표시명, 연락처, 생일, 입사일 같은 인사 기본 정보를 보관합니다.
+model employee_profiles {
+  profile_id   Int       @id @default(autoincrement())
+  user_id      Int       @unique(map: "idx_employee_profiles_user_id_unique")
+  display_name String
+  phone        String?
+  email        String?
+  birth_date   DateTime? @db.Date
+  hire_date    DateTime? @db.Date
+  created_at   DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at   DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  users        users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([display_name], map: "idx_employee_profiles_display_name")
+}
+
+/// QuickHack model: 직원이 직접 선택한 단축키와 알림 사용 여부를 계정별로 보관합니다.
+model user_preferences {
+  user_id                                  Int      @id
+  keyboard_shortcuts_enabled               Int      @default(1)
+  windows_notifications_enabled            Int      @default(0)
+  inspection_complete_notification_enabled Int      @default(1)
+  shipment_change_notification_enabled     Int      @default(1)
+  return_notification_enabled              Int      @default(1)
+  settings_revision                        Int      @default(0)
+  created_at                               DateTime @default(now()) @db.Timestamptz(3)
+  updated_at                               DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  users                                    users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+}
+
+/// QuickHack model: 사용자별 업무 동작과 실제 키 조합을 한 행씩 보관합니다.
+model user_shortcut_bindings {
+  user_id     Int
+  action_code String
+  modifier    String
+  key_code    String?
+  created_at  DateTime @default(now()) @db.Timestamptz(3)
+  updated_at  DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  users       users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@id([user_id, action_code])
+  @@unique([user_id, modifier, key_code], map: "uq_user_shortcut_combination")
+  @@index([action_code], map: "idx_user_shortcut_bindings_action")
+}
+
+/// QuickHack model: 직원이 직접 확정하거나 변경한 주요 업무 이벤트를 감사 추적용으로 보관합니다.
+model employee_activity_logs {
+  id                  Int                             @id @default(autoincrement())
+  user_id             Int?
+  action_type         String
+  target_type         String
+  target_id           String?
+  before_summary_text String?
+  after_summary_text  String?
+  result              String
+  created_at          DateTime                        @default(now()) @db.Timestamptz(3)
+  users               users?                          @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+  changes             employee_activity_log_changes[]
+
+  @@index([user_id], map: "idx_employee_activity_logs_user_id")
+  @@index([action_type], map: "idx_employee_activity_logs_action_type")
+  @@index([target_type, target_id], map: "idx_employee_activity_logs_target")
+  @@index([result], map: "idx_employee_activity_logs_result")
+  @@index([created_at], map: "idx_employee_activity_logs_created_at")
+}
+
+/// QuickHack model: 택배사 자격증명과 분리된 송하인·박스·live opt-in 업무 설정을 택배사별 한 행으로 보관합니다.
+/// QuickHack model: credential·쓰기 권한과 분리된 택배사 발송자 및 기본 포장 설정을 보관합니다.
+model carrier_integration_settings {
+  carrier_integration_setting_id Int      @id @default(autoincrement())
+  carrier_code                   String   @unique(map: "uq_carrier_integration_settings_carrier")
+  sender_name                    String
+  sender_tel                     String
+  sender_cell                    String?
+  sender_zip_code                String?
+  sender_address_1               String
+  sender_address_2               String
+  default_box_type_code          String
+  revision                       Int      @default(0)
+  updated_by_user_id             Int?
+  created_at                     DateTime @default(now()) @db.Timestamptz(3)
+  updated_at                     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  updated_by                     users?   @relation("CarrierIntegrationSettingsUpdatedBy", fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([updated_by_user_id], map: "idx_carrier_integration_settings_updated_by")
+}
+
+model employee_activity_log_changes {
+  employee_activity_log_change_id Int                    @id @default(autoincrement())
+  activity_log_id                 Int
+  field_name                      String
+  before_value                    String?
+  after_value                     String?
+  created_at                      DateTime               @default(now()) @db.Timestamptz(3)
+  activity_log                    employee_activity_logs @relation(fields: [activity_log_id], references: [id], onDelete: Cascade)
+
+  @@index([activity_log_id], map: "idx_employee_activity_log_changes_log_id")
+  @@index([field_name], map: "idx_employee_activity_log_changes_field_name")
+}
+
+/// QuickHack model: 외부 API 동기화, 배치, 실패/재시도 같은 서버 작업 이력을 보관합니다.
+model server_job_logs {
+  id                      Int                     @id @default(autoincrement())
+  job_type                String
+  job_name                String?
+  status                  String
+  triggered_by_user_id    Int?
+  started_at              DateTime                @default(now()) @db.Timestamptz(3)
+  finished_at             DateTime?               @db.Timestamptz(3)
+  duration_ms             Int?
+  summary_text            String?
+  summary_processed_count Int?
+  summary_succeeded_count Int?
+  summary_failed_count    Int?
+  summary_skipped_count   Int?
+  summary_created_count   Int?
+  summary_updated_count   Int?
+  summary_warning_count   Int?
+  error_code              String?
+  error_message           String?
+  created_at              DateTime                @default(now()) @db.Timestamptz(3)
+  users                   users?                  @relation(fields: [triggered_by_user_id], references: [user_id], onDelete: SetNull)
+  fields                  server_job_log_fields[]
+
+  @@index([job_type], map: "idx_server_job_logs_job_type")
+  @@index([status], map: "idx_server_job_logs_status")
+  @@index([triggered_by_user_id], map: "idx_server_job_logs_triggered_by_user_id")
+  @@index([started_at], map: "idx_server_job_logs_started_at")
+  @@index([job_type, started_at, id], map: "idx_server_job_logs_type_started_id")
+  @@index([finished_at], map: "idx_server_job_logs_finished_at")
+}
+
+model server_job_log_fields {
+  server_job_log_field_id Int             @id @default(autoincrement())
+  server_job_log_id       Int
+  field_name              String
+  field_value             String?
+  created_at              DateTime        @default(now()) @db.Timestamptz(3)
+  server_job_log          server_job_logs @relation(fields: [server_job_log_id], references: [id], onDelete: Cascade)
+
+  @@index([server_job_log_id], map: "idx_server_job_log_fields_log_id")
+  @@index([field_name], map: "idx_server_job_log_fields_field_name")
+}
+
+/// 브라우저가 서버 응답 헤더를 받은 뒤 본문 소비를 마칠 때까지의 체감 시간을 trace와 연결합니다.
+model client_http_trace_observations {
+  client_http_trace_observation_id Int      @id @default(autoincrement())
+  trace_id                         String   @unique(map: "uq_client_http_trace_observations_trace_id")
+  reported_by_user_id              Int?
+  response_status                  Int
+  header_received_ms               Int
+  response_complete_ms             Int?
+  body_processing_ms               Int?
+  gateway_ms                       Int?
+  observed_at                      DateTime @db.Timestamptz(3)
+  created_at                       DateTime @default(now()) @db.Timestamptz(3)
+  updated_at                       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  reported_by                      users?   @relation("ClientHttpTraceObservationReportedBy", fields: [reported_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([reported_by_user_id], map: "idx_client_http_trace_observations_reported_by")
+  @@index([observed_at], map: "idx_client_http_trace_observations_observed_at")
+  @@index([created_at], map: "idx_client_http_trace_observations_created_at")
+}
+
+model server_worker_jobs {
+  lease_token                   String?                                       @db.Uuid
+  claim_generation              Int                                           @default(0)
+  worker_job_id                 Int                                           @id @default(autoincrement())
+  worker_key                    String                                        @unique(map: "idx_server_worker_jobs_worker_key_unique")
+  worker_name                   String
+  worker_type                   String
+  status                        String                                        @default("IDLE")
+  schedule_enabled              Int                                           @default(0)
+  interval_seconds              Int?
+  next_run_at                   DateTime?                                     @db.Timestamptz(3)
+  last_run_at                   DateTime?                                     @db.Timestamptz(3)
+  started_at                    DateTime?                                     @db.Timestamptz(3)
+  finished_at                   DateTime?                                     @db.Timestamptz(3)
+  locked_by                     String?
+  locked_until                  DateTime?                                     @db.Timestamptz(3)
+  progress_current              Int                                           @default(0)
+  progress_total                Int?
+  attempt_count                 Int                                           @default(0)
+  max_attempts                  Int                                           @default(3)
+  last_error_code               String?
+  last_error_message            String?
+  result_summary_text           String?
+  result_processed_count        Int?
+  result_succeeded_count        Int?
+  result_failed_count           Int?
+  result_skipped_count          Int?
+  result_created_count          Int?
+  result_updated_count          Int?
+  result_warning_count          Int?
+  triggered_by_user_id          Int?
+  created_at                    DateTime                                      @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime                                      @default(now()) @updatedAt @db.Timestamptz(3)
+  users                         users?                                        @relation(fields: [triggered_by_user_id], references: [user_id], onDelete: SetNull)
+  match_worker_allocations      match_worker_allocation[]
+  sales_channel_write_requests  sales_channel_write_requests[]
+  coupang_api_call_logs         coupang_api_call_log[]
+  coupang_raw_change_events     coupang_raw_change_event[]
+  inventory_quantity_movements  inventory_quantity_movements[]
+  carrier_registration_works    carrier_shipment_registration_works[]
+  carrier_api_call_logs         carrier_api_call_logs[]
+  statistics_snapshot_batches   statistics_snapshot_batches[]
+  inventory_verification_states sales_channel_inventory_verification_states[] @relation("SalesChannelInventoryVerificationWorker")
+
+  @@index([worker_type], map: "idx_server_worker_jobs_worker_type")
+  @@index([status], map: "idx_server_worker_jobs_status")
+  @@index([schedule_enabled, next_run_at], map: "idx_server_worker_jobs_schedule")
+  @@index([locked_until], map: "idx_server_worker_jobs_locked_until")
+  @@index([triggered_by_user_id], map: "idx_server_worker_jobs_triggered_by_user_id")
+}
+
+/// QuickHack model: 같은 마감일의 네 통계 결과를 하나의 원자적 배치로 보관합니다.
+model statistics_snapshot_batches {
+  snapshot_batch_id   Int                         @id @default(autoincrement())
+  data_cutoff_date    DateTime                    @db.Date
+  period_from         DateTime                    @db.Date
+  period_to           DateTime                    @db.Date
+  day_count           Int
+  calculation_version String
+  status              String                      @default("BUILDING")
+  worker_job_id       Int?
+  started_at          DateTime                    @default(now()) @db.Timestamptz(3)
+  completed_at        DateTime?                   @db.Timestamptz(3)
+  failed_at           DateTime?                   @db.Timestamptz(3)
+  error_code          String?
+  error_message       String?
+  created_at          DateTime                    @default(now()) @db.Timestamptz(3)
+  updated_at          DateTime                    @default(now()) @updatedAt @db.Timestamptz(3)
+  worker_job          server_worker_jobs?         @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: SetNull)
+  items               statistics_snapshot_items[]
+
+  @@index([calculation_version, data_cutoff_date], map: "idx_statistics_snapshot_batch_lookup")
+  @@index([status, data_cutoff_date], map: "idx_statistics_snapshot_batch_status_cutoff")
+  @@index([worker_job_id], map: "idx_statistics_snapshot_batch_worker_job")
+}
+
+model statistics_snapshot_items {
+  snapshot_item_id       Int                         @id @default(autoincrement())
+  snapshot_batch_id      Int
+  domain                 String
+  payload_schema_version Int
+  payload_text           String
+  payload_hash           String
+  payload_size_bytes     Int
+  generated_at           DateTime                    @db.Timestamptz(3)
+  created_at             DateTime                    @default(now()) @db.Timestamptz(3)
+  batch                  statistics_snapshot_batches @relation(fields: [snapshot_batch_id], references: [snapshot_batch_id], onDelete: Cascade)
+
+  @@unique([snapshot_batch_id, domain], map: "uq_statistics_snapshot_item_batch_domain")
+  @@index([domain, snapshot_batch_id], map: "idx_statistics_snapshot_item_domain_batch")
+}
+
+/// QuickHack model: 기종/용량/외관등급/날짜/조건별 매입가 기준표를 보관합니다.
+model purchase_price_rates {
+  revision               Int                       @default(0)
+  purchase_price_rate_id Int                       @id @default(autoincrement())
+  model_option_id        Int
+  storage_option_id      Int
+  appearance_grade_option_id Int
+  price_date             DateTime                  @db.Date
+  purchase_price         Int
+  note                   String                    @default("")
+  created_by_user_id     Int?
+  created_at             DateTime                  @default(now()) @db.Timestamptz(3)
+  updated_at             DateTime                  @default(now()) @updatedAt @db.Timestamptz(3)
+  users                  users?                    @relation(fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  model_option           product_criteria_options  @relation("PurchasePriceModelOption", fields: [model_option_id], references: [option_id], onDelete: Restrict)
+  storage_option         product_criteria_options  @relation("PurchasePriceStorageOption", fields: [storage_option_id], references: [option_id], onDelete: Restrict)
+  appearance_grade_option product_criteria_options @relation("PurchasePriceAppearanceGradeOption", fields: [appearance_grade_option_id], references: [option_id], onDelete: Restrict)
+  referenced_inbounds    inbounds[]                @relation("InboundPurchasePriceReference")
+
+  @@unique([model_option_id, storage_option_id, appearance_grade_option_id, price_date, note], map: "uq_purchase_price_rates_1")
+  @@index([price_date, note], map: "idx_purchase_price_rates_price_date_note")
+  @@index([model_option_id, storage_option_id, appearance_grade_option_id], map: "idx_purchase_price_rates_option_ids")
+  @@index([created_by_user_id], map: "idx_purchase_price_rates_created_by_user_id")
+}
+
+/// QuickHack model: 검수 드롭다운, 공식 색상명, 기종별 용량 등 운영 기준값을 보관합니다.
+model product_criteria_options {
+  revision                        Int                                        @default(0)
+  relation_revision               Int                                        @default(0)
+  option_id                       Int                                        @id @default(autoincrement())
+  category                        String
+  option_key                      String
+  label                           String
+  parent_key                      String                                     @default("")
+  sort_order                      Int                                        @default(0)
+  is_active                       Int                                        @default(1)
+  updated_by_user_id              Int?
+  created_at                      DateTime                                   @default(now()) @db.Timestamptz(3)
+  updated_at                      DateTime                                   @default(now()) @updatedAt @db.Timestamptz(3)
+  users                           users?                                     @relation(fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+  camera_check_rules              product_camera_check_rules[]
+  camera_lens_rules               product_camera_check_rules[]               @relation("ProductCameraLensOption")
+  camera_focus_rules              product_camera_check_rules[]               @relation("ProductCameraFocusRuleOption")
+  parent_links                    product_criteria_option_links[]            @relation("ProductCriteriaParentOption")
+  child_links                     product_criteria_option_links[]            @relation("ProductCriteriaChildOption")
+  inventory_sku_models            inventory_skus[]                           @relation("InventorySkuModelOption")
+  inventory_sku_storages          inventory_skus[]                           @relation("InventorySkuStorageOption")
+  inventory_sku_colors            inventory_skus[]                           @relation("InventorySkuColorOption")
+  inventory_sku_sale_grades       inventory_skus[]                           @relation("InventorySkuSaleGradeOption")
+  sales_offer_models              sales_offers[]                             @relation("SalesOfferModelOption")
+  sales_offer_storages            sales_offers[]                             @relation("SalesOfferStorageOption")
+  sales_offer_colors              sales_offers[]                             @relation("SalesOfferColorOption")
+  sales_offer_warranty_groups     sales_offers[]                             @relation("SalesOfferWarrantyGroupOption")
+  order_matching_tier_sale_grades order_matching_priority_tier_sale_grades[] @relation("OrderMatchingTierSaleGradeOption")
+  purchase_price_models           purchase_price_rates[]                     @relation("PurchasePriceModelOption")
+  purchase_price_storages         purchase_price_rates[]                     @relation("PurchasePriceStorageOption")
+  purchase_price_appearance_grades purchase_price_rates[]                    @relation("PurchasePriceAppearanceGradeOption")
+
+  @@unique([category, option_key, parent_key], map: "uq_product_criteria_options_1")
+  @@index([category, is_active, sort_order], map: "idx_product_criteria_options_category_active_sort")
+  @@index([category, parent_key], map: "idx_product_criteria_options_parent")
+  @@index([updated_by_user_id], map: "idx_product_criteria_options_updated_by_user_id")
+}
+
+/// QuickHack model: 기종 기준값과 저장공간/색상 기준값의 연결 관계를 보관합니다.
+model product_criteria_option_links {
+  revision           Int                      @default(0)
+  link_id            Int                      @id @default(autoincrement())
+  relation_type      String
+  parent_option_id   Int
+  child_option_id    Int
+  sort_order         Int                      @default(0)
+  is_active          Int                      @default(1)
+  updated_by_user_id Int?
+  created_at         DateTime                 @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime                 @default(now()) @updatedAt @db.Timestamptz(3)
+  parent_option      product_criteria_options @relation("ProductCriteriaParentOption", fields: [parent_option_id], references: [option_id], onDelete: Cascade)
+  child_option       product_criteria_options @relation("ProductCriteriaChildOption", fields: [child_option_id], references: [option_id], onDelete: Cascade)
+  users              users?                   @relation(fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@unique([relation_type, parent_option_id, child_option_id], map: "uq_product_criteria_option_links_1")
+  @@index([relation_type, is_active, sort_order], map: "idx_product_criteria_option_links_type_active_sort")
+  @@index([parent_option_id], map: "idx_product_criteria_option_links_parent")
+  @@index([child_option_id], map: "idx_product_criteria_option_links_child")
+  @@index([updated_by_user_id], map: "idx_product_criteria_option_links_updated_by_user_id")
+}
+
+/// QuickHack model: exact internal stock classification built from stable product criteria option ids.
+model inventory_skus {
+  revision                 Int                           @default(0)
+  inventory_sku_id         Int                           @id @default(autoincrement())
+  sku_code                 String                        @unique(map: "uq_inventory_skus_sku_code")
+  model_option_id          Int
+  storage_option_id        Int
+  color_option_id          Int
+  sale_grade_option_id     Int
+  is_active                Int                           @default(1)
+  deactivated_at           DateTime?                     @db.Timestamptz(3)
+  created_by_user_id       Int?
+  updated_by_user_id       Int?
+  created_at               DateTime                      @default(now()) @db.Timestamptz(3)
+  updated_at               DateTime                      @default(now()) @updatedAt @db.Timestamptz(3)
+  model_option             product_criteria_options      @relation("InventorySkuModelOption", fields: [model_option_id], references: [option_id], onDelete: Restrict)
+  storage_option           product_criteria_options      @relation("InventorySkuStorageOption", fields: [storage_option_id], references: [option_id], onDelete: Restrict)
+  color_option             product_criteria_options      @relation("InventorySkuColorOption", fields: [color_option_id], references: [option_id], onDelete: Restrict)
+  sale_grade_option        product_criteria_options      @relation("InventorySkuSaleGradeOption", fields: [sale_grade_option_id], references: [option_id], onDelete: Restrict)
+  created_by               users?                        @relation("InventorySkuCreatedBy", fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  updated_by               users?                        @relation("InventorySkuUpdatedBy", fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+  devices                  devices[]
+  quantity_balances        inventory_quantity_balances[]
+  match_worker_allocations match_worker_allocation[]
+  sales_records            sales_records[]
+
+  @@unique([model_option_id, storage_option_id, color_option_id, sale_grade_option_id], map: "uq_inventory_skus_dimensions")
+  @@index([model_option_id, storage_option_id], map: "idx_inventory_skus_model_storage")
+  @@index([color_option_id], map: "idx_inventory_skus_color_option_id")
+  @@index([sale_grade_option_id], map: "idx_inventory_skus_sale_grade_option_id")
+  @@index([is_active], map: "idx_inventory_skus_is_active")
+  @@index([created_by_user_id], map: "idx_inventory_skus_created_by_user_id")
+  @@index([updated_by_user_id], map: "idx_inventory_skus_updated_by_user_id")
+}
+
+/// QuickHack model: 기종별 카메라 렌즈 배율과 초점 점검 기준의 연결 관계를 보관합니다.
+model product_camera_check_rules {
+  rule_id               Int                       @id @default(autoincrement())
+  model_option_id       Int
+  camera_lens_option_id Int?
+  focus_rule_option_id  Int?
+  camera_name           String
+  focus_rule            String
+  sort_order            Int                       @default(0)
+  is_active             Int                       @default(1)
+  updated_by_user_id    Int?
+  created_at            DateTime                  @default(now()) @db.Timestamptz(3)
+  updated_at            DateTime                  @default(now()) @updatedAt @db.Timestamptz(3)
+  model_option          product_criteria_options  @relation(fields: [model_option_id], references: [option_id], onDelete: Cascade)
+  camera_lens_option    product_criteria_options? @relation("ProductCameraLensOption", fields: [camera_lens_option_id], references: [option_id], onDelete: SetNull)
+  focus_rule_option     product_criteria_options? @relation("ProductCameraFocusRuleOption", fields: [focus_rule_option_id], references: [option_id], onDelete: SetNull)
+  users                 users?                    @relation(fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@unique([model_option_id, camera_name], map: "uq_product_camera_check_rules_1")
+  @@unique([model_option_id, camera_lens_option_id], map: "uq_product_camera_check_rules_model_lens")
+  @@index([model_option_id, is_active, sort_order], map: "idx_product_camera_check_rules_model_active_sort")
+  @@index([camera_lens_option_id], map: "idx_product_camera_check_rules_lens_option")
+  @@index([focus_rule_option_id], map: "idx_product_camera_check_rules_focus_option")
+  @@index([updated_by_user_id], map: "idx_product_camera_check_rules_updated_by_user_id")
+}
+
+/// QuickHack model: 로그인 세션 토큰과 민감 메뉴 2차 인증 만료 시각을 보관합니다.
+model user_sessions {
+  session_id                 Int                          @id @default(autoincrement())
+  user_id                    Int
+  session_token_hash         String                       @unique(map: "uq_user_sessions_1")
+  expires_at                 DateTime                     @db.Timestamptz(3)
+  sensitive_verified_until   DateTime?                    @db.Timestamptz(3)
+  credential_revision        Int
+  instance_epoch             Int
+  created_at                 DateTime                     @default(now()) @db.Timestamptz(3)
+  users                      users                        @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  user_sensitive_auth_grants user_sensitive_auth_grants[]
+
+  @@index([expires_at], map: "idx_user_sessions_expires_at")
+  @@index([sensitive_verified_until], map: "idx_user_sessions_sensitive_verified_until")
+  @@index([session_token_hash], map: "idx_user_sessions_token_hash")
+  @@index([user_id], map: "idx_user_sessions_user_id")
+}
+
+model user_sensitive_auth_grants {
+  grant_id              Int                   @id @default(autoincrement())
+  session_id            Int
+  sensitive_action      String
+  verified_until        DateTime              @db.Timestamptz(3)
+  credential_revision   Int
+  totp_credential_id    Int
+  created_at            DateTime              @default(now()) @db.Timestamptz(3)
+  updated_at            DateTime              @default(now()) @updatedAt @db.Timestamptz(3)
+  user_sessions         user_sessions         @relation(fields: [session_id], references: [session_id], onDelete: Cascade)
+  user_totp_credentials user_totp_credentials @relation(fields: [totp_credential_id], references: [credential_id], onDelete: Cascade)
+
+  @@unique([session_id, sensitive_action], map: "uq_user_sensitive_auth_grants_session_action")
+  @@index([session_id], map: "idx_user_sensitive_auth_grants_session_id")
+  @@index([sensitive_action], map: "idx_user_sensitive_auth_grants_action")
+  @@index([verified_until], map: "idx_user_sensitive_auth_grants_verified_until")
+  @@index([totp_credential_id], map: "idx_user_sensitive_auth_grants_totp_credential_id")
+}
+
+/// QuickHack model: 로그인 실패/성공 시도를 기록해 인증 이력과 보안 점검에 사용합니다.
+model login_attempts {
+  attempt_key      String    @id
+  username         String
+  ip_address       String
+  failed_count     Int       @default(0)
+  first_attempt_at DateTime  @db.Timestamptz(3)
+  blocked_until    DateTime? @db.Timestamptz(3)
+  updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  version          Int       @default(0)
+
+  @@index([username], map: "idx_login_attempts_username")
+  @@index([blocked_until], map: "idx_login_attempts_blocked_until")
+  @@index([updated_at], map: "idx_login_attempts_updated_at")
+}
+
+/// QuickHack model: 판매 채널 상품 노출 단위인 기종/보증조건 조합을 보관합니다.
+/// QuickHack model: channel-independent demand definition used by order matching.
+model sales_offers {
+  revision                      Int                                           @default(0)
+  sales_offer_id                Int                                           @id @default(autoincrement())
+  offer_code                    String                                        @unique(map: "uq_sales_offers_offer_code")
+  model_option_id               Int
+  storage_match_mode            String                                        @default("ANY")
+  storage_option_id             Int?
+  color_match_mode              String                                        @default("ANY")
+  color_option_id               Int?
+  warranty_group_option_id      Int
+  is_active                     Int                                           @default(1)
+  created_by_user_id            Int?
+  updated_by_user_id            Int?
+  created_at                    DateTime                                      @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime                                      @default(now()) @updatedAt @db.Timestamptz(3)
+  model_option                  product_criteria_options                      @relation("SalesOfferModelOption", fields: [model_option_id], references: [option_id], onDelete: Restrict)
+  storage_option                product_criteria_options?                     @relation("SalesOfferStorageOption", fields: [storage_option_id], references: [option_id], onDelete: Restrict)
+  color_option                  product_criteria_options?                     @relation("SalesOfferColorOption", fields: [color_option_id], references: [option_id], onDelete: Restrict)
+  warranty_group_option         product_criteria_options                      @relation("SalesOfferWarrantyGroupOption", fields: [warranty_group_option_id], references: [option_id], onDelete: Restrict)
+  created_by                    users?                                        @relation("SalesOfferCreatedBy", fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  updated_by                    users?                                        @relation("SalesOfferUpdatedBy", fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+  channel_mappings              sales_channel_product_mappings[]
+  work_items                    order_matching_work_queue[]
+  match_worker_allocations      match_worker_allocation[]
+  matching_policies             order_matching_policies[]
+  sales_records                 sales_records[]
+  inventory_verification_states sales_channel_inventory_verification_states[]
+
+  @@index([model_option_id, warranty_group_option_id], map: "idx_sales_offers_model_warranty")
+  @@index([storage_option_id], map: "idx_sales_offers_storage_option_id")
+  @@index([color_option_id], map: "idx_sales_offers_color_option_id")
+  @@index([is_active], map: "idx_sales_offers_is_active")
+  @@index([created_by_user_id], map: "idx_sales_offers_created_by_user_id")
+  @@index([updated_by_user_id], map: "idx_sales_offers_updated_by_user_id")
+}
+
+/// QuickHack model: external channel product option mapped to one internal sales offer.
+model sales_channel_product_mappings {
+  revision                     Int                                          @default(0)
+  mapping_id                   Int                                          @id @default(autoincrement())
+  channel                      String                                       @default("COUPANG")
+  external_product_id          String?
+  external_vendor_item_id      String
+  external_option_name         String?
+  sales_offer_id               Int?
+  mapping_status               String                                       @default("UNMAPPED")
+  mapped_by_user_id            Int?
+  mapped_at                    DateTime?                                    @db.Timestamptz(3)
+  created_at                   DateTime                                     @default(now()) @db.Timestamptz(3)
+  updated_at                   DateTime                                     @default(now()) @updatedAt @db.Timestamptz(3)
+  sales_offer                  sales_offers?                                @relation(fields: [sales_offer_id], references: [sales_offer_id], onDelete: Restrict)
+  mapped_by                    users?                                       @relation("SalesChannelProductMappingMappedBy", fields: [mapped_by_user_id], references: [user_id], onDelete: SetNull)
+  inventory_verification_state sales_channel_inventory_verification_states?
+
+  @@unique([channel, external_vendor_item_id], map: "uq_sales_channel_product_mappings_channel_vendor")
+  @@index([mapping_status], map: "idx_sales_channel_product_mappings_status")
+  @@index([sales_offer_id], map: "idx_sales_channel_product_mappings_offer_id")
+  @@index([mapped_by_user_id], map: "idx_sales_channel_product_mappings_mapped_by_user_id")
+}
+
+/// QuickHack model: current sales-channel inventory comparison state for one product mapping.
+model sales_channel_inventory_verification_states {
+  verification_state_id       Int                            @id @default(autoincrement())
+  mapping_id                  Int                            @unique(map: "uq_sales_channel_inventory_verification_states_mapping")
+  channel                     String                         @default("COUPANG")
+  external_vendor_item_id     String
+  sales_offer_id              Int?
+  verification_status         String                         @default("PENDING")
+  ledger_quantity             Int                            @default(0)
+  pending_order_quantity      Int                            @default(0)
+  channel_quantity            Int?
+  desired_version             Int                            @default(1)
+  processing_version          Int?
+  execution_token             String?
+  state_revision              Int                            @default(1)
+  mapping_updated_at_snapshot DateTime?                      @db.Timestamptz(3)
+  projection_basis_hash       String?
+  retry_count                 Int                            @default(0)
+  next_retry_at               DateTime?                      @db.Timestamptz(3)
+  mismatch_since              DateTime?                      @db.Timestamptz(3)
+  last_checked_at             DateTime?                      @db.Timestamptz(3)
+  resolved_at                 DateTime?                      @db.Timestamptz(3)
+  last_error_code             String?
+  last_error_message          String?
+  last_api_call_log_id        Int?                           @unique(map: "uq_sales_channel_inventory_verification_states_last_api_call")
+  last_worker_job_id          Int?
+  created_at                  DateTime                       @default(now()) @db.Timestamptz(3)
+  updated_at                  DateTime                       @default(now()) @updatedAt @db.Timestamptz(3)
+  mapping                     sales_channel_product_mappings @relation(fields: [mapping_id], references: [mapping_id], onDelete: Cascade)
+  sales_offer                 sales_offers?                  @relation(fields: [sales_offer_id], references: [sales_offer_id], onDelete: SetNull)
+  last_api_call_log           coupang_api_call_log?          @relation(fields: [last_api_call_log_id], references: [coupang_api_call_log_id], onDelete: SetNull)
+  last_worker_job             server_worker_jobs?            @relation("SalesChannelInventoryVerificationWorker", fields: [last_worker_job_id], references: [worker_job_id], onDelete: SetNull)
+
+  @@unique([channel, external_vendor_item_id], map: "uq_sales_channel_inventory_verification_states_channel_vendor")
+  @@index([verification_status, updated_at], map: "idx_sales_channel_inventory_verification_states_status_updated")
+  @@index([next_retry_at], map: "idx_sales_channel_inventory_verification_states_next_retry")
+  @@index([sales_offer_id], map: "idx_sales_channel_inventory_verification_states_offer")
+  @@index([last_worker_job_id], map: "idx_sales_channel_inventory_verification_states_worker")
+}
+
+/// QuickHack model: 주문 매칭 worker가 SKU/채널/전체 범위별로 적용할 운영 정책을 보관합니다.
+model order_matching_policies {
+  policy_id              Int                             @id @default(autoincrement())
+  sales_offer_id         Int
+  policy_name            String?
+  auto_match_enabled     Int                             @default(1)
+  candidate_sort_mode    String                          @default("SALE_GRADE_THEN_STOCKED_OLD")
+  grade_fallback_enabled Int                             @default(1)
+  is_active              Int                             @default(1)
+  version                Int                             @default(1)
+  created_by_user_id     Int?
+  updated_by_user_id     Int?
+  created_at             DateTime                        @default(now()) @db.Timestamptz(3)
+  updated_at             DateTime                        @default(now()) @updatedAt @db.Timestamptz(3)
+  sales_offer            sales_offers                    @relation(fields: [sales_offer_id], references: [sales_offer_id], onDelete: Cascade)
+  tiers                  order_matching_priority_tiers[]
+
+  @@unique([sales_offer_id], map: "uq_order_matching_policies_sales_offer_id")
+  @@index([is_active], map: "idx_order_matching_policies_is_active")
+  @@index([updated_at], map: "idx_order_matching_policies_updated_at")
+}
+
+/// QuickHack model: 주문 매칭 정책 안에서 SKU별 후보 재고 우선순위 단계를 보관합니다.
+model order_matching_priority_tiers {
+  tier_id        Int                                        @id @default(autoincrement())
+  policy_id      Int
+  priority_order Int
+  is_enabled     Int                                        @default(1)
+  created_at     DateTime                                   @default(now()) @db.Timestamptz(3)
+  updated_at     DateTime                                   @default(now()) @updatedAt @db.Timestamptz(3)
+  policy         order_matching_policies                    @relation(fields: [policy_id], references: [policy_id], onDelete: Cascade)
+  sale_grades    order_matching_priority_tier_sale_grades[]
+
+  @@unique([policy_id, priority_order], map: "uq_order_matching_priority_tiers_policy_order")
+  @@index([policy_id], map: "idx_order_matching_priority_tiers_policy_id")
+  @@index([is_enabled], map: "idx_order_matching_priority_tiers_is_enabled")
+}
+
+model order_matching_priority_tier_sale_grades {
+  tier_sale_grade_id   Int                           @id @default(autoincrement())
+  tier_id              Int
+  sale_grade_option_id Int
+  sort_order           Int
+  created_at           DateTime                      @default(now()) @db.Timestamptz(3)
+  tier                 order_matching_priority_tiers @relation(fields: [tier_id], references: [tier_id], onDelete: Cascade)
+  sale_grade_option    product_criteria_options      @relation("OrderMatchingTierSaleGradeOption", fields: [sale_grade_option_id], references: [option_id], onDelete: Restrict)
+
+  @@unique([tier_id, sale_grade_option_id], map: "uq_order_matching_tier_sale_grades_option")
+  @@unique([tier_id, sort_order], map: "uq_order_matching_tier_sale_grades_sort")
+  @@index([tier_id], map: "idx_order_matching_tier_sale_grades_tier_id")
+  @@index([sale_grade_option_id], map: "idx_order_matching_tier_sale_grades_option_id")
+}
+
+/// QuickHack model: 외부 판매 채널 주문 품목을 매칭 worker가 처리하기 좋게 정리한 작업지시서입니다.
+model order_matching_work_queue {
+  revision                 Int           @default(0)
+  work_item_id             Int           @id @default(autoincrement())
+  channel                  String        @default("COUPANG")
+  external_order_id        String
+  external_shipment_id     String
+  external_vendor_item_id  String
+  vendor_item_name         String?
+  seller_product_id        String?
+  seller_product_name      String?
+  seller_product_item_name String?
+  external_vendor_sku_code String?
+  sales_price              Int?
+  ordered_quantity         Int           @default(0)
+  cancel_hold_quantity     Int           @default(0)
+  canceled_quantity        Int           @default(0)
+  canceled                 Int           @default(0)
+  matchable_quantity       Int           @default(0)
+  ordered_at               DateTime?     @db.Timestamptz(3)
+  mapping_status           String        @default("UNMAPPED")
+  mapping_failure_reason   String?
+  sales_offer_id           Int?
+  required_model_label     String?
+  required_storage_label   String?
+  required_color_label     String?
+  required_warranty_group  String?
+  work_status              String        @default("UNMATCHED")
+  work_failure_reason      String?
+  matched_at               DateTime?     @db.Timestamptz(3)
+  created_at               DateTime      @default(now()) @db.Timestamptz(3)
+  updated_at               DateTime      @default(now()) @updatedAt @db.Timestamptz(3)
+  sales_offer              sales_offers? @relation(fields: [sales_offer_id], references: [sales_offer_id], onDelete: Restrict)
+
+  @@unique([channel, external_order_id, external_shipment_id, external_vendor_item_id], map: "uq_order_matching_work_queue_channel_order_shipment_vendor")
+  @@index([channel, external_order_id], map: "idx_order_matching_work_queue_channel_order_id")
+  @@index([external_shipment_id], map: "idx_order_matching_work_queue_shipment_id")
+  @@index([external_vendor_item_id], map: "idx_order_matching_work_queue_vendor_item_id")
+  @@index([mapping_status], map: "idx_order_matching_work_queue_mapping_status")
+  @@index([mapping_failure_reason], map: "idx_order_matching_work_queue_mapping_failure_reason")
+  @@index([sales_offer_id], map: "idx_order_matching_work_queue_sales_offer_id")
+  @@index([work_status], map: "idx_order_matching_work_queue_work_status")
+  @@index([work_failure_reason], map: "idx_order_matching_work_queue_work_failure_reason")
+  @@index([ordered_at, work_item_id], map: "idx_order_matching_work_queue_ordered_id")
+}
+
+/// QuickHack model: 매칭 완료 목록을 실제 출고 작업 단위로 출력한 차수 헤더입니다.
+model sales_channel_shipment_list_print_batches {
+  shipment_list_print_batch_id  Int                                             @id @default(autoincrement())
+  channel                       String                                          @default("COUPANG")
+  tab_key                       String
+  tab_label                     String
+  warranty_label                String?
+  print_date                    DateTime                                        @default(now()) @db.Date
+  batch_no                      Int
+  batch_label                   String
+  item_count                    Int                                             @default(0)
+  package_group_count           Int                                             @default(0)
+  batch_status                  String                                          @default("PENDING")
+  printed_by_user_id            Int?
+  printed_at                    DateTime                                        @default(now()) @db.Timestamptz(3)
+  print_dialog_closed_at        DateTime?                                       @db.Timestamptz(3)
+  confirmed_at                  DateTime?                                       @db.Timestamptz(3)
+  canceled_at                   DateTime?                                       @db.Timestamptz(3)
+  created_at                    DateTime                                        @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime                                        @default(now()) @updatedAt @db.Timestamptz(3)
+  printed_by                    users?                                          @relation("ShipmentListPrintBatchCreatedBy", fields: [printed_by_user_id], references: [user_id], onDelete: SetNull)
+  latest_allocations            match_worker_allocation[]                       @relation("LatestShipmentListPrintBatchAllocation")
+  items                         sales_channel_shipment_list_print_batch_items[]
+  carrier_invoice_issue_batches carrier_invoice_issue_batches[]
+
+  @@unique([channel, tab_key, print_date, batch_no], map: "uq_sales_channel_shipment_print_batches_channel_tab_date_no")
+  @@index([channel, tab_key, print_date], map: "idx_sales_channel_shipment_print_batches_channel_tab_date")
+  @@index([batch_status], map: "idx_sales_channel_shipment_print_batches_status")
+  @@index([printed_at], map: "idx_sales_channel_shipment_print_batches_printed_at")
+  @@index([confirmed_at], map: "idx_sales_channel_shipment_print_batches_confirmed_at")
+  @@index([printed_by_user_id], map: "idx_sales_channel_shipment_print_batches_user_id")
+}
+
+/// QuickHack model: 출고 목록 출력 차수에 포함된 PG 스냅샷 항목입니다.
+model sales_channel_shipment_list_print_batch_items {
+  shipment_list_print_batch_item_id Int                                       @id @default(autoincrement())
+  shipment_list_print_batch_id      Int
+  channel                           String                                    @default("COUPANG")
+  tab_key                           String
+  print_date                        DateTime                                  @db.Date
+  print_line_no                     Int
+  allocation_id                     Int
+  package_group_id                  Int?
+  pg_no                             String
+  created_at                        DateTime                                  @default(now()) @db.Timestamptz(3)
+  batch                             sales_channel_shipment_list_print_batches @relation(fields: [shipment_list_print_batch_id], references: [shipment_list_print_batch_id], onDelete: Cascade)
+  allocation                        match_worker_allocation                   @relation(fields: [allocation_id], references: [allocation_id], onDelete: Cascade)
+  package_group                     shipment_package_groups?                  @relation(fields: [package_group_id], references: [package_group_id], onDelete: SetNull)
+
+  @@unique([shipment_list_print_batch_id, allocation_id], map: "uq_sales_channel_shipment_print_batch_items_batch_allocation")
+  @@unique([channel, tab_key, print_date, print_line_no], map: "uq_sales_channel_shipment_print_batch_items_list_date_line_no")
+  @@unique([shipment_list_print_batch_id, print_line_no], map: "uq_sales_channel_shipment_print_batch_items_batch_line_no")
+  @@index([shipment_list_print_batch_id], map: "idx_sales_channel_shipment_print_batch_items_batch_id")
+  @@index([channel, tab_key, print_date], map: "idx_sales_channel_shipment_print_batch_items_channel_tab_date")
+  @@index([allocation_id], map: "idx_sales_channel_shipment_print_batch_items_allocation_id")
+  @@index([package_group_id], map: "idx_sales_channel_shipment_print_batch_items_package_group_id")
+  @@index([pg_no], map: "idx_sales_channel_shipment_print_batch_items_pg_no")
+}
+
+/// QuickHack model: monotonically increasing revision allocated before channel reads and within acknowledged writes.
+model sales_channel_projection_clocks {
+  channel          String   @id
+  current_revision Int      @default(0)
+  created_at       DateTime @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+}
+
+/// QuickHack model: 채널별 API 동기화 커서와 마지막 동기화 시각을 보관합니다.
+/// QuickHack model: Coupang order API raw response, stored one row per order and shipment.
+model coupang_order_raw {
+  coupang_order_raw_id     Int                            @id @default(autoincrement())
+  external_order_id        String
+  external_shipment_id     String
+  external_order_status    String?
+  ordered_at               DateTime?                      @db.Timestamptz(3)
+  paid_at                  DateTime?                      @db.Timestamptz(3)
+  orderer_name             String?
+  receiver_name            String?
+  receiver_safe_number     String?
+  receiver_address_1       String?
+  receiver_address_2       String?
+  receiver_post_code       String?
+  shipping_memo            String?
+  delivery_company_name    String?
+  invoice_number           String?
+  invoice_uploaded_at      DateTime?                      @db.Timestamptz(3)
+  split_shipping           Int?
+  delivered_at             DateTime?                      @db.Timestamptz(3)
+  delivery_occurred_at     DateTime?                      @db.Timestamptz(3)
+  delivery_time_source     String?
+  projection_revision      Int                            @default(0)
+  synced_at                DateTime                       @default(now()) @db.Timestamptz(3)
+  created_at               DateTime                       @default(now()) @db.Timestamptz(3)
+  updated_at               DateTime                       @default(now()) @updatedAt @db.Timestamptz(3)
+  returns                  coupang_return_raw[]
+  exchanges                coupang_exchange_raw[]
+  allocations              match_worker_allocation[]
+  raw_change_events        coupang_raw_change_event[]
+  shipment_address_changes shipment_address_change_work[]
+
+  @@unique([external_order_id, external_shipment_id], map: "uq_coupang_order_raw_order_shipment")
+  @@index([external_order_id], map: "idx_coupang_order_raw_order_id")
+  @@index([external_shipment_id], map: "idx_coupang_order_raw_shipment_id")
+  @@index([external_order_status], map: "idx_coupang_order_raw_status")
+  @@index([ordered_at], map: "idx_coupang_order_raw_ordered_at")
+  @@index([synced_at], map: "idx_coupang_order_raw_synced_at")
+}
+
+/// QuickHack projection: business-completion evidence that governs delivery PII retention.
+model sales_channel_personal_data_lifecycles {
+  personal_data_lifecycle_id Int       @id @default(autoincrement())
+  channel                    String
+  external_order_id          String
+  external_shipment_id       String
+  delivery_completed_at      DateTime? @db.Timestamptz(3)
+  latest_claim_terminal_at   DateTime? @db.Timestamptz(3)
+  active_claim_count         Int       @default(0)
+  retention_started_at       DateTime? @db.Timestamptz(3)
+  retention_basis            String?
+  redacted_at                DateTime? @db.Timestamptz(3)
+  created_at                 DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at                 DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@unique([channel, external_order_id, external_shipment_id], map: "uq_sales_channel_personal_data_lifecycle_subject")
+  @@index([active_claim_count, redacted_at, retention_started_at], map: "idx_sales_channel_personal_data_lifecycle_due")
+  @@index([channel, external_order_id], map: "idx_sales_channel_personal_data_lifecycle_order")
+}
+
+/// QuickHack model: Coupang return/cancel API raw response.
+model coupang_return_raw {
+  coupang_return_raw_id Int                         @id @default(autoincrement())
+  external_receipt_id   String                      @unique(map: "uq_coupang_return_raw_1")
+  external_order_id     String
+  external_shipment_id  String?
+  cancel_type           String?
+  return_receipt_status String?
+  return_release_status String?
+  reason_code           String?
+  reason_label          String?
+  reason_category       String?
+  reason_detail         String?
+  cancel_count          Int
+  item_integrity_status String                      @default("VALID")
+  projection_revision   Int                         @default(0)
+  synced_at             DateTime                    @default(now()) @db.Timestamptz(3)
+  created_at            DateTime                    @default(now()) @db.Timestamptz(3)
+  updated_at            DateTime                    @default(now()) @updatedAt @db.Timestamptz(3)
+  order                 coupang_order_raw?          @relation(fields: [external_order_id, external_shipment_id], references: [external_order_id, external_shipment_id])
+  items                 coupang_return_raw_item[]
+  allocations           coupang_return_allocation[]
+
+  @@index([external_order_id], map: "idx_coupang_return_raw_order_id")
+  @@index([external_shipment_id], map: "idx_coupang_return_raw_shipment_id")
+  @@index([return_receipt_status], map: "idx_coupang_return_raw_receipt_status")
+  @@index([return_release_status], map: "idx_coupang_return_raw_release_status")
+}
+
+/// QuickHack model: Structured item rows from Coupang return/cancel API responses.
+model coupang_return_raw_item {
+  coupang_return_raw_item_id Int                @id @default(autoincrement())
+  coupang_return_raw_id      Int
+  external_receipt_id        String
+  external_order_id          String
+  external_shipment_id       String?
+  external_vendor_item_id    String?
+  seller_product_item_id     String?
+  vendor_item_name           String?
+  cancel_count               Int
+  reason_code                String?
+  reason_label               String?
+  created_at                 DateTime           @default(now()) @db.Timestamptz(3)
+  updated_at                 DateTime           @default(now()) @updatedAt @db.Timestamptz(3)
+  return_raw                 coupang_return_raw @relation(fields: [coupang_return_raw_id], references: [coupang_return_raw_id], onDelete: Cascade)
+
+  @@index([coupang_return_raw_id], map: "idx_coupang_return_raw_item_return_id")
+  @@index([external_receipt_id], map: "idx_coupang_return_raw_item_receipt_id")
+  @@index([external_order_id], map: "idx_coupang_return_raw_item_order_id")
+  @@index([external_shipment_id], map: "idx_coupang_return_raw_item_shipment_id")
+  @@index([external_vendor_item_id], map: "idx_coupang_return_raw_item_vendor_item_id")
+}
+
+/// QuickHack projection: terminal withdrawal evidence. It may arrive before the return raw row.
+model coupang_return_withdrawal {
+  coupang_return_withdrawal_id Int                 @id @default(autoincrement())
+  external_receipt_id          String              @unique(map: "uq_coupang_return_withdrawal_receipt")
+  external_order_id            String?
+  external_withdrawn_at        DateTime?           @db.Timestamptz(3)
+  refund_delivery_duty         String?
+  vendor_item_ids              String?
+  projection_revision          Int                 @default(0)
+  source_evidence_id           String?             @db.Uuid
+  observed_at                  DateTime            @db.Timestamptz(3)
+  created_at                   DateTime            @default(now()) @db.Timestamptz(3)
+  updated_at                   DateTime            @default(now()) @updatedAt @db.Timestamptz(3)
+  @@index([external_order_id], map: "idx_coupang_return_withdrawal_order")
+  @@index([projection_revision], map: "idx_coupang_return_withdrawal_revision")
+}
+
+/// QuickHack model: Coupang return receipt rows linked to selected PG allocations.
+model coupang_return_allocation {
+  coupang_return_allocation_id Int                      @id @default(autoincrement())
+  coupang_return_raw_id        Int
+  allocation_id                Int
+  external_receipt_id          String
+  external_order_id            String
+  external_shipment_id         String?
+  external_vendor_item_id      String?
+  pg_no                        String
+  action_type                  String
+  linked_by_user_id            Int?
+  linked_at                    DateTime                 @default(now()) @db.Timestamptz(3)
+  created_at                   DateTime                 @default(now()) @db.Timestamptz(3)
+  updated_at                   DateTime                 @default(now()) @updatedAt @db.Timestamptz(3)
+  return_raw                   coupang_return_raw       @relation(fields: [coupang_return_raw_id], references: [coupang_return_raw_id], onDelete: Cascade)
+  allocation                   match_worker_allocation  @relation(fields: [allocation_id], references: [allocation_id], onDelete: Restrict)
+  linked_by                    users?                   @relation("CoupangReturnAllocationLinkedBy", fields: [linked_by_user_id], references: [user_id], onDelete: SetNull)
+  supply_return_movements      supply_stock_movements[] @relation("SupplyMovementReturnAllocation")
+
+  @@unique([coupang_return_raw_id, allocation_id], map: "uq_coupang_return_allocation_return_allocation")
+  @@index([coupang_return_raw_id], map: "idx_coupang_return_allocation_return_id")
+  @@index([allocation_id], map: "idx_coupang_return_allocation_allocation_id")
+  @@index([external_receipt_id], map: "idx_coupang_return_allocation_receipt_id")
+  @@index([external_order_id], map: "idx_coupang_return_allocation_order_id")
+  @@index([pg_no], map: "idx_coupang_return_allocation_pg_no")
+  @@index([pg_no, coupang_return_allocation_id], map: "idx_coupang_return_allocation_pg_history")
+  @@index([linked_by_user_id], map: "idx_coupang_return_allocation_user_id")
+}
+
+/// QuickHack model: Coupang exchange API raw response.
+model coupang_exchange_raw {
+  coupang_exchange_raw_id Int                @id @default(autoincrement())
+  external_exchange_id    String             @unique(map: "uq_coupang_exchange_raw_1")
+  external_order_id       String
+  external_shipment_id    String?
+  exchange_status         String?
+  reason_code             String?
+  reason_label            String?
+  scope_integrity_status  String             @default("VALID")
+  projection_revision     Int                @default(0)
+  synced_at               DateTime           @default(now()) @db.Timestamptz(3)
+  created_at              DateTime           @default(now()) @db.Timestamptz(3)
+  updated_at              DateTime           @default(now()) @updatedAt @db.Timestamptz(3)
+  order                   coupang_order_raw? @relation(fields: [external_order_id, external_shipment_id], references: [external_order_id, external_shipment_id])
+  shipment_scopes         coupang_exchange_shipment_scope[]
+
+  @@index([external_order_id], map: "idx_coupang_exchange_raw_order_id")
+  @@index([external_shipment_id], map: "idx_coupang_exchange_raw_shipment_id")
+  @@index([exchange_status], map: "idx_coupang_exchange_raw_status")
+}
+
+/// QuickHack projection: every original shipment covered by one exchange claim.
+model coupang_exchange_shipment_scope {
+  coupang_exchange_shipment_scope_id Int                  @id @default(autoincrement())
+  coupang_exchange_raw_id            Int
+  external_exchange_id               String
+  external_order_id                  String
+  external_shipment_id               String
+  created_at                         DateTime             @default(now()) @db.Timestamptz(3)
+  exchange_raw                       coupang_exchange_raw @relation(fields: [coupang_exchange_raw_id], references: [coupang_exchange_raw_id], onDelete: Cascade)
+
+  @@unique([coupang_exchange_raw_id, external_shipment_id], map: "uq_coupang_exchange_scope_exchange_shipment")
+  @@index([external_order_id, external_shipment_id], map: "idx_coupang_exchange_scope_order_shipment")
+  @@index([external_exchange_id], map: "idx_coupang_exchange_scope_exchange")
+}
+
+/// QuickHack model: PG-based result created by the matching worker from Coupang raw orders.
+model match_worker_allocation {
+  allocation_id                       Int                                             @id @default(autoincrement())
+  external_order_id                   String
+  pg_no                               String
+  external_shipment_id                String
+  external_vendor_item_id             String?
+  external_product_id                 String?
+  vendor_item_name                    String?
+  seller_product_name                 String?
+  seller_product_item_name            String?
+  option_name                         String?
+  external_order_status_at_allocation String?
+  available_quantity_at_allocation    Int?
+  sales_offer_id                      Int?
+  inventory_sku_id                    Int?
+  required_model                      String?
+  required_storage                    String?
+  required_color                      String?
+  required_warranty_group             String?
+  inventory_status_before_allocation  String?
+  allocation_status                   String                                          @default("ALLOCATED")
+  failure_reason                      String?
+  allocation_note                     String?
+  allocated_at                        DateTime                                        @default(now()) @db.Timestamptz(3)
+  released_at                         DateTime?                                       @db.Timestamptz(3)
+  shipment_list_printed_at            DateTime?                                       @db.Timestamptz(3)
+  shipment_list_print_batch_id        Int?
+  shipment_list_print_batch_no        Int?
+  shipment_list_print_batch_label     String?
+  worker_job_id                       Int?
+  created_at                          DateTime                                        @default(now()) @db.Timestamptz(3)
+  updated_at                          DateTime                                        @default(now()) @updatedAt @db.Timestamptz(3)
+  order                               coupang_order_raw                               @relation(fields: [external_order_id, external_shipment_id], references: [external_order_id, external_shipment_id])
+  device                              devices                                         @relation(fields: [pg_no], references: [pg_no])
+  sales_offer                         sales_offers?                                   @relation(fields: [sales_offer_id], references: [sales_offer_id], onDelete: Restrict)
+  inventory_sku                       inventory_skus?                                 @relation(fields: [inventory_sku_id], references: [inventory_sku_id], onDelete: Restrict)
+  worker_job                          server_worker_jobs?                             @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: SetNull)
+  write_requests                      sales_channel_write_requests[]
+  write_request_targets               sales_channel_write_request_targets[]
+  shipment_address_change_works       shipment_address_change_work[]
+  shipment_list_print_batch           sales_channel_shipment_list_print_batches?      @relation("LatestShipmentListPrintBatchAllocation", fields: [shipment_list_print_batch_id], references: [shipment_list_print_batch_id], onDelete: SetNull)
+  shipment_list_print_batch_items     sales_channel_shipment_list_print_batch_items[]
+  package_group_members               shipment_package_group_members[]
+  coupang_return_allocations          coupang_return_allocation[]
+  sales_records                       sales_records?
+  supply_consumption_events           supply_consumption_events[]                     @relation("SupplyConsumptionAllocation")
+  supply_stock_movements              supply_stock_movements[]                        @relation("SupplyMovementAllocation")
+
+  @@index([external_order_id], map: "idx_match_worker_allocation_order_id")
+  @@index([pg_no], map: "idx_match_worker_allocation_pg_no")
+  @@index([pg_no, allocation_id], map: "idx_match_worker_allocation_pg_history")
+  @@index([external_shipment_id], map: "idx_match_worker_allocation_shipment_id")
+  @@index([external_vendor_item_id], map: "idx_match_worker_allocation_vendor_item_id")
+  @@index([sales_offer_id], map: "idx_match_worker_allocation_sales_offer_id")
+  @@index([inventory_sku_id], map: "idx_match_worker_allocation_inventory_sku_id")
+  @@index([allocation_status], map: "idx_match_worker_allocation_status")
+  @@index([shipment_list_printed_at], map: "idx_match_worker_allocation_printed_at")
+  @@index([shipment_list_print_batch_id], map: "idx_match_worker_allocation_print_batch_id")
+  @@index([shipment_list_print_batch_no], map: "idx_match_worker_allocation_print_batch_no")
+  @@index([worker_job_id], map: "idx_match_worker_allocation_worker_job_id")
+  @@index([allocated_at], map: "idx_match_worker_allocation_allocated_at")
+}
+
+/// QuickHack model: One physical outbound parcel. Every active member is packed together and shares one carrier label.
+model shipment_package_groups {
+  revision                      Int                                             @default(0)
+  package_group_id              Int                                             @id @default(autoincrement())
+  channel                       String                                          @default("COUPANG")
+  grouping_key                  String
+  receiver_name_snapshot        String
+  receiver_address_snapshot     String
+  receiver_phone_snapshot       String?
+  receiver_post_code_snapshot   String?
+  receiver_address_1_snapshot   String?
+  receiver_address_2_snapshot   String?
+  shipping_memo_snapshot        String?
+  group_status                  String                                          @default("DRAFT")
+  current_carrier_shipment_id   Int?
+  frozen_at                     DateTime?                                       @db.Timestamptz(3)
+  invalidated_at                DateTime?                                       @db.Timestamptz(3)
+  invalidation_reason           String?
+  split_from_group_id           Int?
+  created_at                    DateTime                                        @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime                                        @default(now()) @updatedAt @db.Timestamptz(3)
+  split_from_group              shipment_package_groups?                        @relation("ShipmentPackageGroupSplits", fields: [split_from_group_id], references: [package_group_id], onDelete: SetNull)
+  split_groups                  shipment_package_groups[]                       @relation("ShipmentPackageGroupSplits")
+  members                       shipment_package_group_members[]
+  shipment_print_items          sales_channel_shipment_list_print_batch_items[]
+  carrier_shipments             carrier_shipments[]                             @relation("CarrierShipmentPackageGroup")
+  current_carrier_shipment      carrier_shipments?                              @relation("ShipmentPackageGroupCurrentCarrierShipment", fields: [current_carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+  carrier_invoice_issue_items   carrier_invoice_issue_items[]
+  sales_channel_write_requests  sales_channel_write_requests[]
+  sales_channel_write_targets   sales_channel_write_request_targets[]
+  carrier_registration_works    carrier_shipment_registration_works[]
+  invoice_replacement_works     carrier_invoice_replacement_works[]
+  shipment_address_change_works shipment_address_change_work[]
+
+  @@index([channel, grouping_key], map: "idx_shipment_package_groups_channel_key")
+  @@index([group_status], map: "idx_shipment_package_groups_status")
+  @@index([current_carrier_shipment_id], map: "idx_shipment_package_groups_current_carrier_shipment")
+  @@index([split_from_group_id], map: "idx_shipment_package_groups_split_from")
+  @@index([created_at], map: "idx_shipment_package_groups_created_at")
+}
+
+/// QuickHack model: Immutable membership history between a physical parcel and its matched PG allocations.
+model shipment_package_group_members {
+  package_group_member_id Int                     @id @default(autoincrement())
+  package_group_id        Int
+  allocation_id           Int
+  external_order_id       String
+  external_shipment_id    String
+  member_sequence         Int
+  added_at                DateTime                @default(now()) @db.Timestamptz(3)
+  removed_at              DateTime?               @db.Timestamptz(3)
+  package_group           shipment_package_groups @relation(fields: [package_group_id], references: [package_group_id], onDelete: Cascade)
+  allocation              match_worker_allocation @relation(fields: [allocation_id], references: [allocation_id], onDelete: Restrict)
+
+  @@unique([package_group_id, allocation_id], map: "uq_shipment_package_group_members_group_allocation")
+  @@unique([package_group_id, member_sequence], map: "uq_shipment_package_group_members_group_sequence")
+  @@index([allocation_id], map: "idx_shipment_package_group_members_allocation")
+  @@index([external_order_id], map: "idx_shipment_package_group_members_order")
+  @@index([external_shipment_id], map: "idx_shipment_package_group_members_shipment")
+  @@index([removed_at], map: "idx_shipment_package_group_members_removed_at")
+}
+
+/// QuickHack model: Confirmed PG-level sales ledger created from finalized delivery evidence.
+model sales_records {
+  sale_record_id          Int                     @id @default(autoincrement())
+  allocation_id           Int                     @unique(map: "uq_sales_records_1")
+  pg_no                   String
+  sales_offer_id          Int?
+  inventory_sku_id        Int?
+  channel                 String                  @default("COUPANG")
+  external_order_id       String
+  external_shipment_id    String?
+  external_vendor_item_id String?
+  sold_at                 DateTime                @db.Timestamptz(3)
+  sale_status             String                  @default("SOLD")
+  sales_price             Int?
+  purchase_price          Int?
+  purchase_inbound_id     Int?
+  supplier_name           String?
+  purchase_agreed_at      DateTime?               @db.Timestamptz(3)
+  model                   String?
+  storage                 String?
+  color                   String?
+  sale_grade              String?
+  warranty_group          String?
+  created_at              DateTime                @default(now()) @db.Timestamptz(3)
+  updated_at              DateTime                @default(now()) @updatedAt @db.Timestamptz(3)
+  allocation              match_worker_allocation @relation(fields: [allocation_id], references: [allocation_id], onDelete: Restrict)
+  device                  devices                 @relation(fields: [pg_no], references: [pg_no], onDelete: Restrict)
+  sales_offer             sales_offers?           @relation(fields: [sales_offer_id], references: [sales_offer_id], onDelete: Restrict)
+  inventory_sku           inventory_skus?         @relation(fields: [inventory_sku_id], references: [inventory_sku_id], onDelete: Restrict)
+  purchase_inbound        inbounds?               @relation("SalesRecordPurchaseInbound", fields: [purchase_inbound_id], references: [inbound_id], onDelete: SetNull)
+
+  @@index([pg_no], map: "idx_sales_records_pg_no")
+  @@index([sales_offer_id], map: "idx_sales_records_sales_offer_id")
+  @@index([inventory_sku_id], map: "idx_sales_records_inventory_sku_id")
+  @@index([channel, external_order_id], map: "idx_sales_records_channel_order_id")
+  @@index([external_shipment_id], map: "idx_sales_records_shipment_id")
+  @@index([external_vendor_item_id], map: "idx_sales_records_vendor_item_id")
+  @@index([sold_at], map: "idx_sales_records_sold_at")
+  @@index([sale_status], map: "idx_sales_records_status")
+  @@index([model, storage, sale_grade], map: "idx_sales_records_model_storage_grade")
+  @@index([purchase_inbound_id], map: "idx_sales_records_purchase_inbound_id")
+}
+
+/// QuickHack model: 외부 채널 쓰기 API의 업무 요청과 최종 처리 상태를 보관합니다.
+model sales_channel_write_requests {
+  revision                       Int                                    @default(0)
+  sales_channel_write_request_id Int                                    @id @default(autoincrement())
+  channel                        String
+  request_type                   String
+  request_status                 String                                 @default("PENDING")
+  failure_stage                  String?
+  external_order_id              String?
+  allocation_id                  Int?
+  pg_no                          String?
+  target_type                    String?
+  target_external_id             String?
+  package_group_id               Int?
+  carrier_shipment_id            Int?
+  idempotency_key                String                                 @unique(map: "uq_sales_channel_write_requests_idempotency")
+  request_digest                 String
+  method                         String
+  endpoint_path                  String
+  cancel_count                   Int?
+  expected_before_status         String?
+  requested_after_status         String?
+  source_menu_key                String?
+  source_entity_type             String?
+  source_entity_id               String?
+  source_projection_revision     Int?
+  source_snapshot_digest         String?
+  error_code                     String?
+  error_message                  String?
+  requested_by_user_id           Int?
+  worker_job_id                  Int?
+  requested_at                   DateTime                               @default(now()) @db.Timestamptz(3)
+  sending_at                     DateTime?                              @db.Timestamptz(3)
+  verifying_at                   DateTime?                              @db.Timestamptz(3)
+  completed_at                   DateTime?                              @db.Timestamptz(3)
+  review_required_at             DateTime?                              @db.Timestamptz(3)
+  local_finalized_at             DateTime?                              @db.Timestamptz(3)
+  manual_verification_status     String?
+  manual_verified_by_user_id     Int?
+  manual_verified_at             DateTime?                              @db.Timestamptz(3)
+  manual_verification_note       String?
+  active_review_attempt_id       Int?                                   @unique(map: "uq_sales_channel_write_requests_active_review_attempt")
+  active_review_heartbeat_at     DateTime?                              @db.Timestamptz(3)
+  created_at                     DateTime                               @default(now()) @db.Timestamptz(3)
+  updated_at                     DateTime                               @default(now()) @updatedAt @db.Timestamptz(3)
+  allocation                     match_worker_allocation?               @relation(fields: [allocation_id], references: [allocation_id], onDelete: SetNull)
+  device                         devices?                               @relation(fields: [pg_no], references: [pg_no], onDelete: SetNull)
+  worker_job                     server_worker_jobs?                    @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: SetNull)
+  requested_by                   users?                                 @relation("SalesChannelWriteRequestedBy", fields: [requested_by_user_id], references: [user_id], onDelete: SetNull)
+  manual_verified_by             users?                                 @relation("SalesChannelWriteVerifiedBy", fields: [manual_verified_by_user_id], references: [user_id], onDelete: SetNull)
+  package_group                  shipment_package_groups?               @relation(fields: [package_group_id], references: [package_group_id], onDelete: SetNull)
+  carrier_shipment               carrier_shipments?                     @relation(fields: [carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+  targets                        sales_channel_write_request_targets[]
+  attempts                       sales_channel_write_request_attempts[] @relation("SalesChannelWriteRequestAttempts")
+  active_review_attempt          sales_channel_write_request_attempts?  @relation("SalesChannelActiveReviewAttempt", fields: [active_review_attempt_id], references: [sales_channel_write_request_attempt_id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([channel, request_type], map: "idx_sales_channel_write_requests_channel_type")
+  @@index([request_status], map: "idx_sales_channel_write_requests_status")
+  @@index([failure_stage], map: "idx_sales_channel_write_requests_failure_stage")
+  @@index([external_order_id], map: "idx_sales_channel_write_requests_order_id")
+  @@index([allocation_id], map: "idx_sales_channel_write_requests_allocation_id")
+  @@index([pg_no], map: "idx_sales_channel_write_requests_pg_no")
+  @@index([target_type, target_external_id], map: "idx_sales_channel_write_requests_target")
+  @@index([package_group_id], map: "idx_sales_channel_write_requests_package_group")
+  @@index([carrier_shipment_id], map: "idx_sales_channel_write_requests_carrier_shipment")
+  @@index([requested_at], map: "idx_sales_channel_write_requests_requested_at")
+  @@index([worker_job_id], map: "idx_sales_channel_write_requests_worker_job_id")
+  @@index([requested_by_user_id], map: "idx_sales_channel_write_requests_requested_by")
+  @@index([manual_verified_by_user_id], map: "idx_sales_channel_write_requests_verified_by")
+  @@index([active_review_heartbeat_at], map: "idx_sales_channel_write_requests_review_heartbeat")
+}
+
+/// QuickHack model: 쓰기 요청 당시 확정된 대상과 업무 입력값을 불변 스냅샷으로 보관합니다.
+model sales_channel_write_request_targets {
+  sales_channel_write_request_target_id        Int                          @id @default(autoincrement())
+  sales_channel_write_request_id               Int
+  target_type                                  String
+  target_external_id                           String?
+  allocation_id                                Int?
+  pg_no                                        String?
+  external_order_id                            String?
+  external_shipment_id                         String?
+  external_vendor_item_id                      String?
+  package_group_id                             Int?
+  carrier_shipment_id                          Int?
+  delivery_company_code                        String?
+  invoice_number_snapshot                      String?
+  split_shipping                               Int?
+  pre_split_shipped                            Int?
+  estimated_shipping_date                      String?
+  supply_consumption_event_id                  Int?
+  quantity                                     Int?
+  inventory_verification_state_id              Int?
+  inventory_desired_version_snapshot           Int?
+  inventory_mismatch_since_snapshot            DateTime?                    @db.Timestamptz(3)
+  inventory_projection_basis_hash_snapshot     String?
+  inventory_ledger_quantity_snapshot           Int?
+  inventory_pending_order_quantity_snapshot    Int?
+  inventory_expected_channel_quantity_snapshot Int?
+  inventory_observed_channel_quantity_snapshot Int?
+  expected_before_status                       String?
+  requested_after_status                       String?
+  inspection_result                            String?
+  appearance_grade                             String?
+  appearance_defect                            String?
+  function_defect                              String?
+  inspection_note                              String?
+  target_position                              Int                          @default(0)
+  external_result_status                       String                       @default("PENDING")
+  external_result_code                         String?
+  external_result_message                      String?
+  retry_required                               Int?
+  result_received_at                           DateTime?                    @db.Timestamptz(3)
+  local_finalization_status                    String                       @default("PENDING")
+  local_finalized_at                           DateTime?                    @db.Timestamptz(3)
+  created_at                                   DateTime                     @default(now()) @db.Timestamptz(3)
+  write_request                                sales_channel_write_requests @relation(fields: [sales_channel_write_request_id], references: [sales_channel_write_request_id], onDelete: Cascade)
+  allocation                                   match_worker_allocation?     @relation(fields: [allocation_id], references: [allocation_id], onDelete: SetNull)
+  device                                       devices?                     @relation(fields: [pg_no], references: [pg_no], onDelete: SetNull)
+  supply_consumption_event                     supply_consumption_events?   @relation(fields: [supply_consumption_event_id], references: [supply_consumption_event_id], onDelete: SetNull)
+  package_group                                shipment_package_groups?     @relation(fields: [package_group_id], references: [package_group_id], onDelete: SetNull)
+  carrier_shipment                             carrier_shipments?           @relation(fields: [carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+
+  @@unique([sales_channel_write_request_id, target_position], map: "uq_sales_channel_write_targets_request_position")
+  @@index([sales_channel_write_request_id], map: "idx_sales_channel_write_targets_request_id")
+  @@index([allocation_id], map: "idx_sales_channel_write_targets_allocation_id")
+  @@index([pg_no], map: "idx_sales_channel_write_targets_pg_no")
+  @@index([target_type, target_external_id], map: "idx_sales_channel_write_targets_lookup")
+  @@index([external_order_id], map: "idx_sales_channel_write_targets_order_id")
+  @@index([external_shipment_id], map: "idx_sales_channel_write_targets_shipment_id")
+  @@index([external_vendor_item_id], map: "idx_sales_channel_write_targets_vendor_item_id")
+  @@index([external_result_status, local_finalization_status], map: "idx_sales_channel_write_targets_result_status")
+  @@index([inventory_verification_state_id], map: "idx_sales_channel_write_targets_inventory_verification_state")
+  @@index([package_group_id], map: "idx_sales_channel_write_targets_package_group")
+  @@index([carrier_shipment_id], map: "idx_sales_channel_write_targets_carrier_shipment")
+  @@index([supply_consumption_event_id], map: "idx_sales_channel_write_targets_supply_event_id")
+}
+
+/// QuickHack model: 외부 HTTP 쓰기와 검증 조회, 내부 확정 작업을 실행 시도별로 누적합니다.
+model sales_channel_write_request_attempts {
+  sales_channel_write_request_attempt_id Int                           @id @default(autoincrement())
+  sales_channel_write_request_id         Int
+  integration_command_id                 String?                       @unique(map: "uq_sales_channel_write_attempts_integration_command") @db.Uuid
+  attempt_no                             Int
+  attempt_type                           String
+  attempt_status                         String
+  trigger_type                           String
+  method                                 String?
+  endpoint_path                          String?
+  started_at                             DateTime                      @default(now()) @db.Timestamptz(3)
+  completed_at                           DateTime?                     @db.Timestamptz(3)
+  http_status_code                       Int?
+  external_response_code                 String?
+  external_response_message              String?
+  error_code                             String?
+  error_message                          String?
+  request_dispatched                     Int                           @default(0)
+  response_received                      Int                           @default(0)
+  external_applied_unknown               Int                           @default(0)
+  created_at                             DateTime                      @default(now()) @db.Timestamptz(3)
+  write_request                          sales_channel_write_requests  @relation("SalesChannelWriteRequestAttempts", fields: [sales_channel_write_request_id], references: [sales_channel_write_request_id], onDelete: Cascade)
+  active_for_write_request               sales_channel_write_requests? @relation("SalesChannelActiveReviewAttempt")
+  integration_command                    integration_commands?         @relation(fields: [integration_command_id], references: [integration_command_id], onDelete: Restrict)
+
+  @@unique([sales_channel_write_request_id, attempt_no], map: "uq_sales_channel_write_attempt_request_no")
+  @@index([attempt_status], map: "idx_sales_channel_write_attempts_status")
+  @@index([attempt_type, started_at], map: "idx_sales_channel_write_attempts_type_started")
+}
+
+/// QuickHack model: 연속 실패로 외부 채널 쓰기를 일시 정지한 운영 상태를 보관합니다.
+model sales_channel_write_controls {
+  revision                       Int       @default(0)
+  sales_channel_write_control_id Int       @id @default(autoincrement())
+  channel                        String
+  endpoint_key                   String
+  request_type                   String
+  is_paused                      Int       @default(0)
+  consecutive_failure_count      Int       @default(0)
+  pause_reason                   String?
+  last_failure_code              String?
+  last_failure_message           String?
+  last_failure_at                DateTime? @db.Timestamptz(3)
+  paused_at                      DateTime? @db.Timestamptz(3)
+  paused_by_user_id              Int?
+  resumed_at                     DateTime? @db.Timestamptz(3)
+  resumed_by_user_id             Int?
+  created_at                     DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at                     DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  paused_by                      users?    @relation("SalesChannelWriteControlPausedBy", fields: [paused_by_user_id], references: [user_id], onDelete: SetNull)
+  resumed_by                     users?    @relation("SalesChannelWriteControlResumedBy", fields: [resumed_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@unique([channel, endpoint_key], map: "uq_sales_channel_write_controls_channel_endpoint")
+  @@index([is_paused], map: "idx_sales_channel_write_controls_paused")
+  @@index([request_type], map: "idx_sales_channel_write_controls_request_type")
+}
+
+/// QuickHack model: Coupang API call trace without raw request/response bodies.
+model coupang_api_call_log {
+  coupang_api_call_log_id      Int                                          @id @default(autoincrement())
+  channel                      String                                       @default("COUPANG")
+  api_name                     String
+  endpoint_path                String?
+  method                       String                                       @default("GET")
+  status_filter                String?
+  external_order_id            String?
+  external_vendor_item_id      String?
+  period_from                  DateTime?                                    @db.Date
+  period_to                    DateTime?                                    @db.Date
+  page_token_hash              String?
+  next_page_token_hash         String?
+  max_per_page                 Int?
+  http_status_code             Int?
+  external_response_code       String?
+  external_response_message    String?
+  response_hash                String?
+  projection_revision          Int?
+  response_row_count           Int                                          @default(0)
+  processed_row_count          Int                                          @default(0)
+  skipped_row_count            Int                                          @default(0)
+  stale_snapshot_count         Int                                          @default(0)
+  processed_status             String                                       @default("PENDING")
+  error_code                   String?
+  error_message                String?
+  request_started_at           DateTime                                     @default(now()) @db.Timestamptz(3)
+  received_at                  DateTime?                                    @db.Timestamptz(3)
+  processing_started_at        DateTime?                                    @db.Timestamptz(3)
+  processed_at                 DateTime?                                    @db.Timestamptz(3)
+  worker_job_id                Int?
+  created_at                   DateTime                                     @default(now()) @db.Timestamptz(3)
+  updated_at                   DateTime                                     @default(now()) @updatedAt @db.Timestamptz(3)
+  worker_job                   server_worker_jobs?                          @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: SetNull)
+  raw_change_events            coupang_raw_change_event[]
+  shipment_address_changes     shipment_address_change_work[]
+  inventory_verification_state sales_channel_inventory_verification_states?
+
+  @@index([channel, api_name], map: "idx_coupang_api_call_log_channel_api")
+  @@index([endpoint_path], map: "idx_coupang_api_call_log_endpoint_path")
+  @@index([status_filter], map: "idx_coupang_api_call_log_status_filter")
+  @@index([external_order_id], map: "idx_coupang_api_call_log_order_id")
+  @@index([external_vendor_item_id], map: "idx_coupang_api_call_log_vendor_item_id")
+  @@index([response_hash], map: "idx_coupang_api_call_log_response_hash")
+  @@index([processed_status], map: "idx_coupang_api_call_log_processed_status")
+  @@index([received_at], map: "idx_coupang_api_call_log_received_at")
+  @@index([worker_job_id], map: "idx_coupang_api_call_log_worker_job_id")
+  @@index([period_from, period_to], map: "idx_coupang_api_call_log_period")
+  @@index([page_token_hash], map: "idx_coupang_api_call_log_page_token_hash")
+}
+
+/// QuickHack model: Worker queue event created only when tracked Coupang raw columns change.
+model coupang_raw_change_event {
+  coupang_raw_change_event_id Int                              @id @default(autoincrement())
+  source_table                String
+  source_pk                   String
+  external_order_id           String?
+  external_shipment_id        String?
+  external_receipt_id         String?
+  external_exchange_id        String?
+  event_type                  String
+  change_hash                 String
+  api_call_log_id             Int?
+  process_status              String                           @default("PENDING")
+  worker_attempt_count        Int                              @default(0)
+  last_error_message          String?
+  detected_at                 DateTime                         @default(now()) @db.Timestamptz(3)
+  processed_at                DateTime?                        @db.Timestamptz(3)
+  worker_job_id               Int?
+  execution_token             String?
+  created_at                  DateTime                         @default(now()) @db.Timestamptz(3)
+  updated_at                  DateTime                         @default(now()) @updatedAt @db.Timestamptz(3)
+  order                       coupang_order_raw?               @relation(fields: [external_order_id, external_shipment_id], references: [external_order_id, external_shipment_id], onDelete: SetNull)
+  api_call_log                coupang_api_call_log?            @relation(fields: [api_call_log_id], references: [coupang_api_call_log_id], onDelete: SetNull)
+  worker_job                  server_worker_jobs?              @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: SetNull)
+  shipment_address_change     shipment_address_change_work?
+  fields                      coupang_raw_change_event_field[]
+
+  @@unique([source_table, source_pk, event_type, change_hash], map: "uq_coupang_raw_change_event_source_change")
+  @@index([source_table, source_pk], map: "idx_coupang_raw_change_event_source")
+  @@index([event_type], map: "idx_coupang_raw_change_event_type")
+  @@index([process_status], map: "idx_coupang_raw_change_event_status")
+  @@index([external_order_id], map: "idx_coupang_raw_change_event_order_id")
+  @@index([external_shipment_id], map: "idx_coupang_raw_change_event_shipment_id")
+  @@index([external_receipt_id], map: "idx_coupang_raw_change_event_receipt_id")
+  @@index([external_exchange_id], map: "idx_coupang_raw_change_event_exchange_id")
+  @@index([event_type, detected_at], map: "idx_coupang_raw_change_event_type_detected")
+  @@index([api_call_log_id], map: "idx_coupang_raw_change_event_api_call_id")
+  @@index([detected_at], map: "idx_coupang_raw_change_event_detected_at")
+  @@index([worker_job_id], map: "idx_coupang_raw_change_event_worker_job_id")
+}
+
+model coupang_raw_change_event_field {
+  coupang_raw_change_event_field_id Int                      @id @default(autoincrement())
+  raw_change_event_id               Int
+  field_name                        String
+  before_value                      String?
+  after_value                       String?
+  created_at                        DateTime                 @default(now()) @db.Timestamptz(3)
+  raw_change_event                  coupang_raw_change_event @relation(fields: [raw_change_event_id], references: [coupang_raw_change_event_id], onDelete: Cascade)
+
+  @@unique([raw_change_event_id, field_name], map: "uq_coupang_raw_change_event_field")
+  @@index([raw_change_event_id], map: "idx_coupang_raw_change_event_field_event_id")
+  @@index([field_name], map: "idx_coupang_raw_change_event_field_name")
+  @@index([field_name, after_value], map: "idx_coupang_raw_change_event_field_name_after")
+}
+
+/// QuickHack model: Work items displayed in the shipment-address-change menu.
+model shipment_address_change_work {
+  shipment_address_change_work_id  Int                                  @id @default(autoincrement())
+  raw_change_event_id              Int                                  @unique(map: "uq_shipment_address_change_work_1")
+  api_call_log_id                  Int?
+  external_order_id                String
+  external_shipment_id             String
+  allocation_id                    Int?
+  pg_no                            String?
+  package_group_id                 Int?
+  carrier_shipment_id_at_detection Int?
+  change_status                    String                               @default("PENDING")
+  shipment_stage_at_detection      String                               @default("UNKNOWN")
+  allocation_status_at_detection   String?
+  detected_at                      DateTime                             @default(now()) @db.Timestamptz(3)
+  confirmed_at                     DateTime?                            @db.Timestamptz(3)
+  ignored_at                       DateTime?                            @db.Timestamptz(3)
+  failed_at                        DateTime?                            @db.Timestamptz(3)
+  processed_by_user_id             Int?
+  memo                             String?
+  created_at                       DateTime                             @default(now()) @db.Timestamptz(3)
+  updated_at                       DateTime                             @default(now()) @updatedAt @db.Timestamptz(3)
+  raw_change_event                 coupang_raw_change_event             @relation(fields: [raw_change_event_id], references: [coupang_raw_change_event_id])
+  api_call_log                     coupang_api_call_log?                @relation(fields: [api_call_log_id], references: [coupang_api_call_log_id], onDelete: SetNull)
+  order                            coupang_order_raw                    @relation(fields: [external_order_id, external_shipment_id], references: [external_order_id, external_shipment_id])
+  allocation                       match_worker_allocation?             @relation(fields: [allocation_id], references: [allocation_id], onDelete: SetNull)
+  device                           devices?                             @relation(fields: [pg_no], references: [pg_no], onDelete: SetNull)
+  processed_by_user                users?                               @relation("ShipmentAddressChangeProcessedBy", fields: [processed_by_user_id], references: [user_id], onDelete: SetNull)
+  package_group                    shipment_package_groups?             @relation(fields: [package_group_id], references: [package_group_id], onDelete: SetNull)
+  carrier_shipment_at_detection    carrier_shipments?                   @relation("ShipmentAddressChangeCarrierShipment", fields: [carrier_shipment_id_at_detection], references: [carrier_shipment_id], onDelete: SetNull)
+  replacement_work                 carrier_invoice_replacement_works?
+  fields                           shipment_address_change_work_field[]
+
+  @@index([change_status], map: "idx_shipment_address_change_work_status")
+  @@index([shipment_stage_at_detection], map: "idx_shipment_address_change_work_stage")
+  @@index([external_order_id], map: "idx_shipment_address_change_work_order_id")
+  @@index([external_shipment_id], map: "idx_shipment_address_change_work_shipment_id")
+  @@index([allocation_id], map: "idx_shipment_address_change_work_allocation_id")
+  @@index([pg_no], map: "idx_shipment_address_change_work_pg_no")
+  @@index([package_group_id], map: "idx_shipment_address_change_work_package_group")
+  @@index([carrier_shipment_id_at_detection], map: "idx_shipment_address_change_work_carrier_shipment")
+  @@index([detected_at], map: "idx_shipment_address_change_work_detected_at")
+  @@index([api_call_log_id], map: "idx_shipment_address_change_work_api_call_id")
+  @@index([processed_by_user_id], map: "idx_shipment_address_change_work_user_id")
+}
+
+model shipment_address_change_work_field {
+  shipment_address_change_work_field_id Int                          @id @default(autoincrement())
+  shipment_address_change_work_id       Int
+  field_name                            String
+  before_value                          String?
+  after_value                           String?
+  created_at                            DateTime                     @default(now()) @db.Timestamptz(3)
+  shipment_address_change_work          shipment_address_change_work @relation(fields: [shipment_address_change_work_id], references: [shipment_address_change_work_id], onDelete: Cascade)
+
+  @@unique([shipment_address_change_work_id, field_name], map: "uq_shipment_address_change_work_field")
+  @@index([shipment_address_change_work_id], map: "idx_shipment_address_change_work_field_work_id")
+  @@index([field_name], map: "idx_shipment_address_change_work_field_name")
+}
+
+model channel_sync_cursors {
+  sync_cursor_id     Int       @id @default(autoincrement())
+  channel            String
+  resource           String
+  status_filter      String    @default("")
+  last_window_from   DateTime? @db.Timestamptz(3)
+  last_window_to     DateTime? @db.Timestamptz(3)
+  next_token         String?
+  last_success_at    DateTime? @db.Timestamptz(3)
+  last_failure_at    DateTime? @db.Timestamptz(3)
+  last_error_code    String?
+  last_error_message String?
+  created_at         DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@unique([channel, resource, status_filter], map: "uq_channel_sync_cursors_1")
+  @@index([last_success_at], map: "idx_channel_sync_cursors_last_success_at")
+  @@index([last_failure_at], map: "idx_channel_sync_cursors_last_failure_at")
+}
+
+/// QuickHack model: 출고/포장/검수 과정에서 소모되는 비품 품목의 마스터 정보와 예측 기준값을 보관합니다.
+/// QuickHack model: External channel credential metadata only. Secret values are never stored here.
+model channel_credentials {
+  channel_credential_id Int       @id @default(autoincrement())
+  channel               String
+  provider_type         String
+  key_alias             String?
+  key_fingerprint       String?
+  expires_at            DateTime? @db.Timestamptz(3)
+  credential_status     String    @default("MISSING")
+  read_enabled          Int       @default(0)
+  write_enabled         Int       @default(0)
+  last_verified_at      DateTime? @db.Timestamptz(3)
+  last_error_message    String?
+  created_at            DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at            DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@unique([channel, provider_type, key_alias], map: "uq_channel_credentials_channel_provider_alias")
+  @@index([channel, credential_status], map: "idx_channel_credentials_channel_status")
+  @@index([provider_type], map: "idx_channel_credentials_provider_type")
+  @@index([key_fingerprint], map: "idx_channel_credentials_key_fingerprint")
+  @@index([expires_at], map: "idx_channel_credentials_expires_at")
+}
+
+/// QuickHack model: Append-only channel credential status and rotation events. Secret values are never stored here.
+model channel_credential_events {
+  channel_credential_event_id Int      @id @default(autoincrement())
+  channel_credential_id       Int?
+  channel                     String
+  provider_type               String
+  key_alias                   String?
+  key_fingerprint             String?
+  event_type                  String
+  previous_status             String?
+  new_status                  String
+  read_enabled                Int      @default(0)
+  write_enabled               Int      @default(0)
+  reason                      String?
+  actor_user_id               Int?
+  occurred_at                 DateTime @default(now()) @db.Timestamptz(3)
+  created_at                  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([channel, occurred_at], map: "idx_channel_credential_events_channel_time")
+  @@index([channel_credential_id], map: "idx_channel_credential_events_credential_id")
+  @@index([event_type], map: "idx_channel_credential_events_event_type")
+  @@index([key_fingerprint], map: "idx_channel_credential_events_key_fingerprint")
+}
+
+/// QuickHack model: Supply item master data and forecast configuration.
+model supplies {
+  revision                    Int                         @default(0)
+  supply_id                   Int                         @id @default(autoincrement())
+  supply_code                 String                      @unique(map: "uq_supplies_1")
+  supply_name                 String
+  category                    String                      @default("")
+  base_unit                   String                      @default("개")
+  order_unit                  String                      @default("")
+  order_unit_quantity         Int                         @default(1)
+  minimum_order_quantity      Int                         @default(0)
+  default_supplier_name       String?
+  unit_cost                   Int?
+  lead_time_days              Int                         @default(0)
+  min_lead_time_days          Int                         @default(0)
+  max_lead_time_days          Int                         @default(0)
+  loss_rate_percent           Decimal                     @default(0) @db.Decimal(7, 4)
+  safety_stock_days           Int                         @default(3)
+  target_stock_days           Int                         @default(14)
+  outbound_consumption_policy String                      @default("PACKING_CONFIRMED_ONLY")
+  is_active                   Int                         @default(1)
+  note                        String?
+  updated_by_user_id          Int?
+  created_at                  DateTime                    @default(now()) @db.Timestamptz(3)
+  updated_at                  DateTime                    @default(now()) @updatedAt @db.Timestamptz(3)
+  users                       users?                      @relation("SupplyUpdatedBy", fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+  inventory                   supply_inventory?
+  movements                   supply_stock_movements[]
+  rules                       supply_consumption_rules[]
+  consumption_events          supply_consumption_events[]
+  forecasts                   supply_forecast_snapshots[]
+  reorders                    supply_reorder_requests[]
+
+  @@index([category, is_active], map: "idx_supplies_category_active")
+  @@index([supply_name], map: "idx_supplies_name")
+  @@index([updated_by_user_id], map: "idx_supplies_updated_by_user_id")
+}
+
+/// QuickHack model: 재고실사 저장 단위를 기록해 주간 실사로 몰린 포장 완료 수량을 예측 계산에서 기간 전체로 분산할 수 있게 합니다.
+model inventory_audit_sessions {
+  inventory_audit_session_id Int                                @id @default(autoincrement())
+  audit_base_date            DateTime                           @db.Date
+  audit_period_from          DateTime                           @db.Date
+  audit_period_to            DateTime                           @db.Date
+  changed_count              Int                                @default(0)
+  packed_completed_count     Int                                @default(0)
+  created_by_user_id         Int?
+  created_at                 DateTime                           @default(now()) @db.Timestamptz(3)
+  users                      users?                             @relation("InventoryAuditSessionCreatedBy", fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  changes                    inventory_audit_location_changes[]
+  consumption_events         supply_consumption_events[]
+
+  @@index([audit_base_date], map: "idx_inventory_audit_sessions_base_date")
+  @@index([audit_period_to], map: "idx_inventory_audit_sessions_period_to")
+  @@index([created_by_user_id], map: "idx_inventory_audit_sessions_user_id")
+}
+
+/// QuickHack model: 재고실사에서 위치가 바뀐 PG별 전후 위치를 남깁니다.
+model inventory_audit_location_changes {
+  inventory_audit_location_change_id Int                      @id @default(autoincrement())
+  inventory_audit_session_id         Int
+  pg_no                              String
+  previous_location                  String?
+  new_location                       String?
+  created_at                         DateTime                 @default(now()) @db.Timestamptz(3)
+  sessions                           inventory_audit_sessions @relation(fields: [inventory_audit_session_id], references: [inventory_audit_session_id], onDelete: Cascade)
+  devices                            devices                  @relation(fields: [pg_no], references: [pg_no])
+
+  @@unique([inventory_audit_session_id, pg_no], map: "uq_inventory_audit_location_changes_session_pg")
+  @@index([pg_no], map: "idx_inventory_audit_location_changes_pg_no")
+  @@index([new_location], map: "idx_inventory_audit_location_changes_new_location")
+}
+
+/// QuickHack model: 비품별 현재 재고 수량과 보관 위치를 빠르게 조회하기 위한 테이블입니다.
+model supply_inventory {
+  supply_inventory_id Int       @id @default(autoincrement())
+  supply_id           Int       @unique(map: "uq_supply_inventory_1")
+  current_quantity    Int       @default(0)
+  reserved_quantity   Int       @default(0)
+  version             Int       @default(0)
+  inventory_location  String?
+  last_counted_at     DateTime? @db.Timestamptz(3)
+  created_at          DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at          DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  supplies            supplies  @relation(fields: [supply_id], references: [supply_id], onDelete: Cascade)
+
+  @@index([supply_id], map: "idx_supply_inventory_supply_id")
+  @@index([inventory_location], map: "idx_supply_inventory_location")
+}
+
+/// QuickHack model: 비품 입고, 사용, 조정, 폐기 등 수량 변동 이력을 보관합니다.
+model supply_stock_movements {
+  movement_id                      Int                        @id @default(autoincrement())
+  supply_id                        Int
+  movement_type                    String
+  quantity                         Int
+  before_quantity                  Int
+  after_quantity                   Int
+  reason                           String?
+  source_type                      String?
+  source_id                        String?
+  pg_no                            String?
+  shipment_id                      Int?
+  order_id                         Int?
+  allocation_id                    Int?
+  coupang_return_allocation_id     Int?
+  reversal_of_consumption_event_id Int?                        @unique(map: "uq_supply_stock_movements_reversal_event_id")
+  idempotency_key                  String?                    @unique(map: "uq_supply_stock_movements_idempotency_key")
+  created_by_user_id               Int?
+  created_at                       DateTime                   @default(now()) @db.Timestamptz(3)
+  supplies                         supplies                   @relation(fields: [supply_id], references: [supply_id], onDelete: Cascade)
+  users                            users?                     @relation("SupplyMovementCreatedBy", fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  allocation                       match_worker_allocation?   @relation("SupplyMovementAllocation", fields: [allocation_id], references: [allocation_id], onDelete: SetNull)
+  return_allocation                coupang_return_allocation? @relation("SupplyMovementReturnAllocation", fields: [coupang_return_allocation_id], references: [coupang_return_allocation_id], onDelete: SetNull)
+  reversal_of_event                supply_consumption_events? @relation("SupplyConsumptionReversal", fields: [reversal_of_consumption_event_id], references: [supply_consumption_event_id], onDelete: Restrict)
+  consumption_event                supply_consumption_events? @relation("SupplyConsumptionMovement")
+
+  @@index([supply_id, created_at], map: "idx_supply_stock_movements_supply_created")
+  @@index([movement_type], map: "idx_supply_stock_movements_type")
+  @@index([created_by_user_id], map: "idx_supply_stock_movements_user_id")
+  @@index([source_type, source_id], map: "idx_supply_stock_movements_source")
+  @@index([allocation_id], map: "idx_supply_stock_movements_allocation_id")
+  @@index([coupang_return_allocation_id], map: "idx_supply_stock_movements_return_allocation_id")
+}
+
+/// QuickHack model: 매입 확정, 주문, 출고 같은 업무 이벤트별 비품 소요량 계산 규칙을 보관합니다.
+model supply_consumption_rules {
+  revision           Int                         @default(0)
+  rule_id            Int                         @id @default(autoincrement())
+  supply_id          Int
+  trigger_type       String
+  quantity_per_unit  Int                         @default(1)
+  channel            String?
+  model              String?
+  sale_grade         String?
+  warranty           String?
+  inventory_status   String?
+  is_active          Int                         @default(1)
+  note               String?
+  updated_by_user_id Int?
+  created_at         DateTime                    @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime                    @default(now()) @updatedAt @db.Timestamptz(3)
+  supplies           supplies                    @relation(fields: [supply_id], references: [supply_id], onDelete: Cascade)
+  users              users?                      @relation("SupplyConsumptionRuleUpdatedBy", fields: [updated_by_user_id], references: [user_id], onDelete: SetNull)
+  consumption_events supply_consumption_events[]
+
+  @@index([supply_id, is_active], map: "idx_supply_consumption_rules_supply_active")
+  @@index([trigger_type, is_active], map: "idx_supply_consumption_rules_trigger_active")
+  @@index([updated_by_user_id], map: "idx_supply_consumption_rules_user_id")
+}
+
+/// QuickHack model: 포장 완료 등 업무 이벤트로 실제 비품이 소모된 근거를 PG 단위로 보관하고 중복 차감을 막습니다.
+model supply_consumption_events {
+  supply_consumption_event_id Int                                   @id @default(autoincrement())
+  supply_id                   Int
+  rule_id                     Int
+  trigger_type                String
+  source_type                 String
+  source_id                   String?
+  inventory_audit_session_id  Int?
+  pg_no                       String?
+  quantity                    Int
+  applied_rule_revision       Int
+  effective_period_from       DateTime?                             @db.Date
+  effective_period_to         DateTime?                             @db.Date
+  consumed_at                 DateTime                              @default(now()) @db.Timestamptz(3)
+  created_by_user_id          Int?
+  allocation_id               Int?
+  stock_movement_id           Int?                                  @unique(map: "uq_supply_consumption_events_movement_id")
+  idempotency_key             String                                @unique(map: "uq_supply_consumption_events_idempotency_key")
+  consumption_stage           String
+  claimed_at                  DateTime?                             @db.Timestamptz(3)
+  supplies                    supplies                              @relation(fields: [supply_id], references: [supply_id], onDelete: Restrict)
+  rules                       supply_consumption_rules              @relation(fields: [rule_id], references: [rule_id], onDelete: Restrict)
+  inventory_audit_sessions    inventory_audit_sessions?             @relation(fields: [inventory_audit_session_id], references: [inventory_audit_session_id], onDelete: SetNull)
+  devices                     devices?                              @relation(fields: [pg_no], references: [pg_no], onDelete: SetNull)
+  users                       users?                                @relation("SupplyConsumptionEventCreatedBy", fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  allocation                  match_worker_allocation?              @relation("SupplyConsumptionAllocation", fields: [allocation_id], references: [allocation_id], onDelete: SetNull)
+  stock_movement              supply_stock_movements?               @relation("SupplyConsumptionMovement", fields: [stock_movement_id], references: [movement_id], onDelete: Restrict)
+  reversal_movements          supply_stock_movements[]              @relation("SupplyConsumptionReversal")
+  sales_channel_write_targets sales_channel_write_request_targets[]
+
+  @@index([supply_id, consumed_at], map: "idx_supply_consumption_events_supply_consumed")
+  @@index([trigger_type, consumed_at], map: "idx_supply_consumption_events_trigger_consumed")
+  @@index([inventory_audit_session_id], map: "idx_supply_consumption_events_audit_session_id")
+  @@index([pg_no], map: "idx_supply_consumption_events_pg_no")
+  @@index([allocation_id], map: "idx_supply_consumption_events_allocation_id")
+  @@index([pg_no, consumption_stage, claimed_at], map: "idx_supply_consumption_events_pg_stage_claimed")
+}
+
+/// QuickHack model: 특정 시점의 비품 소요예측 계산 결과를 스냅샷으로 보관합니다.
+model supply_forecast_snapshots {
+  forecast_id                   Int                                  @id @default(autoincrement())
+  supply_id                     Int
+  forecast_date                 DateTime                             @db.Date
+  period_from                   DateTime                             @db.Date
+  period_to                     DateTime                             @db.Date
+  lookback_days                 Int
+  demand_source                 String
+  expected_usage_quantity       Int
+  average_daily_usage           Int
+  usage_stddev                  Int?
+  current_quantity              Int
+  available_quantity            Int
+  safety_stock_quantity         Int
+  reorder_point_quantity        Int
+  target_stock_quantity         Int
+  recommended_purchase_quantity Int
+  economic_order_quantity       Int?
+  expected_stockout_date        DateTime?                            @db.Date
+  created_by_user_id            Int?
+  created_at                    DateTime                             @default(now()) @db.Timestamptz(3)
+  supplies                      supplies                             @relation(fields: [supply_id], references: [supply_id], onDelete: Cascade)
+  users                         users?                               @relation("SupplyForecastCreatedBy", fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  reorders                      supply_reorder_requests[]
+  calculation_fields            supply_forecast_calculation_fields[]
+
+  @@index([supply_id, forecast_date], map: "idx_supply_forecast_supply_date")
+  @@index([forecast_date], map: "idx_supply_forecast_date")
+  @@index([recommended_purchase_quantity], map: "idx_supply_forecast_recommended_qty")
+  @@index([created_by_user_id], map: "idx_supply_forecast_user_id")
+}
+
+/// QuickHack model: 비품 소요예측을 바탕으로 생성되거나 수동 등록된 재구매 요청과 처리 상태를 보관합니다.
+model supply_forecast_calculation_fields {
+  supply_forecast_calculation_field_id Int                       @id @default(autoincrement())
+  forecast_id                          Int
+  field_name                           String
+  field_value                          String?
+  created_at                           DateTime                  @default(now()) @db.Timestamptz(3)
+  forecast                             supply_forecast_snapshots @relation(fields: [forecast_id], references: [forecast_id], onDelete: Cascade)
+
+  @@unique([forecast_id, field_name], map: "uq_supply_forecast_calculation_field")
+  @@index([forecast_id], map: "idx_supply_forecast_calculation_field_forecast_id")
+  @@index([field_name], map: "idx_supply_forecast_calculation_field_name")
+}
+
+model supply_reorder_requests {
+  revision             Int                        @default(0)
+  reorder_request_id   Int                        @id @default(autoincrement())
+  supply_id            Int
+  forecast_id          Int?
+  request_status       String                     @default("SUGGESTED")
+  recommended_quantity Int                        @default(0)
+  requested_quantity   Int?
+  ordered_quantity     Int?
+  received_quantity    Int?
+  expected_unit_cost   Int?
+  supplier_name        String?
+  reason               String?
+  created_by_user_id   Int?
+  approved_by_user_id  Int?
+  ordered_at           DateTime?                  @db.Timestamptz(3)
+  received_at          DateTime?                  @db.Timestamptz(3)
+  created_at           DateTime                   @default(now()) @db.Timestamptz(3)
+  updated_at           DateTime                   @default(now()) @updatedAt @db.Timestamptz(3)
+  supplies             supplies                   @relation(fields: [supply_id], references: [supply_id], onDelete: Cascade)
+  forecasts            supply_forecast_snapshots? @relation(fields: [forecast_id], references: [forecast_id], onDelete: SetNull)
+  created_by_user      users?                     @relation("SupplyReorderCreatedBy", fields: [created_by_user_id], references: [user_id], onDelete: SetNull)
+  approved_by_user     users?                     @relation("SupplyReorderApprovedBy", fields: [approved_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([supply_id, request_status], map: "idx_supply_reorder_supply_status")
+  @@index([forecast_id], map: "idx_supply_reorder_forecast_id")
+  @@index([request_status], map: "idx_supply_reorder_status")
+  @@index([created_by_user_id], map: "idx_supply_reorder_created_by_user_id")
+  @@index([approved_by_user_id], map: "idx_supply_reorder_approved_by_user_id")
+  @@index([request_status, updated_at, reorder_request_id], map: "idx_supply_reorder_status_updated_id")
+}
+
+/// QuickHack model: 택배사 송장 발급 결과를 판매 채널 송장 등록과 분리해 보관합니다.
+model carrier_shipments {
+  revision                      Int                                   @default(0)
+  carrier_shipment_id           Int                                   @id @default(autoincrement())
+  carrier_code                  String
+  source_type                   String                                @default("SELF_PRINT")
+  channel                       String?
+  external_order_id             String?
+  external_shipment_id          String?
+  allocation_id                 Int?
+  pg_no                         String?
+  package_group_id              Int?
+  tracking_number               String
+  previous_tracking_number      String?
+  revision_no                   Int                                   @default(1)
+  replaces_carrier_shipment_id  Int?
+  invoice_status                String                                @default("ALLOCATED")
+  shipment_status               String                                @default("REGISTERED")
+  allocated_at                  DateTime?                             @db.Timestamptz(3)
+  carrier_registered_at         DateTime?                             @db.Timestamptz(3)
+  last_tracked_at               DateTime?                             @db.Timestamptz(3)
+  created_at                    DateTime                              @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime                              @default(now()) @updatedAt @db.Timestamptz(3)
+  tracking_events               carrier_tracking_events[]
+  return_requests               carrier_return_requests[]
+  api_call_logs                 carrier_api_call_logs[]
+  package_group                 shipment_package_groups?              @relation("CarrierShipmentPackageGroup", fields: [package_group_id], references: [package_group_id], onDelete: SetNull)
+  current_for_package_groups    shipment_package_groups[]             @relation("ShipmentPackageGroupCurrentCarrierShipment")
+  replaces                      carrier_shipments?                    @relation("CarrierShipmentRevisions", fields: [replaces_carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+  replaced_by                   carrier_shipments[]                   @relation("CarrierShipmentRevisions")
+  invoice_issue_item            carrier_invoice_issue_items?
+  sales_channel_write_requests  sales_channel_write_requests[]
+  sales_channel_write_targets   sales_channel_write_request_targets[]
+  registration_work             carrier_shipment_registration_works?
+  replacement_works_as_old      carrier_invoice_replacement_works[]   @relation("CarrierInvoiceReplacementOldShipment")
+  replacement_work_as_candidate carrier_invoice_replacement_works?    @relation("CarrierInvoiceReplacementCandidateShipment")
+  address_changes_at_detection  shipment_address_change_work[]        @relation("ShipmentAddressChangeCarrierShipment")
+
+  @@unique([carrier_code, tracking_number], map: "uq_carrier_shipments_carrier_tracking")
+  @@unique([package_group_id, revision_no], map: "uq_carrier_shipments_package_group_revision")
+  @@index([channel, external_order_id], map: "idx_carrier_shipments_channel_order")
+  @@index([external_shipment_id], map: "idx_carrier_shipments_external_shipment")
+  @@index([allocation_id], map: "idx_carrier_shipments_allocation")
+  @@index([pg_no], map: "idx_carrier_shipments_pg_no")
+  @@index([package_group_id], map: "idx_carrier_shipments_package_group")
+  @@index([replaces_carrier_shipment_id], map: "idx_carrier_shipments_replaces")
+  @@index([invoice_status], map: "idx_carrier_shipments_invoice_status")
+  @@index([shipment_status], map: "idx_carrier_shipments_status")
+}
+
+/// QuickHack model: 택배사의 시간순 배송 스캔 이벤트를 중복 없이 보관합니다.
+model carrier_tracking_events {
+  carrier_tracking_event_id Int               @id @default(autoincrement())
+  carrier_shipment_id       Int
+  event_fingerprint         String
+  scan_date                 String?
+  scan_time                 String?
+  status_name               String
+  branch_code               String?
+  branch_name               String?
+  sales_office_code         String?
+  sales_office_name         String?
+  recipient_type_name       String?
+  response_hash             String?
+  created_at                DateTime          @default(now()) @db.Timestamptz(3)
+  shipment                  carrier_shipments @relation(fields: [carrier_shipment_id], references: [carrier_shipment_id], onDelete: Cascade)
+
+  @@unique([carrier_shipment_id, event_fingerprint], map: "uq_carrier_tracking_events_shipment_fingerprint")
+  @@index([carrier_shipment_id, scan_date, scan_time], map: "idx_carrier_tracking_events_shipment_scan")
+  @@index([status_name], map: "idx_carrier_tracking_events_status")
+}
+
+/// QuickHack model: 택배사 반품 접수번호와 원송장·반품송장 상태를 보관합니다.
+model carrier_return_requests {
+  carrier_return_request_id Int                @id @default(autoincrement())
+  carrier_code              String
+  take_no                   String
+  carrier_shipment_id       Int?
+  external_order_id         String?
+  customer_code             String?
+  original_tracking_number  String?
+  return_tracking_number    String?
+  reservation_status        String?
+  delay_code                String?
+  processed_date            String?
+  request_status            String             @default("CONFIRMED")
+  created_at                DateTime           @default(now()) @db.Timestamptz(3)
+  updated_at                DateTime           @default(now()) @updatedAt @db.Timestamptz(3)
+  shipment                  carrier_shipments? @relation(fields: [carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+
+  @@unique([carrier_code, take_no], map: "uq_carrier_return_requests_carrier_take_no")
+  @@index([carrier_shipment_id], map: "idx_carrier_return_requests_shipment")
+  @@index([external_order_id], map: "idx_carrier_return_requests_order")
+  @@index([original_tracking_number], map: "idx_carrier_return_requests_original_tracking")
+  @@index([return_tracking_number], map: "idx_carrier_return_requests_return_tracking")
+  @@index([reservation_status], map: "idx_carrier_return_requests_reservation_status")
+}
+
+/// QuickHack model: 개인정보 원문 없이 택배사 API 호출 결과와 대조 키만 기록합니다.
+model carrier_api_call_logs {
+  carrier_api_call_log_id           Int                                   @id @default(autoincrement())
+  carrier_code                      String
+  carrier_shipment_id               Int?
+  api_name                          String
+  endpoint_path                     String
+  method                            String
+  operation_type                    String
+  request_hash                      String?
+  response_hash                     String?
+  http_status_code                  Int?
+  external_status_code              String?
+  external_status_message           String?
+  item_result_code                  String?
+  item_result_message               String?
+  external_order_id                 String?
+  tracking_number                   String?
+  take_no                           String?
+  worker_job_id                     Int?
+  processed_status                  String                                @default("RECEIVED")
+  error_code                        String?
+  error_message                     String?
+  started_at                        DateTime                              @default(now()) @db.Timestamptz(3)
+  finished_at                       DateTime?                             @db.Timestamptz(3)
+  created_at                        DateTime                              @default(now()) @db.Timestamptz(3)
+  shipment                          carrier_shipments?                    @relation(fields: [carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+  worker_job                        server_worker_jobs?                   @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: SetNull)
+  reconciliation_works              carrier_reconciliation_works[]
+  carrier_invoice_issue_batches     carrier_invoice_issue_batches[]
+  classification_registration_works carrier_shipment_registration_works[] @relation("CarrierRegistrationClassificationCall")
+  submission_registration_works     carrier_shipment_registration_works[] @relation("CarrierRegistrationSubmissionCall")
+
+  @@index([carrier_code, api_name], map: "idx_carrier_api_call_logs_carrier_api")
+  @@index([carrier_shipment_id], map: "idx_carrier_api_call_logs_shipment")
+  @@index([endpoint_path], map: "idx_carrier_api_call_logs_endpoint")
+  @@index([external_order_id], map: "idx_carrier_api_call_logs_order")
+  @@index([tracking_number], map: "idx_carrier_api_call_logs_tracking")
+  @@index([take_no], map: "idx_carrier_api_call_logs_take_no")
+  @@index([worker_job_id], map: "idx_carrier_api_call_logs_worker_job")
+  @@index([processed_status], map: "idx_carrier_api_call_logs_processed_status")
+  @@index([started_at], map: "idx_carrier_api_call_logs_started")
+}
+
+/// QuickHack model: One idempotent Logen tracking-number allocation request for a confirmed outbound batch.
+model carrier_invoice_issue_batches {
+  revision                       Int                                       @default(0)
+  carrier_invoice_issue_batch_id Int                                       @id @default(autoincrement())
+  shipment_list_print_batch_id   Int
+  carrier_code                   String                                    @default("LOGEN")
+  issue_type                     String                                    @default("INITIAL")
+  request_key                    String                                    @unique(map: "uq_carrier_invoice_issue_batches_request_key")
+  batch_status                   String                                    @default("PENDING")
+  requested_package_group_count  Int
+  allocated_package_group_count  Int                                       @default(0)
+  response_item_count            Int                                       @default(0)
+  attempt_count                  Int                                       @default(0)
+  allocation_request_dispatched  Int                                       @default(0)
+  api_call_log_id                Int?
+  requested_by_user_id           Int?
+  error_code                     String?
+  error_message                  String?
+  unmatched_response_json        String?
+  started_at                     DateTime?                                 @db.Timestamptz(3)
+  completed_at                   DateTime?                                 @db.Timestamptz(3)
+  review_required_at             DateTime?                                 @db.Timestamptz(3)
+  label_print_status             String                                    @default("NOT_PRINTED")
+  label_template_code            String?
+  label_template_version         Int?
+  label_printer_name             String?
+  label_payload_hash             String?
+  label_active_request_key       String?                                   @unique(map: "uq_carrier_invoice_issue_batches_label_request_key")
+  label_print_attempt_count      Int                                       @default(0)
+  label_last_started_at          DateTime?                                 @db.Timestamptz(3)
+  label_last_spooled_at          DateTime?                                 @db.Timestamptz(3)
+  label_confirmed_at             DateTime?                                 @db.Timestamptz(3)
+  label_last_error_code          String?
+  label_last_error_message       String?
+  created_at                     DateTime                                  @default(now()) @db.Timestamptz(3)
+  updated_at                     DateTime                                  @default(now()) @updatedAt @db.Timestamptz(3)
+  shipment_list_print_batch      sales_channel_shipment_list_print_batches @relation(fields: [shipment_list_print_batch_id], references: [shipment_list_print_batch_id], onDelete: Restrict)
+  api_call_log                   carrier_api_call_logs?                    @relation(fields: [api_call_log_id], references: [carrier_api_call_log_id], onDelete: SetNull)
+  items                          carrier_invoice_issue_items[]
+  replacement_work               carrier_invoice_replacement_works?
+
+  @@index([shipment_list_print_batch_id], map: "idx_carrier_invoice_issue_batches_print_batch")
+  @@index([carrier_code, batch_status], map: "idx_carrier_invoice_issue_batches_carrier_status")
+  @@index([batch_status, started_at], map: "idx_carrier_invoice_issue_batches_status_started")
+  @@index([label_print_status], map: "idx_carrier_invoice_issue_batches_label_status")
+  @@index([api_call_log_id], map: "idx_carrier_invoice_issue_batches_api_call")
+  @@index([created_at], map: "idx_carrier_invoice_issue_batches_created_at")
+}
+
+/// QuickHack model: One durable, user-visible invoice replacement workflow for a physical package group.
+model carrier_invoice_replacement_works {
+  carrier_invoice_replacement_work_id Int                            @id @default(autoincrement())
+  source_type                         String
+  request_key                         String                         @unique(map: "uq_carrier_invoice_replacement_works_request_key")
+  work_status                         String                         @default("PENDING")
+  current_stage                       String                         @default("PRECHECK")
+  old_invoice_handling_status         String                         @default("NOT_REQUIRED")
+  workflow_version                    Int                            @default(0)
+  execution_token                     String?
+  execution_started_at                DateTime?                      @db.Timestamptz(3)
+  package_group_id                    Int
+  shipment_address_change_work_id     Int?                           @unique(map: "uq_carrier_invoice_replacement_works_address_change")
+  old_carrier_shipment_id             Int
+  candidate_carrier_shipment_id       Int?                           @unique(map: "uq_carrier_invoice_replacement_works_candidate")
+  carrier_invoice_issue_batch_id      Int?                           @unique(map: "uq_carrier_invoice_replacement_works_issue_batch")
+  reason_code                         String
+  reason_note                         String?
+  before_receiver_name                String?
+  before_receiver_phone               String?
+  before_receiver_post_code           String?
+  before_receiver_address_1           String?
+  before_receiver_address_2           String?
+  before_shipping_memo                String?
+  after_receiver_name                 String?
+  after_receiver_phone                String?
+  after_receiver_post_code            String?
+  after_receiver_address_1            String?
+  after_receiver_address_2            String?
+  after_shipping_memo                 String?
+  requested_by_user_id                Int?
+  resolved_by_user_id                 Int?
+  last_error_code                     String?
+  last_error_message                  String?
+  requested_at                        DateTime                       @default(now()) @db.Timestamptz(3)
+  held_at                             DateTime?                      @db.Timestamptz(3)
+  old_invoice_handled_at              DateTime?                      @db.Timestamptz(3)
+  channel_updated_at                  DateTime?                      @db.Timestamptz(3)
+  carrier_registered_at               DateTime?                      @db.Timestamptz(3)
+  label_confirmed_at                  DateTime?                      @db.Timestamptz(3)
+  completed_at                        DateTime?                      @db.Timestamptz(3)
+  review_required_at                  DateTime?                      @db.Timestamptz(3)
+  failed_at                           DateTime?                      @db.Timestamptz(3)
+  canceled_at                         DateTime?                      @db.Timestamptz(3)
+  created_at                          DateTime                       @default(now()) @db.Timestamptz(3)
+  updated_at                          DateTime                       @default(now()) @updatedAt @db.Timestamptz(3)
+  package_group                       shipment_package_groups        @relation(fields: [package_group_id], references: [package_group_id], onDelete: Restrict)
+  shipment_address_change_work        shipment_address_change_work?  @relation(fields: [shipment_address_change_work_id], references: [shipment_address_change_work_id], onDelete: SetNull)
+  old_carrier_shipment                carrier_shipments              @relation("CarrierInvoiceReplacementOldShipment", fields: [old_carrier_shipment_id], references: [carrier_shipment_id], onDelete: Restrict)
+  candidate_carrier_shipment          carrier_shipments?             @relation("CarrierInvoiceReplacementCandidateShipment", fields: [candidate_carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+  carrier_invoice_issue_batch         carrier_invoice_issue_batches? @relation(fields: [carrier_invoice_issue_batch_id], references: [carrier_invoice_issue_batch_id], onDelete: SetNull)
+  requested_by                        users?                         @relation("CarrierInvoiceReplacementRequestedBy", fields: [requested_by_user_id], references: [user_id], onDelete: SetNull)
+  resolved_by                         users?                         @relation("CarrierInvoiceReplacementResolvedBy", fields: [resolved_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([package_group_id], map: "idx_carrier_invoice_replacement_works_group")
+  @@index([work_status, updated_at], map: "idx_carrier_invoice_replacement_works_status_updated")
+  @@index([current_stage], map: "idx_carrier_invoice_replacement_works_stage")
+  @@index([old_carrier_shipment_id], map: "idx_carrier_invoice_replacement_works_old_shipment")
+  @@index([requested_by_user_id], map: "idx_carrier_invoice_replacement_works_requested_by")
+  @@index([created_at], map: "idx_carrier_invoice_replacement_works_created")
+}
+
+/// QuickHack model: Stable package-group order and per-number result inside an allocation request.
+model carrier_invoice_issue_items {
+  carrier_invoice_issue_item_id  Int                                  @id @default(autoincrement())
+  carrier_invoice_issue_batch_id Int
+  package_group_id               Int
+  issue_sequence                 Int
+  revision_no                    Int                                  @default(1)
+  item_status                    String                               @default("PENDING")
+  carrier_shipment_id            Int?                                 @unique(map: "uq_carrier_invoice_issue_items_carrier_shipment")
+  tracking_number_snapshot       String?
+  result_code                    String?
+  result_message                 String?
+  label_print_status             String                               @default("NOT_PRINTED")
+  label_payload_hash             String?
+  label_print_attempt_no         Int                                  @default(0)
+  label_print_count              Int                                  @default(0)
+  label_last_spooled_at          DateTime?                            @db.Timestamptz(3)
+  label_confirmed_at             DateTime?                            @db.Timestamptz(3)
+  label_last_error_code          String?
+  label_last_error_message       String?
+  created_at                     DateTime                             @default(now()) @db.Timestamptz(3)
+  updated_at                     DateTime                             @default(now()) @updatedAt @db.Timestamptz(3)
+  issue_batch                    carrier_invoice_issue_batches        @relation(fields: [carrier_invoice_issue_batch_id], references: [carrier_invoice_issue_batch_id], onDelete: Cascade)
+  package_group                  shipment_package_groups              @relation(fields: [package_group_id], references: [package_group_id], onDelete: Restrict)
+  carrier_shipment               carrier_shipments?                   @relation(fields: [carrier_shipment_id], references: [carrier_shipment_id], onDelete: SetNull)
+  registration_work              carrier_shipment_registration_works?
+
+  @@unique([carrier_invoice_issue_batch_id, package_group_id], map: "uq_carrier_invoice_issue_items_batch_group")
+  @@unique([carrier_invoice_issue_batch_id, issue_sequence], map: "uq_carrier_invoice_issue_items_batch_sequence")
+  @@index([package_group_id], map: "idx_carrier_invoice_issue_items_package_group")
+  @@index([item_status], map: "idx_carrier_invoice_issue_items_status")
+  @@index([label_print_status], map: "idx_carrier_invoice_issue_items_label_status")
+}
+
+/// QuickHack model: READY 합포장 그룹을 로젠 자체출력 주문 등록으로 안전하게 넘기는 영속 작업입니다.
+model carrier_shipment_registration_works {
+  revision                              Int                           @default(0)
+  carrier_shipment_registration_work_id Int                           @id @default(autoincrement())
+  carrier_shipment_id                   Int                           @unique(map: "uq_carrier_shipment_registration_works_shipment")
+  carrier_invoice_issue_item_id         Int                           @unique(map: "uq_carrier_shipment_registration_works_issue_item")
+  package_group_id                      Int
+  worker_job_id                         Int?
+  work_status                           String                        @default("PENDING")
+  fix_take_no                           String                        @unique(map: "uq_carrier_shipment_registration_works_fix_take_no")
+  take_date                             String
+  attempt_count                         Int                           @default(0)
+  execution_token                       String?
+  next_attempt_at                       DateTime?                     @db.Timestamptz(3)
+  sender_profile_hash                   String?
+  payload_hash                          String?
+  customer_code_snapshot                String?
+  sender_name_snapshot                  String?
+  sender_tel_snapshot                   String?
+  sender_cell_snapshot                  String?
+  sender_zip_code_snapshot              String?
+  sender_address_1_snapshot             String?
+  sender_address_2_snapshot             String?
+  receiver_branch_code                  String?
+  receiver_dong_name                    String?
+  sales_office_name                     String?
+  terminal_name                         String?
+  branch_share_yn                       String?
+  classification_code                   String?
+  classified_zip_code                   String?
+  jeju_region_yn                        String?
+  island_yn                             String?
+  mountain_yn                           String?
+  fare_type                             String?
+  box_type_code                         String?
+  delivery_fare                         Int?
+  extra_fare                            Int?
+  goods_name_snapshot                   String?
+  goods_amount_snapshot                 Int?
+  classification_api_call_log_id        Int?
+  registration_api_call_log_id          Int?
+  reconciliation_work_id                Int?
+  last_error_code                       String?
+  last_error_message                    String?
+  prepared_at                           DateTime?                     @db.Timestamptz(3)
+  submitting_at                         DateTime?                     @db.Timestamptz(3)
+  registered_at                         DateTime?                     @db.Timestamptz(3)
+  review_required_at                    DateTime?                     @db.Timestamptz(3)
+  created_at                            DateTime                      @default(now()) @db.Timestamptz(3)
+  updated_at                            DateTime                      @default(now()) @updatedAt @db.Timestamptz(3)
+  carrier_shipment                      carrier_shipments             @relation(fields: [carrier_shipment_id], references: [carrier_shipment_id], onDelete: Restrict)
+  issue_item                            carrier_invoice_issue_items   @relation(fields: [carrier_invoice_issue_item_id], references: [carrier_invoice_issue_item_id], onDelete: Restrict)
+  package_group                         shipment_package_groups       @relation(fields: [package_group_id], references: [package_group_id], onDelete: Restrict)
+  worker_job                            server_worker_jobs?           @relation(fields: [worker_job_id], references: [worker_job_id], onDelete: SetNull)
+  classification_api_call               carrier_api_call_logs?        @relation("CarrierRegistrationClassificationCall", fields: [classification_api_call_log_id], references: [carrier_api_call_log_id], onDelete: SetNull)
+  registration_api_call                 carrier_api_call_logs?        @relation("CarrierRegistrationSubmissionCall", fields: [registration_api_call_log_id], references: [carrier_api_call_log_id], onDelete: SetNull)
+  reconciliation_work                   carrier_reconciliation_works? @relation(fields: [reconciliation_work_id], references: [carrier_reconciliation_work_id], onDelete: SetNull)
+
+  @@index([work_status, next_attempt_at], map: "idx_carrier_registration_works_status_due")
+  @@index([package_group_id], map: "idx_carrier_registration_works_package_group")
+  @@index([worker_job_id], map: "idx_carrier_registration_works_worker")
+  @@index([classification_api_call_log_id], map: "idx_carrier_registration_works_classification_call")
+  @@index([registration_api_call_log_id], map: "idx_carrier_registration_works_registration_call")
+  @@index([reconciliation_work_id], map: "idx_carrier_registration_works_reconciliation")
+}
+
+/// QuickHack model: 응답 유실 등 결과가 불명확한 쓰기 호출을 대조 완료까지 추적합니다.
+model carrier_reconciliation_works {
+  revision                       Int                                   @default(0)
+  carrier_reconciliation_work_id Int                                   @id @default(autoincrement())
+  carrier_code                   String
+  operation_type                 String
+  lookup_key_type                String
+  lookup_key_value               String
+  reconciliation_status          String                                @default("PENDING")
+  api_call_log_id                Int?
+  attempt_count                  Int                                   @default(0)
+  reason                         String?
+  last_error_message             String?
+  resolved_at                    DateTime?                             @db.Timestamptz(3)
+  created_at                     DateTime                              @default(now()) @db.Timestamptz(3)
+  updated_at                     DateTime                              @default(now()) @updatedAt @db.Timestamptz(3)
+  api_call_log                   carrier_api_call_logs?                @relation(fields: [api_call_log_id], references: [carrier_api_call_log_id], onDelete: SetNull)
+  carrier_registration_works     carrier_shipment_registration_works[]
+
+  @@unique([carrier_code, operation_type, lookup_key_type, lookup_key_value], map: "uq_carrier_reconciliation_lookup")
+  @@index([reconciliation_status], map: "idx_carrier_reconciliation_status")
+  @@index([api_call_log_id], map: "idx_carrier_reconciliation_api_call")
+  @@index([updated_at], map: "idx_carrier_reconciliation_updated")
+}
+
+/// QuickHack PostgreSQL singleton used to invalidate server-owned credentials after restore.
+model server_instance_state {
+  singleton_key  String   @id @default("QUICKHACK")
+  instance_epoch Int      @default(1)
+  revision       Int      @default(0)
+  created_at     DateTime @default(now()) @db.Timestamptz(3)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+}
+
+/// QuickHack cross-domain idempotency record. Domain rules remain in their owning service.
+model domain_operation_keys {
+  operation_id   String   @id @db.Uuid
+  scope          String
+  operation_key  String
+  aggregate_type String
+  aggregate_id   String
+  request_digest String
+  result_digest  String?
+  status         String   @default("COMMITTED")
+  created_at     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([scope, operation_key], map: "uq_domain_operation_keys_scope_key")
+  @@index([aggregate_type, aggregate_id], map: "idx_domain_operation_keys_aggregate")
+  @@index([created_at], map: "idx_domain_operation_keys_created_at")
+}
+
+/// Durable external command registered by a business transaction.
+model integration_commands {
+  integration_command_id String                         @id @db.Uuid
+  provider               String
+  operation_type         String
+  operation_key          String                         @unique(map: "uq_integration_commands_operation_key")
+  target_snapshot        Json                           @db.JsonB
+  request_payload        Json?                          @db.JsonB
+  request_digest         String
+  command_status         String                         @default("PENDING")
+  lease_token            String?                        @db.Uuid
+  claim_generation       Int                            @default(0)
+  locked_until           DateTime?                      @db.Timestamptz(3)
+  created_at             DateTime                       @default(now()) @db.Timestamptz(3)
+  updated_at             DateTime                       @default(now()) @updatedAt @db.Timestamptz(3)
+  attempts               integration_command_attempts[]
+  evidences              integration_evidences[]
+  sales_channel_attempt  sales_channel_write_request_attempts?
+
+  @@index([provider, command_status, created_at], map: "idx_integration_commands_provider_status")
+  @@index([command_status, locked_until], map: "idx_integration_commands_claim")
+}
+
+/// One dispatch attempt. HTTP runs outside the transaction that owns this row.
+model integration_command_attempts {
+  integration_command_attempt_id String                  @id @db.Uuid
+  integration_command_id         String                  @db.Uuid
+  attempt_no                     Int
+  dispatch_status                String                  @default("CREATED")
+  request_dispatched_at          DateTime?               @db.Timestamptz(3)
+  response_received_at           DateTime?               @db.Timestamptz(3)
+  http_status                    Int?
+  provider_code                  String?
+  error_code                     String?
+  error_message                  String?
+  created_at                     DateTime                @default(now()) @db.Timestamptz(3)
+  command                        integration_commands    @relation(fields: [integration_command_id], references: [integration_command_id], onDelete: Cascade)
+  evidences                      integration_evidences[]
+
+  @@unique([integration_command_id, attempt_no], map: "uq_integration_command_attempts_command_no")
+  @@index([dispatch_status, created_at], map: "idx_integration_command_attempts_status")
+}
+
+/// Validated provider response or inbound event. Raw text is preserved losslessly.
+model integration_evidences {
+  integration_evidence_id        String                        @id @db.Uuid
+  integration_command_id         String?                       @db.Uuid
+  integration_command_attempt_id String?                       @db.Uuid
+  provider                       String
+  evidence_type                  String
+  outcome                        String
+  raw_payload_text               String?                       @db.Text
+  raw_payload_digest             String
+  normalized_result              Json?                         @db.JsonB
+  occurred_at                    DateTime?                     @db.Timestamptz(3)
+  received_at                    DateTime                      @default(now()) @db.Timestamptz(3)
+  created_at                     DateTime                      @default(now()) @db.Timestamptz(3)
+  command                        integration_commands?         @relation(fields: [integration_command_id], references: [integration_command_id], onDelete: SetNull)
+  attempt                        integration_command_attempts? @relation(fields: [integration_command_attempt_id], references: [integration_command_attempt_id], onDelete: SetNull)
+  projection_jobs                integration_projection_jobs[]
+
+  @@index([provider, evidence_type, received_at], map: "idx_integration_evidences_provider_type")
+  @@index([integration_command_id], map: "idx_integration_evidences_command")
+}
+
+/// Internal projection retry. It never repeats the external write.
+model integration_projection_jobs {
+  integration_projection_job_id String                @id @db.Uuid
+  integration_evidence_id       String                @db.Uuid
+  handler_key                   String
+  projection_context            Json?                 @db.JsonB
+  projection_status             String                @default("PENDING")
+  attempt_count                 Int                   @default(0)
+  lease_token                   String?               @db.Uuid
+  claim_generation              Int                   @default(0)
+  locked_until                  DateTime?             @db.Timestamptz(3)
+  last_error_code               String?
+  last_error_message            String?
+  completed_at                  DateTime?             @db.Timestamptz(3)
+  created_at                    DateTime              @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime              @default(now()) @updatedAt @db.Timestamptz(3)
+  evidence                      integration_evidences @relation(fields: [integration_evidence_id], references: [integration_evidence_id], onDelete: Cascade)
+
+  @@unique([integration_evidence_id, handler_key], map: "uq_integration_projection_jobs_evidence_handler")
+  @@index([projection_status, locked_until], map: "idx_integration_projection_jobs_claim")
+}
+
+/// Canonical append-only business audit event.
+model domain_audit_events {
+  domain_audit_event_id String                       @id @db.Uuid
+  actor_user_id         Int?
+  action                String
+  aggregate_type        String
+  aggregate_id          String
+  operation_key         String?
+  event_type            String
+  occurred_at           DateTime                     @default(now()) @db.Timestamptz(3)
+  created_at            DateTime                     @default(now()) @db.Timestamptz(3)
+  changes               domain_audit_event_changes[]
+
+  @@index([aggregate_type, aggregate_id, occurred_at], map: "idx_domain_audit_events_aggregate")
+  @@index([actor_user_id, occurred_at], map: "idx_domain_audit_events_actor")
+  @@index([operation_key], map: "idx_domain_audit_events_operation_key")
+}
+
+/// Allowlisted scalar changes attached to a canonical audit event.
+model domain_audit_event_changes {
+  domain_audit_event_change_id String              @id @db.Uuid
+  domain_audit_event_id        String              @db.Uuid
+  field_path                   String
+  before_value                 String?             @db.Text
+  after_value                  String?             @db.Text
+  created_at                   DateTime            @default(now()) @db.Timestamptz(3)
+  event                        domain_audit_events @relation(fields: [domain_audit_event_id], references: [domain_audit_event_id], onDelete: Cascade)
+
+  @@unique([domain_audit_event_id, field_path], map: "uq_domain_audit_event_changes_field")
+  @@index([field_path], map: "idx_domain_audit_event_changes_field")
+}

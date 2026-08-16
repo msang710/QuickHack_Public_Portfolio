@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">QuickHack 포장 검증</string>
+    <string name="setup_title">QuickHack 포장 검증</string>
+    <string name="setup_initial_activation">QuickHack 클라이언트에서 USB 기기 등록을 시작한 뒤 로그인하세요.</string>
+    <string name="setup_initial_login">로그인하면 바로 포장 검증을 시작합니다.</string>
+    <string name="server_url_label">QuickHack 서버 주소</string>
+    <string name="server_url_hint_debug">http://192.168.x.x:3000</string>
+    <string name="server_url_hint_release">https://quickhack.example</string>
+    <string name="username_label">아이디</string>
+    <string name="password_label">비밀번호</string>
+    <string name="login_and_start">로그인하고 시작</string>
+    <string name="login_in_progress">로그인 중입니다.</string>
+    <string name="login_failed">로그인하지 못했습니다.</string>
+    <string name="activation_failed">기기를 등록하지 못했습니다.</string>
+    <string name="activation_token_missing">기기 등록 응답에 인증 정보가 없습니다.</string>
+    <string name="setup_mode">연결 설정</string>
+    <string name="server_url_debug_required">HTTPS 주소 또는 http://192.168.x.x:3000 형식의 사설망 주소를 입력하세요.</string>
+    <string name="server_url_https_required">HTTPS 서버 주소를 입력하세요.</string>
+    <string name="server_connection_failed">서버에 연결할 수 없습니다. 서버 주소와 Wi-Fi 연결을 확인하세요.</string>
+    <string name="server_timeout">서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도하세요.</string>
+    <string name="camera_permission_title">카메라 권한 필요</string>
+    <string name="camera_permission_message">PG와 배송 바코드를 스캔하려면 카메라 권한이 필요합니다.</string>
+    <string name="camera_permission_action">확인</string>
+    <string name="camera_permission_denied">카메라 권한이 없어 스캔을 시작할 수 없습니다.</string>
+    <string name="camera_start_failed">카메라를 시작하지 못했습니다.</string>
+    <string name="signal_title">포장 검증</string>
+    <string name="signal_settings">연결 설정</string>
+    <string name="signal_scan">스캔 대기</string>
+    <string name="signal_scan_next">다음 바코드 스캔</string>
+    <string name="signal_check">일치 여부 확인 중</string>
+    <string name="signal_success">일치</string>
+    <string name="signal_failure">포장 중지</string>
+    <string name="signal_no_device_token">기기 미등록</string>
+    <string name="device_barcode_label">기기 PG / IMEI</string>
+    <string name="shipment_barcode_label">배송번호 / 주문번호</string>
+    <string name="operation_camera_hint">바코드를 영역 안에 맞춰주세요.</string>
+    <string name="packing_check_failed">포장 검증에 실패했습니다.</string>
+    <string name="packing_result_missing">검증 결과가 없습니다.</string>
+    <string name="scan_guide_description">바코드 스캔 영역</string>
+    <string name="empty_value">-</string>
+</resources>

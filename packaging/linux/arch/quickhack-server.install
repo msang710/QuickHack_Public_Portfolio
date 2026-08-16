@@ -1,0 +1,22 @@
+post_install() {
+  systemd-sysusers
+  systemd-tmpfiles --create
+  systemctl daemon-reload
+  echo 'QuickHack files are installed. Run the artifact-specific setup command to authenticate and initialize the server.'
+}
+
+post_upgrade() {
+  systemd-sysusers
+  systemd-tmpfiles --create
+  systemctl daemon-reload
+  echo 'QuickHack mutable state was preserved. Run repair if the console reports an incomplete upgrade.'
+}
+
+pre_remove() {
+  systemctl daemon-reload
+  echo 'QuickHack mutable state is preserved. Use the explicit purge command before removal only when irreversible deletion is intended.'
+}
+
+post_remove() {
+  systemctl daemon-reload
+}

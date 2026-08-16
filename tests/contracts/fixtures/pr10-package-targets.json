@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "packageTarget": "demo-server",
+      "artifactKind": "DEMONSTRATION_SERVER",
+      "role": "server",
+      "flavor": "DEMONSTRATION",
+      "windowsIdentity": "5E9CD754-EEDF-47EE-A1EB-8FBCC94AFD82",
+      "linuxIdentity": "quickhack-demonstration-server"
+    },
+    {
+      "packageTarget": "demo-client",
+      "artifactKind": "DEMONSTRATION_CLIENT",
+      "role": "client",
+      "flavor": "DEMONSTRATION",
+      "windowsIdentity": "7D88F75C-5D65-4B34-9DD6-EFB19332DD33",
+      "linuxIdentity": "quickhack-demonstration-client"
+    },
+    {
+      "packageTarget": "operational-server",
+      "artifactKind": "OPERATIONAL_SERVER",
+      "role": "server",
+      "flavor": "OPERATIONAL",
+      "windowsIdentity": "4AF4F2BB-CB9D-46F7-A8F6-1B585A2BEB17",
+      "linuxIdentity": "quickhack-operational-server"
+    },
+    {
+      "packageTarget": "operational-client",
+      "artifactKind": "OPERATIONAL_CLIENT",
+      "role": "client",
+      "flavor": "OPERATIONAL",
+      "windowsIdentity": "121152E5-704B-4952-83FB-6ECEF4956895",
+      "linuxIdentity": "quickhack-operational-client"
+    }
+  ]
+}
