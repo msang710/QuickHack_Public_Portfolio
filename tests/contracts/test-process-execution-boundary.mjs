@@ -4,6 +4,7 @@ import path from "node:path";
 import { linuxServerProcessExecution } from "../../quickhack_server/platform/linux/process-execution.ts";
 import { windowsServerProcessExecution } from "../../quickhack_server/platform/windows/process-execution.ts";
 import { composeOperatorPlatform } from "../../tools/platform/compose-operator-platform.mjs";
+import { composeProcessExecution } from "../../tools/platform/compose-process-execution.mjs";
 import { createLinuxOperatorProcessExecution } from "../../tools/platform/linux/process-execution.mjs";
 import { createWindowsOperatorProcessExecution } from "../../tools/platform/windows/process-execution.mjs";
 import { projectRoot } from "../support/project-root.mjs";
@@ -78,14 +79,14 @@ assert.throws(
   /Unsupported PostgreSQL executable key/
 );
 assert.equal(
-  composeOperatorPlatform({ platform: "win32" }).processExecution.sameExecutablePath(
+  composeProcessExecution({ platform: "win32" }).sameExecutablePath(
     "C:\\QuickHack\\Tools\\run.mjs",
     "c:\\quickhack\\tools\\RUN.mjs"
   ),
   true
 );
 assert.equal(
-  composeOperatorPlatform({ platform: "linux" }).processExecution.sameExecutablePath(
+  composeProcessExecution({ platform: "linux" }).sameExecutablePath(
     "/opt/quickhack/run.mjs",
     "/opt/QuickHack/run.mjs"
   ),
@@ -106,7 +107,7 @@ const clientLauncherSource = readFileSync(
   path.join(projectRoot, "tools", "client-runtime-launcher.mjs"),
   "utf8"
 );
-assert.match(clientLauncherSource, /composeOperatorPlatform\(\)\.processExecution/);
+assert.match(clientLauncherSource, /composeProcessExecution\(\)/);
 assert.match(clientLauncherSource, /spawnOwnedDetached/);
 assert.match(clientLauncherSource, /terminateOwnedDetachedProcess/);
 assert.doesNotMatch(clientLauncherSource, /node:child_process/);
@@ -114,5 +115,12 @@ assert.doesNotMatch(
   clientLauncherSource,
   /create(?:Windows|Linux)OperatorProcessExecution|platform\/(?:windows|linux)\/process-execution/
 );
+
+const clientBootstrapSource = readFileSync(
+  path.join(projectRoot, "tools", "client-runtime-bootstrap.mjs"),
+  "utf8"
+);
+assert.match(clientBootstrapSource, /composeProcessExecution\(\)/);
+assert.doesNotMatch(clientBootstrapSource, /composeOperatorPlatform/);
 
 console.log("Role process execution ownership and finite executable keys verified.");

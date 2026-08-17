@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "tag": "demo-windows-v1.0.0",
+  "targets": ["demo-server", "demo-client"],
+  "prerelease": true
+}
