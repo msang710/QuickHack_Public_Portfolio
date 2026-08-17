@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readClientRuntimeOwnerStateFile } from "./client-runtime-owner-state.mjs";
-import { composeOperatorPlatform } from "./platform/compose-operator-platform.mjs";
+import { composeProcessExecution } from "./platform/compose-process-execution.mjs";
 
 export const CLIENT_RUNTIME_BOOTSTRAP_FILENAME = fileURLToPath(import.meta.url);
 
@@ -60,7 +60,7 @@ export async function runClientRuntimeBootstrap(argv = process.argv.slice(2), op
     error.code = "CLIENT_RUNTIME_OWNER_MISMATCH";
     throw error;
   }
-  const processExecution = options.processExecution ?? composeOperatorPlatform().processExecution;
+  const processExecution = options.processExecution ?? composeProcessExecution();
   if (typeof processExecution.childEnvironment !== "function") {
     throw new TypeError("The client runtime bootstrap requires the platform child environment policy.");
   }

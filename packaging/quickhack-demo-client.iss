@@ -10,7 +10,7 @@
   #define OutputDir "..\release\distribution\windows\demo-client"
 #endif
 #ifndef ArtifactAppId
-  #define ArtifactAppId "{7D88F75C-5D65-4B34-9DD6-EFB19332DD33}"
+  #define ArtifactAppId "{{7D88F75C-5D65-4B34-9DD6-EFB19332DD33}"
 #endif
 #ifndef ArtifactName
   #define ArtifactName "QuickHack Demo Client"
