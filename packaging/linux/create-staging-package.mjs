@@ -16,6 +16,7 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDirectory, "..", "..");
 const targetArgument = process.argv.slice(2).find((argument) => argument.startsWith("--target="));
 const target = targetArgument?.slice("--target=".length) || "demo-server";
+const versionArgument = process.argv.slice(2).find((argument) => argument.startsWith("--version="));
 if (!LINUX_PACKAGE_TARGETS.includes(target)) throw new TypeError(`Unsupported Linux package target: ${target}.`);
 const config = linuxArtifactConfig(target);
 const outputRoot = path.join(root, ...config.packageRoot.split("/"));
@@ -109,6 +110,10 @@ if (config.role === "server") {
 }
 
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const releaseVersion = versionArgument?.slice("--version=".length) || packageJson.version;
+if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/u.test(releaseVersion)) {
+  throw new TypeError(`Unsupported Linux package version: ${releaseVersion}.`);
+}
 writeFileSync(path.join(applicationRoot, "package.json"), `${JSON.stringify({ name: packageJson.name, version: packageJson.version, type: packageJson.type }, null, 2)}\n`, "utf8");
 
 if (config.role === "server") {
@@ -205,7 +210,7 @@ const manifest = createPackageManifest({
   artifactKind: config.artifactKind,
   platform: "linux",
   architecture: "x86_64",
-  version: packageJson.version,
+  version: releaseVersion,
   contentInventorySha256: inventory.sha256,
 });
 writeFileSync(path.join(applicationRoot, QUICKHACK_PACKAGE_MANIFEST_FILENAME), canonicalPackageManifestJson(manifest), "utf8");

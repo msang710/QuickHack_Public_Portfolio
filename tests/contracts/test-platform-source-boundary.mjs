@@ -35,6 +35,7 @@ const TOKEN_PATTERNS = Object.freeze({
 });
 const CLASSIFICATIONS = new Set([
   "composition-root",
+  "contract-owned",
   "adapter-owned",
   "build-only",
   "observation-only",
@@ -44,6 +45,7 @@ const COMPOSITION_ROOTS = new Set([
   "quickhack_server/platform/compose-server-platform.ts",
   "quickhack_client/platform/compose-client-platform.ts",
   "tools/platform/compose-operator-platform.mjs",
+  "tools/platform/compose-process-execution.mjs",
 ]);
 
 function sourceFiles(directory, result = []) {

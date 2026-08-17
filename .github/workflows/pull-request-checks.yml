@@ -54,6 +54,8 @@ jobs:
         with:
           node-version: "24"
           cache: npm
+      - name: Pin npm toolchain
+        run: npm install --global npm@12.0.2 && npm --version | grep -Fx 12.0.2
       - run: npm ci
       - run: npm run audit:dependencies
       - run: npm run lint
@@ -79,6 +81,11 @@ jobs:
           choco install postgresql18 --version=18.4.0 -y --no-progress
           choco install innosetup -y --no-progress
           "QUICKHACK_RELEASE_POSTGRESQL_ROOT=$env:ProgramFiles\PostgreSQL\18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Pin npm toolchain
+        shell: pwsh
+        run: |
+          npm install --global npm@12.0.2
+          if ((npm --version) -ne "12.0.2") { throw "Expected npm 12.0.2." }
       - run: npm ci
       - name: Build selected Windows package
         env:
@@ -120,7 +127,10 @@ jobs:
         target: [demo-server, demo-client, operational-server, operational-client]
     steps:
       - name: Install Arch build toolchain
-        run: pacman -Syu --noconfirm base-devel git nodejs-lts-krypton npm postgresql android-tools cups sudo
+        run: |
+          pacman -Syu --noconfirm base-devel git nodejs-lts-krypton npm postgresql android-tools cups sudo
+          npm install --global npm@12.0.2
+          npm --version | grep -Fx 12.0.2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Prepare unprivileged makepkg user
         run: useradd --create-home builder && chown -R builder:builder "$GITHUB_WORKSPACE"

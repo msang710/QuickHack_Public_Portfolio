@@ -1,20 +1,28 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 const temporaryDirectory = fs.mkdtempSync(
-  path.join(os.tmpdir(), "quickhack-qhkey-single-pass-")
+  path.join(process.cwd(), ".tmp-qhkey-single-pass-")
 );
-const qhkeyRoot = path.join(temporaryDirectory, "qhkey");
+const qhkeyRoot = path.join(
+  temporaryDirectory,
+  ...(process.platform === "linux" ? ["quickhack", "qhkey"] : ["qhkey"])
+);
 const qhkeyFile = path.join(qhkeyRoot, "quickhack-keys", "coupang.qhkey");
 const masterKeyFile = path.join(temporaryDirectory, "security", "qhkey-master.key");
+const credentialDirectory = path.join(temporaryDirectory, "credentials");
 const runtimeConfigPath = path.join(temporaryDirectory, "server-runtime.json");
 
 process.env.NODE_ENV = "test";
-fs.writeFileSync(
-  runtimeConfigPath,
-  `${JSON.stringify(
+if (process.platform === "linux") {
+  process.env.CREDENTIALS_DIRECTORY = credentialDirectory;
+  process.env.XDG_DATA_HOME = temporaryDirectory;
+}
+if (process.platform !== "linux") {
+  fs.writeFileSync(
+    runtimeConfigPath,
+    `${JSON.stringify(
     {
       schemaVersion: 3,
       packageFlavor: "DEMONSTRATION",
@@ -37,10 +45,11 @@ fs.writeFileSync(
     },
     null,
     2
-  )}\n`,
-  "utf8"
-);
-process.argv.push("--runtime-config", runtimeConfigPath);
+    )}\n`,
+    "utf8"
+  );
+  process.argv.push("--runtime-config", runtimeConfigPath);
+}
 
 const {
   createEncryptedQhkey,
@@ -55,6 +64,7 @@ const { openCoupangRequestAuthSession } = await import(
 );
 const {
   clearQhkeyCredentialStateCacheForTest,
+  defaultDevelopmentQhkeyRootPath,
   getCoupangUsbQhkeyCredentialStatus,
 } = await import(
   "@/quickhack_server/security/usb-qhkey-provider"
@@ -93,9 +103,19 @@ function assertSinglePass(snapshot, label) {
 }
 
 try {
+  assert.equal(defaultDevelopmentQhkeyRootPath(), qhkeyRoot);
   fs.mkdirSync(path.dirname(qhkeyFile), { recursive: true });
   fs.mkdirSync(path.dirname(masterKeyFile), { recursive: true });
-  writeQhkeyMasterKeyFile(masterKeyFile, false, { protection: "RAW" });
+  if (process.platform === "linux") {
+    fs.mkdirSync(credentialDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(credentialDirectory, "quickhack.qhkey-master-key"),
+      Buffer.alloc(32, 0x5a),
+      { mode: 0o600 }
+    );
+  } else {
+    writeQhkeyMasterKeyFile(masterKeyFile, false, { protection: "RAW" });
+  }
   const masterKey = readQhkeyMasterKeyFile(masterKeyFile);
 
   try {
@@ -187,14 +207,20 @@ try {
   assert.equal(status.keyAlias, "single-pass-test");
   assert.equal(status.keyFingerprint, session.context.keyFingerprint);
 
-  fs.rmSync(masterKeyFile, { force: true });
+  fs.rmSync(
+    process.platform === "linux"
+      ? path.join(credentialDirectory, "quickhack.qhkey-master-key")
+      : masterKeyFile,
+    { force: true }
+  );
+  clearQhkeyCredentialStateCacheForTest();
   const missingMasterKeyStatus =
     await getCoupangUsbQhkeyCredentialStatus();
 
   assert.equal(missingMasterKeyStatus.status, "MISSING");
   assert.match(
     missingMasterKeyStatus.errorMessage ?? "",
-    /QHKEY master key file was not found/
+    /QHKEY master key (?:file was not found|must be provisioned)/
   );
 
   const logenQhkey = createEncryptedQhkey({

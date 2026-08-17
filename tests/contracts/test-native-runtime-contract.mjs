@@ -12,13 +12,40 @@ import {
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const packageLock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8"));
+const npmrc = readFileSync(path.join(root, ".npmrc"), "utf8");
+const finalIntegrationWorkflow = readFileSync(
+  path.join(root, ".github", "workflows", "pull-request-checks.yml"),
+  "utf8"
+);
+const windowsDemoWorkflow = readFileSync(
+  path.join(root, ".github", "workflows", "windows-demo-release.yml"),
+  "utf8"
+);
 
 assert.equal(POSTGRESQL_MAJOR_VERSION, 18);
 assert.equal(NATIVE_RUNTIME_CONTRACT.node.engines, ">=24 <25");
-assert.equal(NATIVE_RUNTIME_CONTRACT.npm.packageManager, "npm@11.13.0");
+assert.equal(NATIVE_RUNTIME_CONTRACT.npm.packageManager, "npm@12.0.2");
 assert.equal(packageJson.engines.node, NATIVE_RUNTIME_CONTRACT.node.engines);
-assert.equal(packageJson.engines.npm, ">=11 <12");
+assert.equal(packageJson.engines.npm, ">=12 <13");
 assert.equal(packageJson.packageManager, NATIVE_RUNTIME_CONTRACT.npm.packageManager);
+assert.equal(packageLock.packages[""].engines.npm, packageJson.engines.npm);
+assert.deepEqual(packageJson.allowScripts, {
+  "prisma@7.9.1": true,
+  "@prisma/engines@7.9.1": true,
+  "unrs-resolver@1.12.2": true,
+});
+assert.match(npmrc, /^strict-allow-scripts=true$/m);
+assert.equal(
+  finalIntegrationWorkflow.match(/npm install --global npm@12\.0\.2/g)?.length,
+  3,
+  "Every npm-based Final Integration job must pin npm 12.0.2."
+);
+assert.equal(
+  windowsDemoWorkflow.match(/npm install --global npm@12\.0\.2/g)?.length,
+  1,
+  "The Windows demo workflow must pin npm 12.0.2."
+);
 assert.equal(parsePostgresqlMajorVersion("postgres (PostgreSQL) 18.4"), 18);
 assert.equal(parsePostgresqlMajorVersion("pg_dump (PostgreSQL) 18.1", "pg_dump"), 18);
 
@@ -37,7 +64,7 @@ assert.deepEqual(
 assert.deepEqual(
   assertNativeRuntimeCapabilities({
     node: "v24.17.0",
-    npm: "11.13.0",
+    npm: "12.0.2",
     postgresql: { capability: "backup", versions: packageVersions },
   }).postgresql.tools,
   { psql: 18, pg_dump: 18, pg_restore: 18 }
@@ -68,7 +95,11 @@ assert.throws(
   (error) => error.code === "DEPENDENCY_VERSION_MISMATCH"
 );
 assert.throws(
-  () => assertNativeRuntimeCapabilities({ npm: "10.9.0" }),
+  () => assertNativeRuntimeCapabilities({ npm: "11.13.0" }),
+  (error) => error.code === "DEPENDENCY_VERSION_MISMATCH"
+);
+assert.throws(
+  () => assertNativeRuntimeCapabilities({ npm: "13.0.0" }),
   (error) => error.code === "DEPENDENCY_VERSION_MISMATCH"
 );
 

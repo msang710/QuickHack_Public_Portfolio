@@ -16,6 +16,7 @@ ENV/
 build/
 dist/
 release/
+packaging/linux/arch/*.pkg.tar.zst
 *.egg-info/
 *.manifest
 *.spec

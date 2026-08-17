@@ -25,6 +25,7 @@
     { "path": "quickhack_server/platform/linux/postgresql-service-controller.mjs", "token": "systemd", "count": 1, "classification": "adapter-owned" },
     { "path": "quickhack_server/platform/linux/qhkey-master-key-provider.mjs", "token": "systemd", "count": 1, "classification": "adapter-owned" },
     { "path": "quickhack_server/platform/linux/service-credential-reader.mjs", "token": "systemd", "count": 5, "classification": "adapter-owned" },
+    { "path": "quickhack_server/platform/qhkey-contract.mjs", "token": "path.win32", "count": 1, "classification": "contract-owned" },
     { "path": "quickhack_server/platform/windows/process-execution.ts", "token": "path.win32", "count": 8, "classification": "adapter-owned" },
     { "path": "quickhack_server/platform/windows/qhkey-master-key-provider.d.mts", "token": "dpapi", "count": 2, "classification": "adapter-owned" },
     { "path": "quickhack_server/platform/windows/qhkey-master-key-provider.mjs", "token": "powershell", "count": 6, "classification": "adapter-owned" },
@@ -47,6 +48,7 @@
     { "path": "quickhack_shared/platform/windows/child-process-policy.mjs", "token": "cmd.exe", "count": 1, "classification": "adapter-owned" },
 
     { "path": "tools/platform/compose-operator-platform.mjs", "token": "process.platform", "count": 1, "classification": "composition-root" },
+    { "path": "tools/platform/compose-process-execution.mjs", "token": "process.platform", "count": 1, "classification": "composition-root" },
     { "path": "tools/platform/linux/backup-master-recovery-operator.d.mts", "token": "systemd", "count": 1, "classification": "adapter-owned" },
     { "path": "tools/platform/linux/backup-master-recovery-operator.mjs", "token": "systemd", "count": 1, "classification": "adapter-owned" },
     { "path": "tools/platform/linux/index.mjs", "token": "systemd", "count": 2, "classification": "adapter-owned" },
