@@ -25,12 +25,24 @@ assert.deepEqual(
 const stagingSource = readFileSync(new URL("../../packaging/create-staging-package.mjs", import.meta.url), "utf8");
 const launcherBuild = readFileSync(new URL("../../packaging/build-windows-launchers.ps1", import.meta.url), "utf8");
 const installerBuild = readFileSync(new URL("../../packaging/build-installer.ps1", import.meta.url), "utf8");
+const serverInstaller = readFileSync(new URL("../../packaging/quickhack.iss", import.meta.url), "utf8");
+const clientInstaller = readFileSync(new URL("../../packaging/quickhack-demo-client.iss", import.meta.url), "utf8");
 const launcherSource = readFileSync(new URL("../../packaging/windows-launcher/QuickHackLauncher.cs", import.meta.url), "utf8");
+const clientRuntimeLauncher = readFileSync(new URL("../../tools/client-runtime-launcher.mjs", import.meta.url), "utf8");
+const clientRuntimeBootstrap = readFileSync(new URL("../../tools/client-runtime-bootstrap.mjs", import.meta.url), "utf8");
 
 assert.match(stagingSource, /createPackageManifest/);
 assert.match(stagingSource, /collectServerRuntimeClosure/);
 assert.match(stagingSource, /isDemonstrationPackage/);
 assert.doesNotMatch(installerBuild, /Compress-Archive|Portable-/);
+assert.match(installerBuild, /ConvertTo-InnoEscapedAppId/);
+assert.match(installerBuild, /\/DArtifactAppId=\$\(ConvertTo-InnoEscapedAppId/);
+assert.match(serverInstaller, /#define ArtifactAppId "\{\{5E9CD754-EEDF-47EE-A1EB-8FBCC94AFD82\}"/);
+assert.match(clientInstaller, /#define ArtifactAppId "\{\{7D88F75C-5D65-4B34-9DD6-EFB19332DD33\}"/);
+assert.match(clientRuntimeLauncher, /composeProcessExecution/);
+assert.doesNotMatch(clientRuntimeLauncher, /composeOperatorPlatform/);
+assert.match(clientRuntimeBootstrap, /composeProcessExecution/);
+assert.doesNotMatch(clientRuntimeBootstrap, /composeOperatorPlatform/);
 for (const config of configs) {
   assert.ok(launcherBuild.includes(config.launcherFileName));
   assert.ok(installerBuild.includes(config.installedIdentity));

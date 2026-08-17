@@ -32,6 +32,21 @@ function Get-FileSha256 {
   return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
 }
 
+function ConvertTo-InnoEscapedAppId {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$AppId
+  )
+
+  if ($AppId -notmatch '^\{([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\}$') {
+    throw "Invalid Inno Setup AppId: $AppId"
+  }
+
+  # Inno Setup escapes a literal opening brace by doubling it. The compiled
+  # identity remains {GUID}; only the .iss source representation is escaped.
+  return "{{$($Matches[1])}"
+}
+
 if (-not $Version) {
   $packageJsonPath = Join-Path $rootDir "package.json"
   $Version = (Get-Content -LiteralPath $packageJsonPath -Raw -Encoding utf8 | ConvertFrom-Json).version
@@ -141,7 +156,7 @@ $isccArguments = @(
   "/DAppVersion=$Version"
   "/DSourceDir=$sourcePath"
   "/DOutputDir=$outputPath"
-  "/DArtifactAppId=$($targetConfig.AppId)"
+  "/DArtifactAppId=$(ConvertTo-InnoEscapedAppId -AppId $targetConfig.AppId)"
   "/DArtifactKind=$($targetConfig.ArtifactKind)"
   "/DArtifactName=$($targetConfig.ArtifactName)"
   "/DArtifactExe=$($targetConfig.ArtifactExe)"

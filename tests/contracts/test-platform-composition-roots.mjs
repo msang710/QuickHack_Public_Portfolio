@@ -4,6 +4,7 @@ import path from "node:path";
 import { composeClientPlatform } from "../../quickhack_client/platform/compose-client-platform.ts";
 import { composeServerPlatform } from "../../quickhack_server/platform/compose-server-platform.ts";
 import { composeOperatorPlatform } from "../../tools/platform/compose-operator-platform.mjs";
+import { composeProcessExecution } from "../../tools/platform/compose-process-execution.mjs";
 import { projectRoot } from "../support/project-root.mjs";
 
 function errorCode(code) {
@@ -67,6 +68,9 @@ assert.deepEqual(
 );
 
 const windowsOperator = composeOperatorPlatform({ platform: "win32" });
+const windowsProcessExecution = composeProcessExecution({ platform: "win32" });
+assert.equal(windowsProcessExecution.descriptor.id, "process-execution");
+assert.equal(windowsProcessExecution.descriptor.platform, "win32");
 assertFrozenSurface(windowsOperator, [
   "role",
   "platform",
@@ -97,6 +101,9 @@ assert.throws(
 const linuxServer = composeServerPlatform({ platform: "linux" });
 const linuxClient = composeClientPlatform({ platform: "linux" });
 const linuxOperator = composeOperatorPlatform({ platform: "linux" });
+const linuxProcessExecution = composeProcessExecution({ platform: "linux" });
+assert.equal(linuxProcessExecution.descriptor.id, "process-execution");
+assert.equal(linuxProcessExecution.descriptor.platform, "linux");
 assert.equal(linuxServer.runtimeDirectories.descriptor.state, "READY");
 assert.equal(linuxClient.runtimeDirectories.descriptor.state, "READY");
 assert.deepEqual(
@@ -145,6 +152,7 @@ for (const compose of [
   composeServerPlatform,
   composeClientPlatform,
   composeOperatorPlatform,
+  composeProcessExecution,
 ]) {
   assert.throws(
     () => compose({ platform: "aix" }),

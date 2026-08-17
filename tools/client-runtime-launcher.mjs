@@ -21,7 +21,7 @@ import {
 import {
   composeClientPlatform,
 } from "../quickhack_client/platform/compose-client-platform.ts";
-import { composeOperatorPlatform } from "./platform/compose-operator-platform.mjs";
+import { composeProcessExecution } from "./platform/compose-process-execution.mjs";
 import { CLIENT_RUNTIME_BOOTSTRAP_FILENAME } from "./client-runtime-bootstrap.mjs";
 import {
   assertObservedClientRuntimeOwnership,
@@ -39,7 +39,7 @@ const packageIdentity = activatePackageRuntimeIdentity({
   runtimeRole: "CLIENT",
 });
 const clientPlatform = composeClientPlatform();
-const processExecution = composeOperatorPlatform().processExecution;
+const processExecution = composeProcessExecution();
 const runtimeDirectories = clientPlatform.runtimeDirectories.resolve({
   appRoot: root,
   environment: process.env,

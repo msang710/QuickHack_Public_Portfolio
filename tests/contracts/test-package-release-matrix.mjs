@@ -27,6 +27,7 @@ assert.equal(packageJson.scripts["stage:demo-client"], "npm run stage:windows:de
 
 const integrationWorkflowSource = readFileSync(new URL("../../.github/workflows/pull-request-checks.yml", import.meta.url), "utf8");
 const windowsWorkflowSource = readFileSync(new URL("../../.github/workflows/windows-release.yml", import.meta.url), "utf8");
+const windowsDemoWorkflowSource = readFileSync(new URL("../../.github/workflows/windows-demo-release.yml", import.meta.url), "utf8");
 const linuxWorkflowSource = readFileSync(new URL("../../.github/workflows/linux-release.yml", import.meta.url), "utf8");
 for (const source of [integrationWorkflowSource, windowsWorkflowSource, linuxWorkflowSource]) {
   assert.doesNotThrow(() => parseYaml(source));
@@ -61,5 +62,13 @@ for (const source of [windowsWorkflowSource, linuxWorkflowSource]) {
   assert.doesNotMatch(source, /npm run (?:build|stage:|release:|verify)/);
 }
 assert.doesNotMatch(`${windowsWorkflowSource}\n${linuxWorkflowSource}`, /Portable-|\.zip/u);
+
+assert.doesNotThrow(() => parseYaml(windowsDemoWorkflowSource));
+assert.match(windowsDemoWorkflowSource, /release-requests\/windows-demo\/\*\.json/);
+assert.match(windowsDemoWorkflowSource, /target: \[demo-server, demo-client\]/);
+assert.doesNotMatch(windowsDemoWorkflowSource, /target: \[[^\]]*operational-/);
+assert.match(windowsDemoWorkflowSource, /--require-platform-tools/);
+assert.match(windowsDemoWorkflowSource, /--prerelease/);
+assert.match(windowsDemoWorkflowSource, /Expected 6 release assets/);
 
 console.log("Four logical artifacts and eight official platform release variants verified.");
