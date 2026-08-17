@@ -22,8 +22,8 @@ export const NATIVE_RUNTIME_CONTRACT = Object.freeze({
     engines: ">=24 <25",
   }),
   npm: Object.freeze({
-    major: 11,
-    packageManager: "npm@11.13.0",
+    major: 12,
+    packageManager: "npm@12.0.2",
   }),
   postgresql: Object.freeze({
     major: POSTGRESQL_MAJOR_VERSION,
@@ -145,7 +145,7 @@ export function assertNativeRuntimeCapabilities(observed) {
   if (Object.hasOwn(observed, "npm")) {
     const major = parseSemanticMajor(observed.npm, "npm");
     if (major !== NATIVE_RUNTIME_CONTRACT.npm.major) {
-      fail("DEPENDENCY_VERSION_MISMATCH", "QuickHack requires npm 11.", {
+      fail("DEPENDENCY_VERSION_MISMATCH", "QuickHack requires npm 12.", {
         dependency: "npm",
         requiredMajor: NATIVE_RUNTIME_CONTRACT.npm.major,
         detectedMajor: major,

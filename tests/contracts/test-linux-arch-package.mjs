@@ -6,6 +6,8 @@ const pkgbuild = readFileSync(new URL("../../packaging/linux/arch/PKGBUILD", imp
 const installHook = readFileSync(new URL("../../packaging/linux/arch/quickhack-server.install", import.meta.url), "utf8");
 const consoleUnit = readFileSync(new URL("../../packaging/linux/systemd/quickhack-console.service.in", import.meta.url), "utf8");
 const postgresUnit = readFileSync(new URL("../../packaging/linux/systemd/quickhack-postgresql.service.in", import.meta.url), "utf8");
+const buildScript = readFileSync(new URL("../../packaging/linux/build-arch-package.mjs", import.meta.url), "utf8");
+const stagingScript = readFileSync(new URL("../../packaging/linux/create-staging-package.mjs", import.meta.url), "utf8");
 
 assert.deepEqual(LINUX_PACKAGE_TARGETS, ["demo-server", "demo-client", "operational-server", "operational-client"]);
 const configs = LINUX_PACKAGE_TARGETS.map(linuxArtifactConfig);
@@ -34,5 +36,10 @@ assert.match(consoleUnit, /User=@QUICKHACK_APPLICATION_USER@/);
 assert.doesNotMatch(consoleUnit, /User=root/);
 assert.match(postgresUnit, /ExecStart=@QUICKHACK_POSTGRES_EXECUTABLE@/);
 assert.doesNotMatch(`${pkgbuild}\n${postgresUnit}`, /\/var\/lib\/postgres\/data|postgresql\.service/u);
+assert.match(buildScript, /for \(const outputTarget of LINUX_PACKAGE_TARGETS\)/);
+assert.match(buildScript, /packageReleaseVariant\("linux", outputTarget, version\)/);
+assert.match(buildScript, /`--version=\$\{version\}`/);
+assert.match(buildScript, /rmSync\(output, \{ recursive: true, force: true \}\)/);
+assert.match(stagingScript, /version: releaseVersion/);
 
 console.log("Arch four-way split package metadata and systemd ownership verified.");

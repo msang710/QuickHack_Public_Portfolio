@@ -47,6 +47,15 @@ assert.equal(Object.isFrozen(immutable.providers), true);
 assert.throws(() => createQhkeyVolumeIdentity({ ...immutable, providers: ["COUPANG", "COUPANG"] }), /unique/);
 assert.throws(() => createQhkeyVolumeIdentity({ ...immutable, rootPath: "relative" }), /absolute|invalid/);
 assert.throws(() => createQhkeyVolumeIdentity({ ...immutable, platform: "darwin" }), /unsupported/);
+assert.equal(
+  createQhkeyVolumeIdentity({
+    ...immutable,
+    platform: "win32",
+    rootPath: "R:\\",
+    deviceId: "R:",
+  }).rootPath,
+  "R:\\"
+);
 
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "quickhack-qhkey-platform-"));
 try {

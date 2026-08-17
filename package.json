@@ -66,6 +66,7 @@
     "test:windows-artifact-lifecycle": "node tests/contracts/test-windows-artifact-lifecycle.mjs",
     "test:linux-arch-package": "node tests/contracts/test-linux-arch-package.mjs",
     "test:linux-package-lifecycle": "node tests/regression/test-linux-package-lifecycle.mjs",
+    "test:linux-package-smoke": "node tests/integration/linux/test-linux-package-smoke.mjs",
     "test:four-artifact-package-boundary": "node tests/contracts/test-four-artifact-package-boundary.mjs",
     "test:package-release-matrix": "node tests/contracts/test-package-release-matrix.mjs",
     "test:package-release-artifact-verifier": "node tests/contracts/test-package-release-artifact-verifier.mjs",
@@ -349,9 +350,9 @@
   "type": "module",
   "engines": {
     "node": ">=24 <25",
-    "npm": ">=11 <12"
+    "npm": ">=12 <13"
   },
-  "packageManager": "npm@11.13.0",
+  "packageManager": "npm@12.0.2",
   "bugs": {
     "url": "https://github.com/msang710/QuickHack_Public_Portfolio/issues"
   },
@@ -388,5 +389,10 @@
     "react-dom": "^19.2.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7"
+  },
+  "allowScripts": {
+    "prisma@7.9.1": true,
+    "@prisma/engines@7.9.1": true,
+    "unrs-resolver@1.12.2": true
   }
 }

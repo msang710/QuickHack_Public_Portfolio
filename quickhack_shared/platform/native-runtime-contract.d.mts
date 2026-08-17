@@ -21,7 +21,7 @@ export const NATIVE_RUNTIME_CONTRACT: Readonly<{
     maximumExclusiveMajor: 25;
     engines: ">=24 <25";
   }>;
-  npm: Readonly<{ major: 11; packageManager: "npm@11.13.0" }>;
+  npm: Readonly<{ major: 12; packageManager: "npm@12.0.2" }>;
   postgresql: Readonly<{
     major: typeof POSTGRESQL_MAJOR_VERSION;
     tools: typeof POSTGRESQL_TOOL_CAPABILITIES;

@@ -92,10 +92,11 @@ export function createQhkeyVolumeIdentity(value) {
     throw new TypeError("QHKEY volume platform is unsupported.");
   }
   const rawRootPath = requiredText(value.rootPath, "volume root");
-  if (!path.isAbsolute(rawRootPath)) {
+  const platformPath = platform === "win32" ? path.win32 : path.posix;
+  if (!platformPath.isAbsolute(rawRootPath)) {
     throw new TypeError("QHKEY volume root must be absolute.");
   }
-  const rootPath = path.resolve(rawRootPath);
+  const rootPath = platformPath.resolve(rawRootPath);
   const providers = [...(value.providers ?? [])].map(assertQhkeyProvider);
   if (new Set(providers).size !== providers.length) {
     throw new TypeError("QHKEY volume providers must be unique.");
