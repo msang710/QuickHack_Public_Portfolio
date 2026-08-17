@@ -701,7 +701,13 @@ for (const runtimeDirectory of ["bin", "lib", "share"]) {
     path.join(runtimeTargetDir, "postgresql", runtimeDirectory)
   );
 }
-for (const licenseName of ["COPYRIGHT", "LICENSE", "README.txt"]) {
+for (const licenseName of [
+  "COPYRIGHT",
+  "LICENSE",
+  "README.txt",
+  "server_license.txt",
+  "commandlinetools_3rd_party_licenses.txt",
+]) {
   const source = path.join(postgresqlRuntimeDir, licenseName);
   if (existsSync(source)) {
     copyFile(source, path.join(runtimeTargetDir, "postgresql", licenseName));

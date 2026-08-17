@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "attempt": 2,
   "version": "1.0.0",
   "tag": "demo-windows-v1.0.0",
   "targets": ["demo-server", "demo-client"],
