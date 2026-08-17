@@ -15,6 +15,8 @@ assert.match(staging, /spawnSync\(executablePath, \["--version"\]/);
 assert.match(staging, /"postgresql-portable", String\(POSTGRESQL_MAJOR_VERSION\)/);
 assert.match(staging, /"PostgreSQL",\s*String\(POSTGRESQL_MAJOR_VERSION\)/);
 assert.match(staging, /PostgreSQL \$\{POSTGRESQL_MAJOR_VERSION\} runtime was not found/);
+assert.match(staging, /server_license\.txt/);
+assert.match(staging, /commandlinetools_3rd_party_licenses\.txt/);
 assert.doesNotMatch(staging, /PostgreSQL 17|postgresql-portable", "17"/);
 assert.match(runtimeFiles, /quickhack_shared\/platform\/native-runtime-contract\.mjs/);
 assert.match(runtimeFiles, /quickhack_shared\/platform\/native-runtime-contract\.d\.mts/);
