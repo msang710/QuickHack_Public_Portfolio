@@ -33,6 +33,9 @@ jobs:
           import fs from "node:fs";
           const request = JSON.parse(fs.readFileSync(process.env.REQUEST_FILE, "utf8"));
           if (request.schemaVersion !== 1) throw new Error("Unsupported release request schema.");
+          if (!Number.isSafeInteger(request.attempt) || request.attempt < 1) {
+            throw new Error("A demo release request requires a positive attempt number.");
+          }
           if (!/^\d+\.\d+\.\d+$/u.test(request.version)) throw new Error("Invalid demo release version.");
           if (request.tag !== `demo-windows-v${request.version}`) throw new Error("Demo release tag does not match the version.");
           if (JSON.stringify(request.targets) !== JSON.stringify(["demo-server", "demo-client"])) {
@@ -56,12 +59,48 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      - name: Install Windows packaging toolchain
+      - name: Verify Inno Setup compiler
         shell: pwsh
         run: |
-          choco install postgresql18 --version=18.4.0 -y --no-progress
-          choco install innosetup -y --no-progress
-          "QUICKHACK_RELEASE_POSTGRESQL_ROOT=$env:ProgramFiles\PostgreSQL\18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $ErrorActionPreference = "Stop"
+          $candidates = @(
+            (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+          if (-not ($candidates | Select-Object -First 1)) {
+            throw "The GitHub-hosted Windows runner does not provide Inno Setup 6."
+          }
+      - name: Acquire pinned PostgreSQL 18 runtime
+        if: matrix.target == 'demo-server'
+        shell: pwsh
+        env:
+          POSTGRESQL_ARCHIVE_URL: https://get.enterprisedb.com/postgresql/postgresql-18.4-1-windows-x64-binaries.zip
+          POSTGRESQL_ARCHIVE_SHA256: 7EFFE34C0BF89027B3F171447D351CBC460F4566C8D0F643DAEC67F140787858
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "postgresql-18.4-1-windows-x64-binaries.zip"
+          $extractRoot = Join-Path $env:RUNNER_TEMP "postgresql-18.4-runtime"
+          curl.exe -L --fail --silent --show-error --output $archive $env:POSTGRESQL_ARCHIVE_URL
+          if ($LASTEXITCODE -ne 0) {
+            throw "The official PostgreSQL 18 archive download failed with exit code $LASTEXITCODE."
+          }
+          $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actualHash -ne $env:POSTGRESQL_ARCHIVE_SHA256) {
+            throw "The PostgreSQL 18 archive SHA-256 does not match the pinned digest."
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
+          $postgresqlRoot = Join-Path $extractRoot "pgsql"
+          $postgres = Join-Path $postgresqlRoot "bin\postgres.exe"
+          if (-not (Test-Path -LiteralPath $postgres -PathType Leaf)) {
+            throw "The PostgreSQL 18 archive does not contain bin\postgres.exe."
+          }
+          $postgresVersion = & $postgres --version
+          if ($LASTEXITCODE -ne 0 -or $postgresVersion -notmatch '^postgres \(PostgreSQL\) 18\.4(?:\s|$)') {
+            throw "Unexpected PostgreSQL runtime version: $postgresVersion"
+          }
+          "QUICKHACK_RELEASE_POSTGRESQL_ROOT=$postgresqlRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: npm ci
       - name: Verify Windows packaging boundaries
         shell: pwsh
