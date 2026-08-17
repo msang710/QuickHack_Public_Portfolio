@@ -1,0 +1,175 @@
+name: Windows demo prerelease
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "release-requests/windows-demo/*.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quickhack-windows-demo-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.request.outputs.version }}
+      tag: ${{ steps.request.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Validate the single release request in this commit
+        id: request
+        shell: bash
+        run: |
+          mapfile -t requests < <(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- 'release-requests/windows-demo/*.json')
+          [[ "${#requests[@]}" -eq 1 ]]
+          REQUEST_FILE="${requests[0]}" node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const request = JSON.parse(fs.readFileSync(process.env.REQUEST_FILE, "utf8"));
+          if (request.schemaVersion !== 1) throw new Error("Unsupported release request schema.");
+          if (!/^\d+\.\d+\.\d+$/u.test(request.version)) throw new Error("Invalid demo release version.");
+          if (request.tag !== `demo-windows-v${request.version}`) throw new Error("Demo release tag does not match the version.");
+          if (JSON.stringify(request.targets) !== JSON.stringify(["demo-server", "demo-client"])) {
+            throw new Error("A Windows demo release must contain exactly the demo server and demo client.");
+          }
+          if (request.prerelease !== true) throw new Error("A demo release must be a prerelease.");
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${request.version}\ntag=${request.tag}\n`);
+          NODE
+
+  build:
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [demo-server, demo-client]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install Windows packaging toolchain
+        shell: pwsh
+        run: |
+          choco install postgresql18 --version=18.4.0 -y --no-progress
+          choco install innosetup -y --no-progress
+          "QUICKHACK_RELEASE_POSTGRESQL_ROOT=$env:ProgramFiles\PostgreSQL\18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - run: npm ci
+      - name: Verify Windows packaging boundaries
+        shell: pwsh
+        run: |
+          npm run test:process-execution-boundary
+          npm run test:platform-composition-roots
+          npm run test:windows-four-artifact-staging
+          npm run test:package-role-boundary
+          npm run typecheck
+      - name: Build selected Windows demo package
+        shell: pwsh
+        env:
+          HOME: ${{ runner.temp }}\home
+          LOCALAPPDATA: ${{ runner.temp }}\local-app-data
+          USERPROFILE: ${{ runner.temp }}\user-profile
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          npm run build
+          $env:QUICKHACK_NODE_RUNTIME_DIR = Split-Path -Parent (Get-Command node).Source
+          if ($env:QUICKHACK_PACKAGE_TARGET -eq "demo-server") {
+            npm run stage:windows:demo-server -- "--postgresql-runtime-dir=$env:QUICKHACK_RELEASE_POSTGRESQL_ROOT"
+          } else {
+            $env:QUICKHACK_PLATFORM_TOOLS_DIR = Join-Path $env:ANDROID_SDK_ROOT "platform-tools"
+            if (-not (Test-Path -LiteralPath (Join-Path $env:QUICKHACK_PLATFORM_TOOLS_DIR "adb.exe") -PathType Leaf)) {
+              throw "Android platform-tools is unavailable on the Windows runner."
+            }
+            npm run stage:windows:demo-client -- --require-platform-tools
+          }
+          npm run "release:windows:$env:QUICKHACK_PACKAGE_TARGET" -- -Version "$env:QUICKHACK_RELEASE_VERSION"
+      - name: Verify package manifest, target, file set, and hashes
+        shell: pwsh
+        env:
+          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: >-
+          node tools/verify-package-release-artifact.mjs
+          --artifact-dir="release/distribution/windows/$env:QUICKHACK_PACKAGE_TARGET"
+          --platform=windows
+          --target="$env:QUICKHACK_PACKAGE_TARGET"
+          --release-version="$env:QUICKHACK_RELEASE_VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-demo-${{ matrix.target }}
+          path: release/distribution/windows/${{ matrix.target }}/
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QUICKHACK_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-demo-demo-server
+          path: release-assets/demo-server
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-demo-demo-client
+          path: release-assets/demo-client
+      - name: Reverify downloaded release assets
+        shell: bash
+        run: |
+          node tools/verify-package-release-artifact.mjs --artifact-dir=release-assets/demo-server --platform=windows --target=demo-server --release-version="$QUICKHACK_RELEASE_VERSION"
+          node tools/verify-package-release-artifact.mjs --artifact-dir=release-assets/demo-client --platform=windows --target=demo-client --release-version="$QUICKHACK_RELEASE_VERSION"
+      - name: Create immutable demo tag and prerelease
+        shell: bash
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$QUICKHACK_RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag already exists: $QUICKHACK_RELEASE_TAG" >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" --method POST -f "ref=refs/tags/$QUICKHACK_RELEASE_TAG" -f "sha=$GITHUB_SHA"
+          cat >release-notes.md <<EOF
+          Windows 시연용 QuickHack 1.0.0 프리릴리스입니다.
+
+          포함 항목:
+          - QuickHack Demo Server installer (PostgreSQL 18 runtime 포함)
+          - QuickHack Demo Client installer (Android platform-tools 및 RAW printer bridge 포함)
+          - 각 installer의 immutable package manifest와 SHA-256 checksum
+
+          이 빌드는 시연 전용이며 코드 서명, SmartScreen 평판, 실제 설치·업데이트·삭제, 물리 USB/ADB/프린터 acceptance 검증은 완료되지 않았습니다. 운영 환경에는 사용하지 마세요.
+          EOF
+          gh release create "$QUICKHACK_RELEASE_TAG" \
+            release-assets/demo-server/* \
+            release-assets/demo-client/* \
+            --verify-tag \
+            --title "QuickHack Windows Demo 1.0.0" \
+            --prerelease \
+            --notes-file release-notes.md
+      - name: Verify published release identity and six assets
+        shell: bash
+        run: |
+          gh release view "$QUICKHACK_RELEASE_TAG" --json tagName,isPrerelease,assets >published-release.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const release = JSON.parse(fs.readFileSync("published-release.json", "utf8"));
+          if (release.tagName !== process.env.QUICKHACK_RELEASE_TAG || release.isPrerelease !== true) {
+            throw new Error("Published release identity is invalid.");
+          }
+          if (release.assets.length !== 6) throw new Error(`Expected 6 release assets, received ${release.assets.length}.`);
+          NODE

@@ -11,7 +11,7 @@
 #endif
 
 #ifndef ArtifactAppId
-  #define ArtifactAppId "{5E9CD754-EEDF-47EE-A1EB-8FBCC94AFD82}"
+  #define ArtifactAppId "{{5E9CD754-EEDF-47EE-A1EB-8FBCC94AFD82}"
 #endif
 #ifndef ArtifactKind
   #define ArtifactKind "DEMONSTRATION_SERVER"
