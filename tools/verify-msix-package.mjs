@@ -153,6 +153,21 @@ export function verifyMsixPackage(input) {
     }
   }
 
+  const includeServerSetup = input?.includeServerSetup === true;
+  const observedSetupApplication = config.setup
+    ? manifest.includes(`Id="${config.setup.applicationId}"`)
+    : false;
+  const observedElevation = manifest.includes('Name="allowElevation"');
+  if (observedSetupApplication !== includeServerSetup || observedElevation !== includeServerSetup) {
+    throw failure("MSIX_SETUP_CONTRACT_INVALID", "MSIX Server Setup declarations do not match the build mode.");
+  }
+  if (includeServerSetup) {
+    if (config.role !== "server" || !config.setup) {
+      throw failure("MSIX_SETUP_TARGET_INVALID", "MSIX Server Setup requires a server artifact.");
+    }
+    expectFile(rootDirectory, config.setup.executable.replaceAll("\\", "/"));
+  }
+
   const visualManifestPath = expectFile(rootDirectory, "Assets/visual-assets.manifest.json");
   const visualManifestBytes = readFileSync(visualManifestPath);
   const visualManifest = JSON.parse(withoutBom(visualManifestBytes.toString("utf8")));
@@ -200,6 +215,7 @@ export function verifyMsixPackage(input) {
     visualAssetManifestSha256: createHash("sha256").update(visualManifestBytes).digest("hex"),
     brandingRevision: canonicalBranding.brandingRevision,
     serviceExtensions: includeServices,
+    serverSetup: includeServerSetup,
     preview: config.preview,
   };
   for (const [name, expected] of Object.entries(evidenceExpectations)) {
@@ -225,6 +241,7 @@ function parseArguments(argv) {
   const result = {};
   for (const argument of argv) {
     if (argument === "--include-services") result.includeServices = true;
+    else if (argument === "--include-server-setup") result.includeServerSetup = true;
     else if (argument === "--preview") result.preview = true;
     else if (argument.startsWith("--") && argument.includes("=")) {
       const [name, ...valueParts] = argument.slice(2).split("=");
@@ -239,6 +256,7 @@ function parseArguments(argv) {
     publisher: result.publisher,
     signatureMode: result.signatureMode,
     includeServices: result.includeServices === true,
+    includeServerSetup: result.includeServerSetup === true,
     preview: result.preview === true,
   };
 }

@@ -91,6 +91,34 @@ const serverSetupManifest = renderAppxManifest({
 assert.match(serverSetupManifest, /Id="QuickHackDemoServerSetup"/u);
 assert.match(serverSetupManifest, /Name="allowElevation"/u);
 assert.equal((serverSetupManifest.match(/<Application\b/gu) ?? []).length, 2);
+const completeDemoServerPaths = [
+  server.launcherFileName,
+  "runtime/node/node.exe",
+  "runtime/node/LICENSE",
+  "runtime/node/quickhack-node-runtime.json",
+  "runtime/postgresql/bin/postgres.exe",
+  "runtime/postgresql/lib/runtime.dll",
+  "runtime/postgresql/share/runtime.txt",
+  "Services/QuickHackPostgresqlServiceHost.exe",
+  "Services/QuickHackServerServiceHost.exe",
+  "QuickHack-Demo-Server-Setup.exe",
+];
+assert.equal(assertMsixStagingContent(server, completeDemoServerPaths, {
+  includeServices: true,
+  includeServerSetup: true,
+}), true);
+assert.throws(
+  () => assertMsixStagingContent(server, completeDemoServerPaths.filter(
+    (entry) => entry !== "Services/QuickHackServerServiceHost.exe"
+  ), { includeServices: true }),
+  (error) => error.code === "MSIX_RUNTIME_MISSING"
+);
+assert.throws(
+  () => assertMsixStagingContent(server, completeDemoServerPaths.filter(
+    (entry) => entry !== "QuickHack-Demo-Server-Setup.exe"
+  ), { includeServerSetup: true }),
+  (error) => error.code === "MSIX_RUNTIME_MISSING"
+);
 assert.throws(
   () => assertMsixStagingContent(server, [
     server.launcherFileName,

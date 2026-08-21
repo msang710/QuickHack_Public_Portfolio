@@ -65,6 +65,23 @@ const roleQualifier = isClientPackage ? "Client" : "Server";
 const launcherFileName = `QuickHack-${productQualifier}-${roleQualifier}.exe`;
 const outputDir = path.resolve(rootDir, "release", "windows", packageTarget);
 const launcherSourceDir = path.resolve(rootDir, "release", "windows", "launchers");
+const msixServiceHostSourceDir = path.resolve(
+  rootDir,
+  "release",
+  "windows",
+  "msix",
+  "service-hosts",
+  packageTarget,
+  "Services"
+);
+const msixServerSetupSourceDir = path.resolve(
+  rootDir,
+  "release",
+  "windows",
+  "msix",
+  "server-setup",
+  packageTarget
+);
 const serverSourceDir = path.join(rootDir, ".next", "standalone");
 const staticSourceDir = path.join(rootDir, ".next", "static");
 const configuredNodeRuntimeDir = String(
@@ -572,6 +589,7 @@ const serverRuntimeFiles = collectServerRuntimeClosure({
     "tools/provision-initial-leader.mjs",
     "tools/postgresql-backup.mjs",
     "tools/postgresql-restore.mjs",
+    ...(packageTarget === "demo-server" ? ["tools/server-provisioning-cli.mjs"] : []),
   ],
 });
 for (const relativePath of serverRuntimeFiles) {
@@ -672,6 +690,20 @@ copyFile(
   path.join(launcherSourceDir, launcherFileName),
   path.join(outputDir, launcherFileName)
 );
+if (packageTarget === "demo-server") {
+  copyFile(
+    path.join(msixServiceHostSourceDir, "QuickHackPostgresqlServiceHost.exe"),
+    path.join(outputDir, "Services", "QuickHackPostgresqlServiceHost.exe")
+  );
+  copyFile(
+    path.join(msixServiceHostSourceDir, "QuickHackServerServiceHost.exe"),
+    path.join(outputDir, "Services", "QuickHackServerServiceHost.exe")
+  );
+  copyFile(
+    path.join(msixServerSetupSourceDir, "QuickHack-Demo-Server-Setup.exe"),
+    path.join(outputDir, "QuickHack-Demo-Server-Setup.exe")
+  );
+}
 copyFile(
   path.join(rootDir, ...artifact.entrypoint.split("/")),
   path.join(outputDir, ...artifact.entrypoint.split("/"))

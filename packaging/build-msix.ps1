@@ -285,6 +285,7 @@ try {
     "--signature-mode=$($SigningMode.ToUpperInvariant())"
   )
   if ($IncludeServices) { $verifyArguments += "--include-services" }
+  if ($IncludeServerSetup) { $verifyArguments += "--include-server-setup" }
   if ($Preview) { $verifyArguments += "--preview" }
   & $nodeExecutable @verifyArguments
   if ($LASTEXITCODE -ne 0) {

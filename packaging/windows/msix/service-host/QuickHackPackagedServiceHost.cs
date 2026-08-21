@@ -30,6 +30,7 @@ internal static class QuickHackPackagedServiceHost
     internal const string MutableRootName = "demonstration-server";
 #endif
     internal const string PackageFlavor = "DEMONSTRATION";
+    internal const string PostgresqlMajorVersion = "18";
 #if QUICKHACK_POSTGRESQL
 #if QUICKHACK_PREVIEW
     internal const string ServiceName = "QuickHackPreviewDemoPostgreSQL";
@@ -47,6 +48,7 @@ internal static class QuickHackPackagedServiceHost
 #else
     internal const string MutableRootName = "operational-server";
     internal const string PackageFlavor = "OPERATIONAL";
+    internal const string PostgresqlMajorVersion = "18";
 #if QUICKHACK_POSTGRESQL
     internal const string ServiceName = "QuickHackOperationalPostgreSQL";
 #else
@@ -158,7 +160,13 @@ internal sealed class QuickHackServiceDefinition
         {
 #if QUICKHACK_POSTGRESQL
             if (preview) return "--quickhack-msix-preview";
-            return "-D " + Quote(Path.Combine(mutableRoot, "data", "postgresql"));
+            return "-D " + Quote(Path.Combine(
+                mutableRoot,
+                "data",
+                "postgresql",
+                QuickHackPackagedServiceHost.PostgresqlMajorVersion,
+                "data"
+            ));
 #else
             if (preview)
             {
@@ -315,7 +323,7 @@ internal sealed class QuickHackWindowsService : ServiceBase
                 Stop();
             }
         }
-        catch (Exception error)
+        catch (Exception)
         {
             TryLogCode("CHILD_MONITOR_FAILED", EventLogEntryType.Error);
         }

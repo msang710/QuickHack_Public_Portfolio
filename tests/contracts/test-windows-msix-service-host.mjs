@@ -23,6 +23,8 @@ assert.match(host, /code=" \+ code/u);
 assert.match(host, /quickhack-msix-service-preview\.txt/u);
 assert.match(host, /runtime", "node", "node\.exe/u);
 assert.match(host, /runtime", "postgresql", "bin", "postgres\.exe/u);
+assert.match(host, /PostgresqlMajorVersion = "18"/u);
+assert.match(host, /PostgresqlMajorVersion,[\s\S]*"data"/u);
 assert.match(host, /environment\.Clear\(\)/u);
 assert.match(host, /environment\["PATH"\] = executableDirectory/u);
 assert.match(host, /CreateJobObject/u);

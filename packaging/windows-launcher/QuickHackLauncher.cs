@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.ServiceProcess;
@@ -29,6 +30,8 @@ using System.Windows.Forms;
 internal static class QuickHackLauncher
 {
     private const string LauncherErrorFileName = "launcher-error.log";
+    private const int ErrorInsufficientBuffer = 122;
+    private const int AppModelErrorNoPackage = 15700;
 #if QUICKHACK_CLIENT && QUICKHACK_DEMONSTRATION
     private const string ProductName = "QuickHack Demo Client";
     private const string ArtifactKind = "DEMONSTRATION_CLIENT";
@@ -352,6 +355,12 @@ internal static class QuickHackLauncher
     private static int StartServer(string root)
     {
         ValidatePackage(root);
+#if QUICKHACK_DEMONSTRATION
+        if (IsPackagedProcess())
+        {
+            return StartPackagedDemoServer(root);
+        }
+#endif
         using (ServiceController service = new ServiceController(ServerServiceName))
         {
             try
@@ -376,6 +385,70 @@ internal static class QuickHackLauncher
         StartServerProcess(root, false);
         return 0;
     }
+
+#if QUICKHACK_DEMONSTRATION
+    private static int StartPackagedDemoServer(string root)
+    {
+        string commonData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        string readyMarker = Path.Combine(
+            commonData,
+            "QuickHack",
+            MutableRootName,
+            "provisioning",
+            "READY"
+        );
+        if (!File.Exists(readyMarker))
+        {
+            string setup = RequiredFile(root, "QuickHack-Demo-Server-Setup.exe");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = setup,
+                UseShellExecute = true,
+                WorkingDirectory = root
+            });
+            return 0;
+        }
+
+        using (ServiceController service = new ServiceController(ServerServiceName))
+        {
+            if (service.Status == ServiceControllerStatus.Stopped)
+            {
+                service.Start();
+                service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(60));
+            }
+        }
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "http://127.0.0.1:2999",
+            UseShellExecute = true
+        });
+        return 0;
+    }
+#endif
+
+    private static bool IsPackagedProcess()
+    {
+        uint length = 0;
+        int result = GetCurrentPackageFullName(ref length, null);
+        if (result == AppModelErrorNoPackage) return false;
+        if (result != ErrorInsufficientBuffer)
+        {
+            throw new Win32Exception(result);
+        }
+        StringBuilder packageName = new StringBuilder((int)length);
+        result = GetCurrentPackageFullName(ref length, packageName);
+        if (result != 0)
+        {
+            throw new Win32Exception(result);
+        }
+        return packageName.Length > 0;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetCurrentPackageFullName(
+        ref uint packageFullNameLength,
+        StringBuilder packageFullName
+    );
 
     private static Process StartServerProcess(string root, bool systemService)
     {
