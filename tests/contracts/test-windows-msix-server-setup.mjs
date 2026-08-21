@@ -19,6 +19,10 @@ const buildMsix = readFileSync(
   new URL("../../packaging/build-msix.ps1", import.meta.url),
   "utf8"
 );
+const nativeTest = readFileSync(
+  new URL("../integration/windows/msix/test-demo-server-msix.ps1", import.meta.url),
+  "utf8"
+);
 
 const demoServer = msixArtifactConfig("demo-server");
 assert.equal(demoServer.setup.applicationId, "QuickHackDemoServerSetup");
@@ -69,5 +73,20 @@ for (const contract of [
 assert.doesNotMatch(setupSource, /File\.(?:WriteAllText|AppendAllText)\([^\n]*(?:Password|TemporaryPassword)/u);
 assert.doesNotMatch(setupSource, /arguments\.Add\([^\n]*(?:Password|TemporaryPassword)/u);
 assert.doesNotMatch(setupSource, /AppendAuditEvent\([^\n]*\.Message/u);
+
+for (const contract of [
+  /INITIAL_LEADER_PENDING_ACK/u,
+  /Invoke-LeaderProof/u,
+  /oldPasswordInvalidated/u,
+  /DPAPI_LOCAL_MACHINE/u,
+  /Add-AppxPackage/u,
+  /REBOOT_REQUIRED/u,
+  /Remove-AppxPackage/u,
+  /normalUninstallPreservedState/u,
+  /Invoke-TestOwnedPurge/u,
+]) {
+  assert.match(nativeTest, contract);
+}
+assert.doesNotMatch(nativeTest, /temporaryPassword\s*=\s*[^\r\n]*Set-Content/u);
 
 console.log("QuickHack elevated MSIX Server Setup manifest, build, and pipe handoff contract verified.");
