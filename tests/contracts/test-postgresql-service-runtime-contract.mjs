@@ -8,6 +8,7 @@ const compatibilityEntry = read("tools/postgresql-service-install.mjs");
 const service = read("tools/platform/windows/postgresql-service-install.mjs");
 const core = read("tools/postgresql-service-core.mjs");
 const installer = read("packaging/quickhack.iss");
+const installerPreflight = read("packaging/windows/invoke-install-preflight.ps1");
 const smoke = read("tests/integration/windows/test-postgresql-windows-service.ps1");
 
 assert.match(service, /QUICKHACK_POSTGRESQL_SERVICE_NAME = "QuickHackPostgreSQL"/);
@@ -26,13 +27,16 @@ assert.ok(
 assert.match(service, /createPostgresqlServiceCore\(adapter\)\.installOrRepair/);
 assert.match(compatibilityEntry, /composeServerPlatform\(\)\.postgresqlService\.install/);
 assert.doesNotMatch(compatibilityEntry, /process\.platform|PowerShell|NetworkService/iu);
-for (const source of [service, installer, smoke]) {
+for (const source of [service, installer, installerPreflight, smoke]) {
   assert.doesNotMatch(source, /QuickHackPostgreSQL17/);
 }
 assert.match(installer, /#define PostgresqlServiceName "QuickHackDemoPostgreSQL"/);
-assert.match(installer, /Get-Service -Name ''\{#PostgresqlServiceName\}''/);
+assert.match(installer, /invoke-install-preflight\.ps1/);
 assert.match(installer, /sc\.exe delete \{#PostgresqlServiceName\}/);
-assert.match(installer, /Get-Service -Name ''QuickHackPostgreSQL''/);
+assert.match(installerPreflight, /Get-Service -Name \$Name/);
+assert.match(installerPreflight, /"QuickHackPostgreSQL"/);
+assert.match(installerPreflight, /QuickHackDemoPostgreSQL/);
+assert.match(installerPreflight, /QuickHackOperationalPostgreSQL/);
 assert.doesNotMatch(installer, /sc\.exe delete QuickHackPostgreSQL/);
 assert.match(smoke, /\$serviceName = "QuickHackPostgreSQL"/);
 

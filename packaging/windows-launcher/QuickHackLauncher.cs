@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -143,7 +144,24 @@ internal static class QuickHackLauncher
         ValidatePackage(root);
         string node = RequiredFile(root, "runtime", "node", "node.exe");
         string launcher = RequiredFile(root, "tools", "client-runtime-launcher.mjs");
-        string command = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "start";
+        string command = "start";
+        bool noOpen = false;
+        bool quiet = false;
+        int argumentIndex = 0;
+
+        if (args.Length > 0 && !args[0].StartsWith("--", StringComparison.Ordinal))
+        {
+            command = args[0].Trim().ToLowerInvariant();
+            argumentIndex = 1;
+        }
+
+        for (; argumentIndex < args.Length; argumentIndex++)
+        {
+            string option = args[argumentIndex].Trim().ToLowerInvariant();
+            if (option == "--no-open") noOpen = true;
+            else if (option == "--quiet") quiet = true;
+            else throw new ArgumentException("Supported options: --no-open, --quiet");
+        }
 
         if (command != "start" && command != "restart" && command != "stop" && command != "status")
         {
@@ -161,6 +179,7 @@ internal static class QuickHackLauncher
         startInfo.WindowStyle = ProcessWindowStyle.Hidden;
         startInfo.RedirectStandardOutput = true;
         startInfo.RedirectStandardError = true;
+        ConfigurePackagedClientEnvironment(startInfo.EnvironmentVariables, node, manifest);
 
         string standardOutput;
         string standardError;
@@ -180,21 +199,60 @@ internal static class QuickHackLauncher
             throw new InvalidOperationException(detail.Trim());
         }
 
-        if (command == "start" || command == "restart")
+        if ((command == "start" || command == "restart") && !noOpen)
         {
             OpenClientWindow(ClientUrl());
         }
-        else
+        else if (command == "stop" || command == "status")
         {
-            MessageBox.Show(
-                FirstNonEmpty(standardOutput, standardError, "Command completed."),
-                ProductName,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information
-            );
+            if (!quiet)
+            {
+                MessageBox.Show(
+                    FirstNonEmpty(standardOutput, standardError, "Command completed."),
+                    ProductName,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
+            }
         }
 
         return 0;
+    }
+
+    private static void ConfigurePackagedClientEnvironment(
+        StringDictionary environment,
+        string node,
+        string manifest
+    )
+    {
+        foreach (string name in new[] {
+            "NODE_OPTIONS",
+            "NODE_PATH",
+            "NODE_EXTRA_CA_CERTS",
+            "QUICKHACK_PACKAGE_MANIFEST",
+            "QUICKHACK_RUNTIME_ROLE",
+            "QUICKHACK_SERVER_URL",
+            "QUICKHACK_APP_ROOT",
+            "QUICKHACK_RUNTIME_DIR",
+            "QUICKHACK_CLIENT_INSTANCE_ID",
+            "QUICKHACK_CLIENT_TRUST_BUNDLE_DIR",
+            "PORT",
+            "HOST",
+            "HOSTNAME"
+        })
+        {
+            environment.Remove(name);
+        }
+
+        string systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? "C:\\Windows";
+        environment["PATH"] = String.Join(";", new[] {
+            Path.GetDirectoryName(node),
+            Path.Combine(systemRoot, "System32"),
+            systemRoot,
+            Path.Combine(systemRoot, "System32", "Wbem"),
+            Path.Combine(systemRoot, "System32", "WindowsPowerShell", "v1.0")
+        });
+        environment["QUICKHACK_PACKAGE_MANIFEST"] = manifest;
     }
 
     private static string ClientUrl()

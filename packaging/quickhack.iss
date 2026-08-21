@@ -76,6 +76,7 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
+Source: "windows\invoke-install-preflight.ps1"; Flags: dontcopy
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -118,33 +119,77 @@ begin
     InitialLeaderPasswordEdit.Text := '';
 end;
 
+function InstallPreflightErrorMessage(ResultCode: Integer): String;
+var
+  Korean: Boolean;
+begin
+  Korean := ActiveLanguage = 'korean';
+  case ResultCode of
+    30, 31:
+      if Korean then
+        Result :=
+          '다른 QuickHack 서버 종류가 설치되어 있습니다. 기존 서버를 제거한 뒤 다시 시도하세요.'
+      else
+        Result :=
+          'The opposite QuickHack server flavor is installed. Uninstall it and retry.';
+    32:
+      if Korean then
+        Result :=
+          '이전 QuickHack 공용 PostgreSQL 서비스가 발견되었습니다. 명시적인 이전 또는 복구가 필요합니다.'
+      else
+        Result :=
+          'A legacy shared QuickHack PostgreSQL service was found. Explicit migration or recovery is required.';
+    34:
+      if Korean then
+        Result :=
+          'QuickHack PostgreSQL 서비스를 중지하지 못했습니다. QuickHack을 닫고 다시 시도하세요.'
+      else
+        Result :=
+          'QuickHack PostgreSQL could not be stopped. Close QuickHack and retry.';
+    35:
+      if Korean then
+        Result :=
+          'QuickHack PostgreSQL 서비스 중지가 60초 안에 완료되지 않았습니다. QuickHack을 닫고 다시 시도하세요.'
+      else
+        Result :=
+          'QuickHack PostgreSQL did not stop within 60 seconds. Close QuickHack and retry.';
+    36:
+      if Korean then
+        Result := '설치 패키지의 서버 종류 구성이 올바르지 않습니다.'
+      else
+        Result := 'The installer server flavor configuration is invalid.';
+  else
+    if Korean then
+      Result :=
+        'QuickHack 설치 사전 점검을 완료하지 못했습니다. 종료 코드: ' + IntToStr(ResultCode)
+    else
+      Result :=
+        'QuickHack install preflight could not be completed. Exit code: ' + IntToStr(ResultCode);
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
   PowerShellPath: String;
+  ScriptPath: String;
   Parameters: String;
 begin
   Result := '';
+  ExtractTemporaryFile('invoke-install-preflight.ps1');
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  ScriptPath := ExpandConstant('{tmp}\invoke-install-preflight.ps1');
   Parameters :=
-    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' +
-    '$oppositePackage=Get-Item -LiteralPath ''Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#OppositeAppId}_is1'' -ErrorAction SilentlyContinue; ' +
-    'if($oppositePackage){{Write-Error ''SERVER_FLAVOR_CONFLICT''; exit 30}; ' +
-    '$opposite=@(Get-Service -Name ''{#OppositePostgresqlServiceName}'',''{#OppositeConsoleServiceName}'' -ErrorAction SilentlyContinue); ' +
-    'if($opposite.Count -gt 0){{Write-Error ''SERVER_FLAVOR_CONFLICT''; exit 31}; ' +
-    '$legacy=Get-Service -Name ''QuickHackPostgreSQL'' -ErrorAction SilentlyContinue; ' +
-    'if($legacy){{Write-Error ''LEGACY_LAYOUT_DETECTED''; exit 32}; ' +
-    '$service=Get-Service -Name ''{#PostgresqlServiceName}'' -ErrorAction SilentlyContinue; ' +
-    'if($service -and $service.Status -ne ''Stopped''){' +
-    'Stop-Service -InputObject $service -Force; ' +
-    '$service.WaitForStatus(''Stopped'',[TimeSpan]::FromSeconds(60))}"';
-  if (not Exec(PowerShellPath, Parameters, '', SW_HIDE,
-    ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
-  begin
-    Result :=
-      'QuickHack PostgreSQL could not be stopped safely for this update. ' +
-      'Close QuickHack and retry the installer.';
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
+    ScriptPath + '" -ArtifactKind "{#ArtifactKind}" -StopTimeoutSeconds 60';
+  ResultCode := -1;
+  if not Exec(PowerShellPath, Parameters, '', SW_HIDE,
+    ewWaitUntilTerminated, ResultCode) then begin
+    Result := InstallPreflightErrorMessage(33);
+    Exit;
   end;
+  if ResultCode <> 0 then
+    Result := InstallPreflightErrorMessage(ResultCode);
 end;
 
 procedure DeleteProvisionResult;
