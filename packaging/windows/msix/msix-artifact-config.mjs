@@ -129,7 +129,7 @@ export function msixArtifactConfig(target, options = {}) {
           displayName: `${artifact.applicationName} Setup`,
         })
       : null,
-    serviceHostsReady: preview,
+    serviceHostsReady: preview || artifact.packageTarget === "demo-server",
     msixDistributionRoot: preview
       ? "release/distribution/windows/msix/preview-demo-server"
       : `release/distribution/windows/msix/${artifact.packageTarget}`,

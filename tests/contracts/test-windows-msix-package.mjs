@@ -66,6 +66,23 @@ assert.throws(
   (error) => error.code === "MSIX_ROLE_CONTENT_FORBIDDEN"
 );
 const server = msixArtifactConfig("demo-server");
+assert.equal(server.serviceHostsReady, true);
+assert.equal(msixArtifactConfig("operational-server").serviceHostsReady, false);
+const productionDemoServerManifest = renderAppxManifest({
+  target: "demo-server",
+  version: "1.0.0",
+  includeServices: true,
+});
+assert.match(productionDemoServerManifest, /Name="QuickHackDemoPostgreSQL"/u);
+assert.match(productionDemoServerManifest, /Name="QuickHackDemoServerConsole"/u);
+assert.throws(
+  () => renderAppxManifest({
+    target: "operational-server",
+    version: "1.0.0",
+    includeServices: true,
+  }),
+  (error) => error.code === "MSIX_SERVICE_GATE_CLOSED"
+);
 const serverSetupManifest = renderAppxManifest({
   target: "demo-server",
   version: "1.0.0",
@@ -92,10 +109,6 @@ assert.throws(
     "AppxManifest.xml",
   ]),
   (error) => error.code === "MSIX_STAGING_STALE"
-);
-assert.throws(
-  () => renderAppxManifest({ target: "demo-server", version: "1.0.0", includeServices: true }),
-  (error) => error.code === "MSIX_SERVICE_GATE_CLOSED"
 );
 const previewManifest = renderAppxManifest({
   target: "demo-server",

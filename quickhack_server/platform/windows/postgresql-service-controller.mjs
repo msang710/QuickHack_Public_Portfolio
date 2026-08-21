@@ -15,7 +15,10 @@ export function createWindowsPostgresqlServiceController(options = {}) {
   const serviceProcess = options.serviceProcess ?? createWindowsServiceProcess(options);
   async function installer(input) {
     const installerAdapter = await import("../../../tools/platform/windows/postgresql-service-install.mjs");
-    return installerAdapter.installPostgresqlService(input);
+    return installerAdapter.installPostgresqlService({
+      ...input,
+      serviceOwnership: input?.serviceOwnership ?? "COMPATIBILITY",
+    });
   }
   return Object.freeze({
     descriptor: descriptor(platform),

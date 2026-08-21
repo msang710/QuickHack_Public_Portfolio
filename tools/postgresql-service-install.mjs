@@ -9,13 +9,20 @@ export function installPostgresqlService(input) {
 }
 
 function parseArguments(argv) {
-  const values = { installDir: "", dataDir: "", runtimeConfig: "", serviceName: QUICKHACK_POSTGRESQL_SERVICE_NAME };
+  const values = {
+    installDir: "",
+    dataDir: "",
+    runtimeConfig: "",
+    serviceName: QUICKHACK_POSTGRESQL_SERVICE_NAME,
+    serviceOwnership: "COMPATIBILITY",
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--install-dir") values.installDir = argv[++index] || "";
     else if (argument === "--data-dir") values.dataDir = argv[++index] || "";
     else if (argument === "--runtime-config") values.runtimeConfig = argv[++index] || "";
     else if (argument === "--service-name") values.serviceName = argv[++index] || "";
+    else if (argument === "--service-ownership") values.serviceOwnership = argv[++index] || "";
     else throw new TypeError(`Unsupported PostgreSQL installer argument: ${argument}`);
   }
   for (const [key, value] of Object.entries(values)) {
@@ -26,6 +33,7 @@ function parseArguments(argv) {
     dataDir: path.resolve(values.dataDir),
     runtimeConfig: path.resolve(values.runtimeConfig),
     serviceName: values.serviceName,
+    serviceOwnership: values.serviceOwnership,
   };
 }
 

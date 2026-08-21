@@ -114,8 +114,30 @@ internal sealed class QuickHackServiceDefinition
     {
         get
         {
-            return preview || File.Exists(Path.Combine(mutableRoot, "provisioning", "READY"));
+            if (preview) return true;
+#if QUICKHACK_POSTGRESQL
+            return File.Exists(Path.Combine(mutableRoot, "provisioning", "POSTGRES_CLUSTER_READY"));
+#else
+            return File.Exists(Path.Combine(mutableRoot, "provisioning", "SERVICES_READY"));
+#endif
         }
+    }
+
+    internal string ReadinessMarkerName
+    {
+        get
+        {
+#if QUICKHACK_POSTGRESQL
+            return "POSTGRES_CLUSTER_READY";
+#else
+            return "SERVICES_READY";
+#endif
+        }
+    }
+
+    internal string MutableRoot
+    {
+        get { return mutableRoot; }
     }
 
     internal string ChildExecutable
@@ -235,7 +257,7 @@ internal sealed class QuickHackWindowsService : ServiceBase
     {
         if (!definition.IsProvisioned)
         {
-            TryLog("PROVISIONING_REQUIRED: packaged child process was not started.", EventLogEntryType.Information);
+            TryLogCode("PROVISIONING_REQUIRED", EventLogEntryType.Information);
             return;
         }
         Process started = Process.Start(definition.CreateStartInfo());
@@ -261,6 +283,7 @@ internal sealed class QuickHackWindowsService : ServiceBase
             processJob = job;
             stopping = false;
         }
+        TryLogCode("CHILD_STARTED", EventLogEntryType.Information);
         ThreadPool.QueueUserWorkItem(delegate { MonitorChild(started); });
     }
 
@@ -288,13 +311,13 @@ internal sealed class QuickHackWindowsService : ServiceBase
             if (unexpected)
             {
                 ExitCode = observedChild.ExitCode == 0 ? 1 : observedChild.ExitCode;
-                TryLog("Packaged child process exited unexpectedly.", EventLogEntryType.Error);
+                TryLogCode("CHILD_EXIT_UNEXPECTED", EventLogEntryType.Error);
                 Stop();
             }
         }
         catch (Exception error)
         {
-            TryLog("Packaged child monitor failed: " + error.GetType().Name, EventLogEntryType.Error);
+            TryLogCode("CHILD_MONITOR_FAILED", EventLogEntryType.Error);
         }
     }
 
@@ -322,12 +345,25 @@ internal sealed class QuickHackWindowsService : ServiceBase
         {
             if (stoppedChild != null) stoppedChild.Dispose();
             if (stoppedJob != null) stoppedJob.Dispose();
+            TryLogCode("CHILD_STOPPED", EventLogEntryType.Information);
         }
     }
 
-    private void TryLog(string message, EventLogEntryType entryType)
+    private void TryLogCode(string code, EventLogEntryType entryType)
     {
+        string message = "code=" + code + " service=" + ServiceName;
         try { EventLog.WriteEntry(message, entryType); } catch { }
+        try
+        {
+            string logDirectory = Path.Combine(definition.MutableRoot, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(
+                Path.Combine(logDirectory, "packaged-service-host.log"),
+                DateTimeOffset.UtcNow.ToString("O") + " " + message + Environment.NewLine,
+                new System.Text.UTF8Encoding(false)
+            );
+        }
+        catch { }
     }
 }
 

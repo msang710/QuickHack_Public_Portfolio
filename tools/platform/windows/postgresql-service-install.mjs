@@ -27,6 +27,10 @@ import {
   assertPostgresqlToolVersions,
 } from "../../../quickhack_shared/platform/native-runtime-contract.mjs";
 import { createPostgresqlServiceCore } from "../../postgresql-service-core.mjs";
+import {
+  assertPostgresqlServiceOwnership,
+  postgresqlServiceRegistrationPlan,
+} from "./postgresql-service-ownership.mjs";
 
 const { Pool } = pg;
 export const QUICKHACK_POSTGRESQL_SERVICE_NAME = "QuickHackPostgreSQL";
@@ -39,13 +43,20 @@ const POSTGRESQL_MAJOR = String(POSTGRESQL_MAJOR_VERSION);
 const WINDOWS_SERVICE_QUERY_TIMEOUT_MS = 60_000;
 
 function parseArguments(argv) {
-  const values = { installDir: "", dataDir: "", runtimeConfig: "", serviceName: QUICKHACK_POSTGRESQL_SERVICE_NAME };
+  const values = {
+    installDir: "",
+    dataDir: "",
+    runtimeConfig: "",
+    serviceName: QUICKHACK_POSTGRESQL_SERVICE_NAME,
+    serviceOwnership: "COMPATIBILITY",
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--install-dir") values.installDir = argv[++index] || "";
     else if (argument === "--data-dir") values.dataDir = argv[++index] || "";
     else if (argument === "--runtime-config") values.runtimeConfig = argv[++index] || "";
     else if (argument === "--service-name") values.serviceName = argv[++index] || "";
+    else if (argument === "--service-ownership") values.serviceOwnership = argv[++index] || "";
     else throw new Error(`Unsupported argument: ${argument}`);
   }
   for (const [key, value] of Object.entries(values)) {
@@ -56,6 +67,7 @@ function parseArguments(argv) {
     dataDir: path.resolve(values.dataDir),
     runtimeConfig: path.resolve(values.runtimeConfig),
     serviceName: values.serviceName,
+    serviceOwnership: assertPostgresqlServiceOwnership(values.serviceOwnership),
   };
 }
 
@@ -284,6 +296,50 @@ async function ensureServiceRegistered(binDirectory, clusterDirectory, serviceNa
   ]);
 }
 
+async function ensurePackagedServiceRegistered(plan) {
+  const encodedPath = Buffer.from(plan.expectedHostPath, "utf8").toString("base64");
+  const state = await runPowerShellScript(
+    "$ErrorActionPreference='Stop'; " +
+      "$path=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine())); " +
+      `$service=Get-CimInstance Win32_Service -Filter \"Name='${plan.serviceName}'\" -ErrorAction SilentlyContinue; ` +
+      "if($null -eq $service){'MISSING'}elseif($service.PathName.IndexOf($path,[StringComparison]::OrdinalIgnoreCase) -ge 0){'MATCH'}else{'MISMATCH'}",
+    {
+      inputLine: encodedPath,
+      timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS,
+      timeoutAttempts: 2,
+      maxOutputBytes: 64 * 1024,
+    }
+  );
+  if (state === "MISSING") {
+    const error = new Error("The package-owned QuickHack PostgreSQL service is missing.");
+    error.code = "PACKAGED_POSTGRESQL_SERVICE_MISSING";
+    throw error;
+  }
+  if (state !== "MATCH") {
+    const error = new Error("The QuickHack PostgreSQL service is not owned by the current package.");
+    error.code = "PACKAGED_POSTGRESQL_SERVICE_MISMATCH";
+    throw error;
+  }
+}
+
+async function publishPostgresqlReadinessMarker(markerPath) {
+  const directory = path.dirname(markerPath);
+  const temporaryPath = `${markerPath}.${process.pid}.${randomUUID()}.tmp`;
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  try {
+    const handle = await fs.open(temporaryPath, "wx", 0o600);
+    try {
+      await handle.writeFile("QUICKHACK_POSTGRES_CLUSTER_READY_V1\n", "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(temporaryPath, markerPath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
+}
+
 async function ensureServiceStarted(serviceName) {
   await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
@@ -461,6 +517,7 @@ export async function installPostgresqlService(input) {
     kind: "operational",
   }).config;
   const serviceName = assertServiceName(input.serviceName);
+  const serviceOwnership = assertPostgresqlServiceOwnership(input.serviceOwnership);
   const adapter = {
     async inspect(context) {
       const binDirectory = path.join(context.installDir, "runtime", "postgresql", "bin");
@@ -483,6 +540,7 @@ export async function installPostgresqlService(input) {
         clusterDirectory,
         clusterParent: path.dirname(clusterDirectory),
         serviceName,
+        serviceOwnership,
       };
     },
     async validateToolchain({ observed }) {
@@ -535,8 +593,23 @@ export async function installPostgresqlService(input) {
         runtimeConfig.database.port
       );
     },
-    async registerService({ observed }) {
-      await ensureServiceRegistered(observed.binDirectory, observed.clusterDirectory, observed.serviceName);
+    async registerService(context) {
+      const plan = postgresqlServiceRegistrationPlan({
+        serviceOwnership: context.observed.serviceOwnership,
+        serviceName: context.observed.serviceName,
+        installDir: context.installDir,
+        dataDir: context.dataDir,
+      });
+      if (plan.ownership === "PACKAGED") {
+        await ensurePackagedServiceRegistered(plan);
+        await publishPostgresqlReadinessMarker(plan.readinessMarkerPath);
+      } else {
+        await ensureServiceRegistered(
+          context.observed.binDirectory,
+          context.observed.clusterDirectory,
+          context.observed.serviceName
+        );
+      }
     },
     async startService({ observed }) {
       await ensureServiceStarted(observed.serviceName);
