@@ -36,6 +36,9 @@ for (const contract of [
   /RemoteAddress LocalSubnet/u,
   /bootstrapUsers/u,
   /credential_revision/u,
+  /Stop-Service -InputObject \$console -Force/u,
+  /Stop-Service -InputObject \$postgres -Force/u,
+  /Start-Service -InputObject \$postgres[\s\S]*Start-Service -InputObject \$console/u,
 ]) {
   assert.match(adapter, contract);
 }

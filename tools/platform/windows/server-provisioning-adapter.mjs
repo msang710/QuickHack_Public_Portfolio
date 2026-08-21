@@ -97,9 +97,13 @@ async function startPackagedServices() {
   await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
       `$postgres=Get-Service -Name '${POSTGRESQL_SERVICE}' -ErrorAction Stop; ` +
-      "if($postgres.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running){Start-Service -InputObject $postgres; $postgres.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(60))}; " +
       `$console=Get-Service -Name '${CONSOLE_SERVICE}' -ErrorAction Stop; ` +
-      "if($console.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running){Start-Service -InputObject $console; $console.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(60))}; 'RUNNING'",
+      "$stopped=[System.ServiceProcess.ServiceControllerStatus]::Stopped; " +
+      "$running=[System.ServiceProcess.ServiceControllerStatus]::Running; " +
+      "if($console.Status -ne $stopped){Stop-Service -InputObject $console -Force; $console.WaitForStatus($stopped,[TimeSpan]::FromSeconds(60))}; " +
+      "if($postgres.Status -ne $stopped){Stop-Service -InputObject $postgres -Force; $postgres.WaitForStatus($stopped,[TimeSpan]::FromSeconds(60))}; " +
+      "Start-Service -InputObject $postgres; $postgres.WaitForStatus($running,[TimeSpan]::FromSeconds(60)); " +
+      "Start-Service -InputObject $console; $console.WaitForStatus($running,[TimeSpan]::FromSeconds(60)); 'RUNNING'",
     { timeoutMs: 130_000, maxOutputBytes: 64 * 1024 }
   );
 }
