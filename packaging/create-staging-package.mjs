@@ -576,6 +576,10 @@ if (existsSync(path.join(nodeSourceDir, "LICENSE"))) {
     path.join(runtimeTargetDir, "node", "LICENSE")
   );
 }
+copyFile(
+  path.join(nodeSourceDir, "quickhack-node-runtime.json"),
+  path.join(runtimeTargetDir, "node", "quickhack-node-runtime.json")
+);
 copyDir(path.join(rootDir, "prisma"), path.join(serverTargetDir, "prisma"));
 const serverRuntimeFiles = collectServerRuntimeClosure({
   rootDirectory: rootDir,
