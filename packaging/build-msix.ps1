@@ -233,7 +233,7 @@ try {
         -user `
         -f `
         -addstore `
-        Root `
+        TrustedPeople `
         $exportedCertificatePath | Out-Null
       if ($LASTEXITCODE -ne 0) {
         throw "The QuickHack test certificate could not be trusted temporarily."
@@ -312,7 +312,7 @@ try {
   ) | Set-Content -LiteralPath $checksumPath -Encoding ascii
 } finally {
   if ($trustedCertificate) {
-    Remove-QuickHackCurrentUserCertificate -StoreName Root -Thumbprint $trustedCertificate
+    Remove-QuickHackCurrentUserCertificate -StoreName TrustedPeople -Thumbprint $trustedCertificate
   }
   if ($testCertificate) {
     Remove-QuickHackCurrentUserCertificate -StoreName My -Thumbprint $testCertificate.Thumbprint
