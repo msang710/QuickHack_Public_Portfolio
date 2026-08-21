@@ -139,7 +139,8 @@ internal sealed class QuickHackSetupDefinition
 
     internal QuickHackSetupHandoff Acknowledge(string transactionId, int generation)
     {
-        if (!Guid.TryParse(transactionId, out _))
+        Guid parsedTransactionId;
+        if (!Guid.TryParse(transactionId, out parsedTransactionId))
         {
             throw new InvalidDataException("The pending Setup transaction id is invalid.");
         }
@@ -202,10 +203,10 @@ internal sealed class QuickHackSetupDefinition
         {
             child.StartInfo = startInfo;
             child.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs eventArgs) {
-                string line = eventArgs.Data ?? String.Empty;
-                if (line.StartsWith("errorCode=", StringComparison.Ordinal))
+                string errorLine = eventArgs.Data ?? String.Empty;
+                if (errorLine.StartsWith("errorCode=", StringComparison.Ordinal))
                 {
-                    string candidate = line.Substring("errorCode=".Length);
+                    string candidate = errorLine.Substring("errorCode=".Length);
                     if (StableCode.IsMatch(candidate)) errorCode = candidate;
                 }
             };
@@ -325,7 +326,8 @@ internal sealed class QuickHackSetupHandoff
 
     internal void Validate()
     {
-        if (!protocolObserved || !Guid.TryParse(TransactionId, out _))
+        Guid parsedTransactionId;
+        if (!protocolObserved || !Guid.TryParse(TransactionId, out parsedTransactionId))
         {
             throw new InvalidDataException("Server Setup handoff identity is invalid.");
         }
