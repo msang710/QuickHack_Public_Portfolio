@@ -75,6 +75,13 @@ try {
     () => windowsServerProvisioningRoot({ programData: "relative", artifactKind }),
     (error) => error.code === "PROVISIONING_PATH_INVALID"
   );
+  assert.throws(
+    () => windowsServerProvisioningRoot({
+      programData: "C:\\ProgramData\\..\\Users",
+      artifactKind,
+    }),
+    (error) => error.code === "PROVISIONING_PATH_INVALID"
+  );
 
   const interruptedJournal = journal("interrupted");
   const interruptedAdapter = fixtureAdapter({ failOnceAt: "SCHEMA", acknowledged: true });

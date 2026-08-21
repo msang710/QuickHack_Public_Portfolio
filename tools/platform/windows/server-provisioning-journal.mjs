@@ -77,10 +77,14 @@ function processIsRunning(pid) {
 }
 
 export function windowsServerProvisioningRoot(input) {
-  const programData = path.win32.resolve(String(input?.programData ?? ""));
-  if (!/^[A-Za-z]:\\/u.test(programData)) {
+  const source = String(input?.programData ?? "").trim();
+  if (
+    !/^[A-Za-z]:\\/u.test(source) ||
+    source.split(/[\\/]+/u).includes("..")
+  ) {
     throw failure("PROVISIONING_PATH_INVALID", "Windows ProgramData must be an absolute drive path.");
   }
+  const programData = path.win32.resolve(source);
   return path.win32.join(
     programData,
     "QuickHack",
