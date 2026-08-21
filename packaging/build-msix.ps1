@@ -163,7 +163,7 @@ $sourceCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvarian
 if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') {
   throw "Unable to resolve the source Git commit for the MSIX build."
 }
-$sourceDirty = [bool]((& git -C $repositoryRoot status --porcelain).Count)
+$sourceDirty = [bool](@(& git -C $repositoryRoot status --porcelain).Count)
 
 $layoutArguments = @(
   (Join-Path $PSScriptRoot "windows\msix\create-msix-layout.mjs"),

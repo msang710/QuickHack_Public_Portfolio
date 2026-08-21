@@ -107,6 +107,10 @@ assert.match(buildScript, /MakeAppx unpack \/o/u);
 assert.match(buildScript, /TestCertificate/u);
 assert.match(buildScript, /SignTool verify \/pa \/v/u);
 assert.match(buildScript, /sourceDirty/u);
+assert.match(
+  buildScript,
+  /\$sourceDirty = \[bool\]\(@\(& git -C \$repositoryRoot status --porcelain\)\.Count\)/u
+);
 assert.match(sdkResolver, /Microsoft\.Windows\.SDK\.BuildTools/u);
 assert.match(verifier, /AppxSignature\.p7x/u);
 assert.match(verifier, /visualAssetManifestSha256/u);
