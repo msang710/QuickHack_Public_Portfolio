@@ -137,7 +137,13 @@ function Invoke-ClientLauncher {
     -Wait `
     -PassThru
   if ($process.ExitCode -ne 0) {
-    throw "QuickHack demo-client launcher $Command failed with exit code $($process.ExitCode)."
+    $errorPath = Join-Path $mutableRoot "launcher-error.log"
+    $detail = if (Test-Path -LiteralPath $errorPath -PathType Leaf) {
+      (Get-Content -LiteralPath $errorPath -Raw -Encoding utf8).Trim()
+    } else {
+      "No quiet launcher error record was produced."
+    }
+    throw "QuickHack demo-client launcher $Command failed with exit code $($process.ExitCode). $detail"
   }
 }
 

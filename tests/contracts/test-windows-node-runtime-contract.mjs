@@ -50,6 +50,10 @@ for (const forbiddenEnvironment of ["NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_
 }
 assert.match(launcher, /--no-open/u);
 assert.match(launcher, /--quiet/u);
+assert.match(launcher, /if \(quiet\)\s*\{\s*PersistLauncherError\(error\);/u);
+assert.match(launcher, /File\.WriteAllText\(path, error\.ToString\(\), new UTF8Encoding\(false\)\)/u);
+assert.match(nativeClientLifecycle, /launcher-error\.log/u);
+assert.match(nativeClientLifecycle, /No quiet launcher error record was produced/u);
 assert.match(nativeClientLifecycle, /-Verb RunAs/u);
 assert.match(nativeClientLifecycle, /quickhack-test-certificate-guardian\.ps1/u);
 assert.match(nativeClientLifecycle, /foreach \(\$storeName in @\("Root", "My"\)\)/u);

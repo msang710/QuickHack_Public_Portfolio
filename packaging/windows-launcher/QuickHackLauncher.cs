@@ -28,6 +28,7 @@ using System.Windows.Forms;
 
 internal static class QuickHackLauncher
 {
+    private const string LauncherErrorFileName = "launcher-error.log";
 #if QUICKHACK_CLIENT && QUICKHACK_DEMONSTRATION
     private const string ProductName = "QuickHack Demo Client";
     private const string ArtifactKind = "DEMONSTRATION_CLIENT";
@@ -57,6 +58,9 @@ internal static class QuickHackLauncher
     [STAThread]
     private static int Main(string[] args)
     {
+        bool quiet = HasOption(args, "--quiet");
+        if (quiet) ClearLauncherError();
+
         try
         {
             string root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(
@@ -86,14 +90,61 @@ internal static class QuickHackLauncher
         }
         catch (Exception error)
         {
-            MessageBox.Show(
-                error.Message,
-                ProductName,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error
-            );
+            if (quiet)
+            {
+                PersistLauncherError(error);
+            }
+            else
+            {
+                MessageBox.Show(
+                    error.Message,
+                    ProductName,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
             return 1;
         }
+    }
+
+    private static bool HasOption(string[] args, string option)
+    {
+        foreach (string argument in args)
+        {
+            if (String.Equals(argument, option, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    private static string LauncherErrorPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "QuickHack",
+            MutableRootName,
+            LauncherErrorFileName
+        );
+    }
+
+    private static void ClearLauncherError()
+    {
+        try
+        {
+            string path = LauncherErrorPath();
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch { }
+    }
+
+    private static void PersistLauncherError(Exception error)
+    {
+        try
+        {
+            string path = LauncherErrorPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, error.ToString(), new UTF8Encoding(false));
+        }
+        catch { }
     }
 
     private static void ValidatePackage(string root)
