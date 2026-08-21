@@ -26,6 +26,8 @@ param(
 
   [switch]$IncludeServices,
 
+  [switch]$IncludeServerSetup,
+
   [switch]$AllowPreviewServices,
 
   [switch]$Preview,
@@ -177,6 +179,7 @@ $layoutArguments = @(
 )
 if ($sourceDirty) { $layoutArguments += "--source-dirty" }
 if ($IncludeServices) { $layoutArguments += "--include-services" }
+if ($IncludeServerSetup) { $layoutArguments += "--include-server-setup" }
 if ($AllowPreviewServices) { $layoutArguments += "--allow-preview-services" }
 if ($Preview) { $layoutArguments += "--preview" }
 & $nodeExecutable @layoutArguments

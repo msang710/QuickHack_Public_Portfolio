@@ -140,6 +140,7 @@ export function createMsixLayout(input) {
       version: semanticVersion,
       msixVersion,
       includeServices,
+      includeServerSetup: input?.includeServerSetup === true,
       allowPreviewServices: input?.allowPreviewServices === true,
       preview: config.preview,
     }),
@@ -163,6 +164,7 @@ export function createMsixLayout(input) {
     visualAssetManifestSha256: createHash("sha256").update(visualManifestBytes).digest("hex"),
     runtime: config.runtime,
     serviceExtensions: includeServices,
+    serverSetup: input?.includeServerSetup === true,
     preview: config.preview,
   });
   writeFileSync(
@@ -179,6 +181,7 @@ function parseArguments(argv) {
     if (argument === "--source-dirty") result.sourceDirty = true;
     else if (argument === "--preview") result.preview = true;
     else if (argument === "--include-services") result.includeServices = true;
+    else if (argument === "--include-server-setup") result.includeServerSetup = true;
     else if (argument === "--allow-preview-services") result.allowPreviewServices = true;
     else if (argument.startsWith("--") && argument.includes("=")) {
       const [name, ...valueParts] = argument.slice(2).split("=");
@@ -196,6 +199,7 @@ function parseArguments(argv) {
     sourceCommit: result.sourceCommit,
     sourceDirty: result.sourceDirty === true,
     includeServices: result.includeServices === true,
+    includeServerSetup: result.includeServerSetup === true,
     allowPreviewServices: result.allowPreviewServices === true,
     preview: result.preview === true,
   };

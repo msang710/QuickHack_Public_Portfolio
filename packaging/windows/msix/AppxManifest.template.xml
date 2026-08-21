@@ -37,6 +37,7 @@
         Square150x150Logo="Assets\Square150x150Logo.png" />
 {{APPLICATION_EXTENSIONS}}
     </Application>
+{{ADDITIONAL_APPLICATIONS}}
   </Applications>
   <Capabilities>
 {{CAPABILITIES}}

@@ -66,6 +66,14 @@ assert.throws(
   (error) => error.code === "MSIX_ROLE_CONTENT_FORBIDDEN"
 );
 const server = msixArtifactConfig("demo-server");
+const serverSetupManifest = renderAppxManifest({
+  target: "demo-server",
+  version: "1.0.0",
+  includeServerSetup: true,
+});
+assert.match(serverSetupManifest, /Id="QuickHackDemoServerSetup"/u);
+assert.match(serverSetupManifest, /Name="allowElevation"/u);
+assert.equal((serverSetupManifest.match(/<Application\b/gu) ?? []).length, 2);
 assert.throws(
   () => assertMsixStagingContent(server, [
     server.launcherFileName,

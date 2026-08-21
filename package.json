@@ -63,6 +63,7 @@
     "test:windows-msix-package": "node tests/contracts/test-windows-msix-package.mjs",
     "test:windows-msix-foundation": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/integration/windows/test-msix-foundation.ps1",
     "test:windows-msix-service-host": "node tests/contracts/test-windows-msix-service-host.mjs",
+    "test:windows-msix-server-setup": "node tests/contracts/test-windows-msix-server-setup.mjs",
     "test:windows-msix-packaged-services": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/integration/windows/msix/test-msix-packaged-services.ps1",
     "test:windows-node-runtime": "node tests/contracts/test-windows-node-runtime-contract.mjs",
     "test:windows-demo-client-msix": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/integration/windows/msix/test-demo-client-msix.ps1",
