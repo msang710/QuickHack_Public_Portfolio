@@ -28,6 +28,10 @@ const nativeClientLifecycle = readFileSync(
   new URL("../integration/windows/msix/test-demo-client-msix.ps1", import.meta.url),
   "utf8"
 );
+const launcherInvocation = nativeClientLifecycle.slice(
+  nativeClientLifecycle.indexOf("function Invoke-ClientLauncher"),
+  nativeClientLifecycle.indexOf("function Get-ClientProcessProof")
+);
 const certificateGuardian = readFileSync(
   new URL(
     "../integration/windows/msix/quickhack-test-certificate-guardian.ps1",
@@ -76,6 +80,8 @@ assert.match(nativeClientLifecycle, /launcher-error\.log/u);
 assert.match(nativeClientLifecycle, /No quiet launcher error record was produced/u);
 assert.match(nativeClientLifecycle, /-Verb RunAs/u);
 assert.match(nativeClientLifecycle, /quickhack-test-certificate-guardian\.ps1/u);
+assert.match(launcherInvocation, /\$process\.WaitForExit\(\)/u);
+assert.doesNotMatch(launcherInvocation, /-Wait/u);
 assert.match(nativeClientLifecycle, /foreach \(\$storeName in @\("Root", "My"\)\)/u);
 assert.doesNotMatch(nativeClientLifecycle, /@\("Root", "TrustedPeople", "My"\)/u);
 assert.match(certificateGuardian, /Cert:\\LocalMachine\\TrustedPeople/u);

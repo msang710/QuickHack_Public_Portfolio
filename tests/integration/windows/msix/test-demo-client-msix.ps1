@@ -134,8 +134,10 @@ function Invoke-ClientLauncher {
     -FilePath $launcherPath `
     -ArgumentList @($Command, "--no-open", "--quiet") `
     -WindowStyle Hidden `
-    -Wait `
     -PassThru
+  # The cmdlet's tree-wait option follows a successful launcher into its
+  # long-lived runtime process tree. Wait only for the direct process instead.
+  $process.WaitForExit()
   if ($process.ExitCode -ne 0) {
     $errorPath = Join-Path $mutableRoot "launcher-error.log"
     $detail = if (Test-Path -LiteralPath $errorPath -PathType Leaf) {
