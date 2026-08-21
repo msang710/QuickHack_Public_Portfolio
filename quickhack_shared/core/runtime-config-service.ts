@@ -80,12 +80,22 @@ export class RuntimeConfigService {
       const appRoot =
         envText(env, "QUICKHACK_APP_ROOT") ||
         /* turbopackIgnore: true */ process.cwd();
+      const artifactKind = envText(env, "QUICKHACK_ARTIFACT_KIND").toUpperCase();
+      const installedArtifactKind =
+        artifactKind === "DEMONSTRATION_CLIENT" ||
+        artifactKind === "OPERATIONAL_CLIENT"
+          ? artifactKind
+          : undefined;
+      if (artifactKind && !installedArtifactKind) {
+        throw new TypeError("QUICKHACK_ARTIFACT_KIND must identify a client artifact.");
+      }
       const paths = this.resolveRuntimeDirectories({
         role: "client",
         appRoot,
         runtimeDir: envText(env, "QUICKHACK_RUNTIME_DIR") || undefined,
         environment: env,
-        deployment: "development",
+        deployment: installedArtifactKind ? "system-service" : "development",
+        artifactKind: installedArtifactKind,
       });
       const environment = clientEnvironment(env);
       return {

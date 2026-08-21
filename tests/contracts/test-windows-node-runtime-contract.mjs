@@ -16,6 +16,14 @@ const launcher = readFileSync(
   new URL("../../packaging/windows-launcher/QuickHackLauncher.cs", import.meta.url),
   "utf8"
 );
+const clientRuntimeLauncher = readFileSync(
+  new URL("../../tools/client-runtime-launcher.mjs", import.meta.url),
+  "utf8"
+);
+const clientRuntimeBootstrap = readFileSync(
+  new URL("../../tools/client-runtime-bootstrap.mjs", import.meta.url),
+  "utf8"
+);
 const nativeClientLifecycle = readFileSync(
   new URL("../integration/windows/msix/test-demo-client-msix.ps1", import.meta.url),
   "utf8"
@@ -53,6 +61,10 @@ assert.match(staging, /runtimeTargetDir, "node", "quickhack-node-runtime\.json"/
 assert.match(launcher, /ConfigurePackagedClientEnvironment/u);
 assert.match(launcher, /environment\["QUICKHACK_PACKAGE_MANIFEST"\] = manifest/u);
 assert.match(launcher, /environment\["PATH"\] = String\.Join/u);
+assert.match(launcher, /"QUICKHACK_ARTIFACT_KIND"/u);
+assert.match(clientRuntimeLauncher, /QUICKHACK_ARTIFACT_KIND: packageIdentity\?\.artifactKind/u);
+assert.match(clientRuntimeBootstrap, /clientRuntimeEnvironmentOverrides/u);
+assert.match(clientRuntimeBootstrap, /"QUICKHACK_ARTIFACT_KIND"/u);
 for (const forbiddenEnvironment of ["NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS"]) {
   assert.ok(launcher.includes(`"${forbiddenEnvironment}"`));
 }

@@ -5,6 +5,37 @@ import { composeProcessExecution } from "./platform/compose-process-execution.mj
 
 export const CLIENT_RUNTIME_BOOTSTRAP_FILENAME = fileURLToPath(import.meta.url);
 
+const CLIENT_RUNTIME_ENVIRONMENT_NAMES = Object.freeze([
+  "PORT",
+  "HOST",
+  "HOSTNAME",
+  "NODE_ENV",
+  "NODE_EXTRA_CA_CERTS",
+  "QUICKHACK_RUNTIME_ROLE",
+  "QUICKHACK_ARTIFACT_KIND",
+  "QUICKHACK_SERVER_URL",
+  "QUICKHACK_APP_ROOT",
+  "QUICKHACK_RUNTIME_DIR",
+  "QUICKHACK_CLIENT_INSTANCE_ID",
+  "QUICKHACK_CLIENT_TRUST_BUNDLE_DIR",
+  "QUICKHACK_PACKAGE_MANIFEST",
+  "QUICKHACK_PRINT_SPOOL_INITIALIZED",
+  "QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_CODE",
+  "QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_MESSAGE",
+  "QUICKHACK_NEXT_DIST_DIR",
+]);
+
+function clientRuntimeEnvironmentOverrides(source) {
+  const overrides = {};
+  for (const name of CLIENT_RUNTIME_ENVIRONMENT_NAMES) {
+    const value = source?.[name];
+    if (value !== undefined && value !== null && String(value) !== "") {
+      overrides[name] = String(value);
+    }
+  }
+  return overrides;
+}
+
 function parseArguments(argv) {
   const separator = argv.indexOf("--");
   if (separator < 0 || separator === argv.length - 1) {
@@ -64,9 +95,13 @@ export async function runClientRuntimeBootstrap(argv = process.argv.slice(2), op
   if (typeof processExecution.childEnvironment !== "function") {
     throw new TypeError("The client runtime bootstrap requires the platform child environment policy.");
   }
+  const environment = options.environment ?? process.env;
   const child = processExecution.spawnOwnedChild(process.execPath, input.runtimeArguments, {
     cwd: input.cwd,
-    env: processExecution.childEnvironment({ source: process.env }),
+    env: processExecution.childEnvironment({
+      source: environment,
+      overrides: clientRuntimeEnvironmentOverrides(environment),
+    }),
     stdio: "inherit",
   });
   let stopping = false;

@@ -282,6 +282,7 @@ internal static class QuickHackLauncher
             "NODE_EXTRA_CA_CERTS",
             "QUICKHACK_PACKAGE_MANIFEST",
             "QUICKHACK_RUNTIME_ROLE",
+            "QUICKHACK_ARTIFACT_KIND",
             "QUICKHACK_SERVER_URL",
             "QUICKHACK_APP_ROOT",
             "QUICKHACK_RUNTIME_DIR",
