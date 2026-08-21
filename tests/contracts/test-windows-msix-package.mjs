@@ -155,8 +155,9 @@ assert.match(buildScript, /MakeAppx pack \/o \/h SHA256/u);
 assert.match(buildScript, /MakeAppx unpack \/o/u);
 assert.match(buildScript, /TestCertificate/u);
 assert.match(buildScript, /SignTool verify \/pa \/v/u);
-assert.match(buildScript, /-addstore\s+`\s+TrustedPeople/u);
-assert.doesNotMatch(buildScript, /-addstore\s+`\s+Root/u);
+assert.match(buildScript, /StoreLocation\]::LocalMachine/u);
+assert.match(buildScript, /trustedCertificateStoreName = "Root"/u);
+assert.match(buildScript, /Remove-QuickHackCertificate/u);
 assert.match(buildScript, /sourceDirty/u);
 assert.match(
   buildScript,

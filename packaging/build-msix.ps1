@@ -118,14 +118,16 @@ function Remove-QuickHackReleaseDirectory {
   }
 }
 
-function Remove-QuickHackCurrentUserCertificate {
+function Remove-QuickHackCertificate {
   param(
     [Parameter(Mandatory = $true)][string]$StoreName,
+    [Parameter(Mandatory = $true)]
+    [System.Security.Cryptography.X509Certificates.StoreLocation]$StoreLocation,
     [Parameter(Mandatory = $true)][string]$Thumbprint
   )
   $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
     $StoreName,
-    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+    $StoreLocation
   )
   try {
     $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
@@ -192,6 +194,8 @@ $sidecarPath = Join-Path $outputPath "$filePrefix-msix-manifest-$Version.json"
 $checksumPath = Join-Path $outputPath "$filePrefix-SHA256SUMS.txt"
 $testCertificate = $null
 $trustedCertificate = $null
+$trustedCertificateStoreName = $null
+$trustedCertificateStoreLocation = $null
 $exportedCertificatePath = Join-Path $workPath "test-signing.cer"
 
 try {
@@ -229,14 +233,44 @@ try {
         New-Item -ItemType Directory -Path (Split-Path -Parent $requestedCertificatePath) -Force | Out-Null
         Copy-Item -LiteralPath $exportedCertificatePath -Destination $requestedCertificatePath -Force
       }
-      & "$env:WINDIR\System32\certutil.exe" `
-        -user `
-        -f `
-        -addstore `
-        TrustedPeople `
-        $exportedCertificatePath | Out-Null
-      if ($LASTEXITCODE -ne 0) {
-        throw "The QuickHack test certificate could not be trusted temporarily."
+      $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+      $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+      $isAdministrator = $principal.IsInRole(
+        [System.Security.Principal.WindowsBuiltInRole]::Administrator
+      )
+      if ($isAdministrator) {
+        $trustedCertificateStoreLocation = `
+          [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
+        $trustedCertificateStoreName = "Root"
+        $trustedStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+          $trustedCertificateStoreName,
+          $trustedCertificateStoreLocation
+        )
+        $publicCertificate = `
+          [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $exportedCertificatePath
+          )
+        try {
+          $trustedStore.Open(
+            [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite
+          )
+          $trustedStore.Add($publicCertificate)
+        } finally {
+          $trustedStore.Close()
+        }
+      } else {
+        $trustedCertificateStoreLocation = `
+          [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+        $trustedCertificateStoreName = "Root"
+        & "$env:WINDIR\System32\certutil.exe" `
+          -user `
+          -f `
+          -addstore `
+          Root `
+          $exportedCertificatePath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+          throw "The QuickHack test certificate could not be trusted temporarily."
+        }
       }
       $trustedCertificate = $testCertificate.Thumbprint
       & $sdkTools.SignTool sign /fd SHA256 /sha1 $testCertificate.Thumbprint $packagePath
@@ -312,10 +346,16 @@ try {
   ) | Set-Content -LiteralPath $checksumPath -Encoding ascii
 } finally {
   if ($trustedCertificate) {
-    Remove-QuickHackCurrentUserCertificate -StoreName TrustedPeople -Thumbprint $trustedCertificate
+    Remove-QuickHackCertificate `
+      -StoreName $trustedCertificateStoreName `
+      -StoreLocation $trustedCertificateStoreLocation `
+      -Thumbprint $trustedCertificate
   }
   if ($testCertificate) {
-    Remove-QuickHackCurrentUserCertificate -StoreName My -Thumbprint $testCertificate.Thumbprint
+    Remove-QuickHackCertificate `
+      -StoreName My `
+      -StoreLocation CurrentUser `
+      -Thumbprint $testCertificate.Thumbprint
   }
   if (Test-Path -LiteralPath $workPath) {
     Remove-QuickHackReleaseDirectory -Path $workPath
