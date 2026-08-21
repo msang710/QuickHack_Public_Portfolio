@@ -29,7 +29,10 @@ for (const config of configs) {
   assert.equal(config.runtime.postgresql, config.role === "server");
   assert.equal(config.services.length, config.role === "server" ? 2 : 0);
   assert.match(config.legacyAppId, /^\{[A-F0-9-]{36}\}$/u);
-  assert.equal(config.serviceHostsReady, false);
+  assert.equal(
+    config.serviceHostsReady,
+    config.packageTarget === "demo-server"
+  );
 }
 assert.equal(msixArtifactConfig("demo-server").oppositeServerIdentity, "QuickHack.Operational.Server");
 assert.equal(msixArtifactConfig("operational-server").oppositeServerIdentity, "QuickHack.Demonstration.Server");
