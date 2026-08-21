@@ -19,6 +19,8 @@ const { Pool } = pg;
 const INITIAL_LEADER_LOCK_KEY = 1_894_475_102;
 export const INITIAL_LEADER_RESULT_PROTOCOL =
   "QUICKHACK_INITIAL_LEADER_RESULT_V1";
+export const INITIAL_LEADER_HANDOFF_PROTOCOL =
+  "QUICKHACK_INITIAL_LEADER_HANDOFF_V1";
 export const INITIAL_LEADER_USERNAME = "admin";
 export const INITIAL_LEADER_DISPLAY_NAME = "관리자";
 
@@ -77,6 +79,173 @@ function provisioningConnectionString(explicitConnectionString) {
     role: "runtime",
     applicationName: "quickhack-initial-leader",
   });
+}
+
+function provisioningError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function pendingInitialLeader(value) {
+  if (value === null || value === undefined) return null;
+  const userId = Number(value.userId);
+  const generation = Number(value.generation);
+  if (
+    !Number.isSafeInteger(userId) ||
+    userId < 1 ||
+    !Number.isSafeInteger(generation) ||
+    generation < 1 ||
+    value.acknowledgedAt
+  ) {
+    throw provisioningError(
+      "INITIAL_LEADER_PENDING_INVALID",
+      "Pending initial LEADER metadata is invalid."
+    );
+  }
+  return Object.freeze({ userId, generation });
+}
+
+export function initialLeaderHandoffLines(result) {
+  const lines = [INITIAL_LEADER_HANDOFF_PROTOCOL, `status=${result.status}`];
+  if (result.status === "CREATED" || result.status === "REISSUED") {
+    lines.push(
+      `userId=${result.userId}`,
+      `generation=${result.generation}`,
+      `username=${INITIAL_LEADER_USERNAME}`,
+      `temporaryPassword=${result.temporaryPassword}`
+    );
+  }
+  return Object.freeze(lines);
+}
+
+export async function provisionInitialLeaderHandoff({
+  pending = null,
+  connectionString = "",
+}) {
+  const expectedPending = pendingInitialLeader(pending);
+  const temporaryPassword = randomBytes(24).toString("base64url");
+  const passwordHash = await hashPassword(temporaryPassword);
+  const pool = new Pool({
+    connectionString: provisioningConnectionString(connectionString),
+    application_name: "quickhack-initial-leader-handoff",
+    max: 1,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 30_000,
+  });
+  const client = await pool.connect();
+
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [
+      INITIAL_LEADER_LOCK_KEY,
+    ]);
+    await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+    const countResult = await client.query("SELECT COUNT(*) AS count FROM users");
+    const userCount = BigInt(countResult.rows[0]?.count ?? "0");
+
+    if (!expectedPending) {
+      if (userCount > 0n) {
+        await client.query("COMMIT");
+        return Object.freeze({ status: "ALREADY_INITIALIZED" });
+      }
+      const inserted = await client.query(
+        `INSERT INTO users (
+           username, password_hash, must_change_password, role,
+           is_developer, mobile_packing_enabled, is_active
+         ) VALUES ($1, $2, 1, 'LEADER', 0, 0, 1)
+         RETURNING user_id, credential_revision`,
+        [INITIAL_LEADER_USERNAME, passwordHash]
+      );
+      const userId = Number(inserted.rows[0].user_id);
+      await client.query(
+        `INSERT INTO employee_profiles (user_id, display_name)
+         VALUES ($1, $2)`,
+        [userId, INITIAL_LEADER_DISPLAY_NAME]
+      );
+      await client.query("COMMIT");
+      return Object.freeze({
+        status: "CREATED",
+        userId,
+        generation: Number(inserted.rows[0].credential_revision) + 1,
+        username: INITIAL_LEADER_USERNAME,
+        temporaryPassword,
+      });
+    }
+
+    if (userCount !== 1n) {
+      throw provisioningError(
+        "INITIAL_LEADER_STATE_CONFLICT",
+        "Pending initial LEADER reissue requires exactly one user."
+      );
+    }
+    const locked = await client.query(
+      `SELECT
+         user_id,
+         username,
+         role,
+         must_change_password,
+         is_active,
+         credential_revision
+       FROM users
+       WHERE user_id = $1
+       FOR UPDATE`,
+      [expectedPending.userId]
+    );
+    const leader = locked.rows[0];
+    if (
+      locked.rowCount !== 1 ||
+      leader.username !== INITIAL_LEADER_USERNAME ||
+      leader.role !== "LEADER" ||
+      Number(leader.must_change_password) !== 1 ||
+      Number(leader.is_active) !== 1
+    ) {
+      throw provisioningError(
+        "INITIAL_LEADER_STATE_CONFLICT",
+        "Pending initial LEADER no longer matches the protected bootstrap account."
+      );
+    }
+    const credentialRevision = Number(leader.credential_revision);
+    if (credentialRevision !== expectedPending.generation - 1) {
+      throw provisioningError(
+        "INITIAL_LEADER_GENERATION_CONFLICT",
+        "Pending initial LEADER generation is stale."
+      );
+    }
+    const updated = await client.query(
+      `UPDATE users
+       SET password_hash = $1,
+           credential_revision = credential_revision + 1,
+           revision = revision + 1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $2
+         AND credential_revision = $3
+       RETURNING user_id, credential_revision`,
+      [passwordHash, expectedPending.userId, credentialRevision]
+    );
+    if (updated.rowCount !== 1) {
+      throw provisioningError(
+        "INITIAL_LEADER_GENERATION_CONFLICT",
+        "Initial LEADER password was changed by another transaction."
+      );
+    }
+    await client.query("COMMIT");
+    return Object.freeze({
+      status: "REISSUED",
+      userId: Number(updated.rows[0].user_id),
+      generation: Number(updated.rows[0].credential_revision) + 1,
+      username: INITIAL_LEADER_USERNAME,
+      temporaryPassword,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    await client
+      .query("SELECT pg_advisory_unlock($1)", [INITIAL_LEADER_LOCK_KEY])
+      .catch(() => undefined);
+    client.release();
+    await pool.end();
+  }
 }
 
 export async function provisionInitialLeader({
