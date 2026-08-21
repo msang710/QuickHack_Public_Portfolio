@@ -62,6 +62,7 @@ for (const contract of [
   /--generation/u,
   /AppendAuditEvent/u,
   /passwordBox\.Clear\(\)/u,
+  /environment\["QUICKHACK_WINDOWS_SECRET_SCOPE"\] = "LOCAL_MACHINE"/u,
 ]) {
   assert.match(setupSource, contract);
 }

@@ -243,7 +243,8 @@ internal sealed class QuickHackSetupDefinition
             "DATABASE_URL",
             "QUICKHACK_PACKAGE_MANIFEST",
             "QUICKHACK_ARTIFACT_KIND",
-            "QUICKHACK_PACKAGE_FLAVOR"
+            "QUICKHACK_PACKAGE_FLAVOR",
+            "QUICKHACK_WINDOWS_SECRET_SCOPE"
         })
         {
             environment.Remove(name);
@@ -260,6 +261,7 @@ internal sealed class QuickHackSetupDefinition
         environment["WINDIR"] = systemRoot;
         environment["ProgramData"] = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         environment["QUICKHACK_PACKAGE_MANIFEST"] = manifest;
+        environment["QUICKHACK_WINDOWS_SECRET_SCOPE"] = "LOCAL_MACHINE";
     }
 
     private string RequiredFile(params string[] parts)

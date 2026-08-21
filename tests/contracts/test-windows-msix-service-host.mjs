@@ -27,6 +27,10 @@ assert.match(host, /PostgresqlMajorVersion = "18"/u);
 assert.match(host, /PostgresqlMajorVersion,[\s\S]*"data"/u);
 assert.match(host, /environment\.Clear\(\)/u);
 assert.match(host, /environment\["PATH"\] = executableDirectory/u);
+assert.match(
+  host,
+  /environment\["QUICKHACK_WINDOWS_SECRET_SCOPE"\] = "LOCAL_MACHINE"/u
+);
 assert.match(host, /CreateJobObject/u);
 assert.match(host, /AssignProcessToJobObject/u);
 assert.match(host, /JobObjectLimitKillOnJobClose/u);

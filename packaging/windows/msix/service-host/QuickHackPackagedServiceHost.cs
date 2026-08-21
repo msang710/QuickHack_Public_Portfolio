@@ -228,6 +228,7 @@ internal sealed class QuickHackServiceDefinition
         environment["WINDIR"] = systemRoot;
         environment["ProgramData"] = programData;
         environment["QUICKHACK_PACKAGE_FLAVOR"] = QuickHackPackagedServiceHost.PackageFlavor;
+        environment["QUICKHACK_WINDOWS_SECRET_SCOPE"] = "LOCAL_MACHINE";
     }
 
     private static void RequiredFile(string filename)

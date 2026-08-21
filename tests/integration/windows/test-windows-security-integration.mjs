@@ -9,7 +9,6 @@ import { runPowerShellScript } from "@/quickhack_server/security/async-powershel
 import {
   ensureCurrentWindowsUserSecretDirectory,
   protectForCurrentWindowsUser,
-  secureWindowsDirectoryAcl,
   unprotectForCurrentWindowsUser,
 } from "@/quickhack_server/security/windows-user-protected-secret";
 import {
@@ -25,6 +24,7 @@ import {
 } from "../../../tools/client-print-spool-core.mjs";
 import { windowsPrinterBackend } from "../../../quickhack_client/platform/windows/printer-backend.ts";
 import { createWindowsQhkeyMasterKeyProvider } from "../../../quickhack_server/platform/windows/qhkey-master-key-provider.mjs";
+import { createWindowsServerSecretProtector } from "../../../quickhack_server/platform/windows/server-secret-protector.mjs";
 
 const EXPECTED_SYSTEM_SID = "S-1-5-18";
 const EXPECTED_NETWORK_SERVICE_SID = "S-1-5-20";
@@ -192,6 +192,12 @@ async function runWindowsSecurityIntegration() {
   let plainSecret = null;
   let protectedSecret = null;
   let unprotectedSecret = null;
+  let machineProtectedSecret = null;
+  let machineUnprotectedSecret = null;
+  const machineSecretStorage = createWindowsServerSecretProtector({
+    platform: "win32",
+    scope: "LOCAL_MACHINE",
+  });
 
   try {
     await runStage("WINDOWS_SECURITY_CAPABILITY_FAILED", async () => {
@@ -219,6 +225,28 @@ async function runWindowsSecurityIntegration() {
       );
     });
 
+    await runStage("WINDOWS_MACHINE_DPAPI_ROUNDTRIP_FAILED", async () => {
+      machineProtectedSecret = await machineSecretStorage.protector.protect(
+        "POSTGRESQL_CREDENTIAL",
+        plainSecret
+      );
+      assert.equal(
+        machineProtectedSecret.equals(plainSecret),
+        false,
+        "Windows machine DPAPI returned the plaintext secret."
+      );
+      machineUnprotectedSecret =
+        await machineSecretStorage.protector.unprotect(
+          "POSTGRESQL_CREDENTIAL",
+          machineProtectedSecret
+        );
+      assert.equal(
+        machineUnprotectedSecret.equals(plainSecret),
+        true,
+        "Windows machine DPAPI did not recover the original secret."
+      );
+    });
+
     await runStage("WINDOWS_QHKEY_DPAPI_ROUNDTRIP_FAILED", async () => {
       const provider = createWindowsQhkeyMasterKeyProvider({ platform: "win32" });
       provider.write({ dataDir: qhkeyDataDir, protection: "DPAPI" });
@@ -240,9 +268,7 @@ async function runWindowsSecurityIntegration() {
     });
     await runStage("POSTGRESQL_DIRECTORY_ACL_FAILED", async () => {
       await seedUnexpectedDirectoryAcl(serviceDirectory);
-      await secureWindowsDirectoryAcl(serviceDirectory, {
-        includeNetworkService: true,
-      });
+      await machineSecretStorage.protector.ensureDirectory(serviceDirectory);
     });
 
     const spoolPaths = getClientPrintSpoolPaths({ clientDataDir });
@@ -287,7 +313,7 @@ async function runWindowsSecurityIntegration() {
 
     console.log(
       [
-        "Windows DPAPI and private-directory ACL integration verified.",
+        "Windows user/machine DPAPI and private-directory ACL integration verified.",
         `windows=${inspected.windowsVersion}`,
         `powershell=${inspected.powershellVersion}`,
         `filesystem=${inspected.fileSystem}`,
@@ -299,6 +325,8 @@ async function runWindowsSecurityIntegration() {
     plainSecret?.fill(0);
     protectedSecret?.fill(0);
     unprotectedSecret?.fill(0);
+    machineProtectedSecret?.fill(0);
+    machineUnprotectedSecret?.fill(0);
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 }

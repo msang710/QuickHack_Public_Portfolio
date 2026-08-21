@@ -20,27 +20,59 @@ const WINDOWS_COMMAND_OPTIONS = Object.freeze({
   maxOutputBytes: 256 * 1024,
 });
 const WINDOWS_ACL_REMOVE_BATCH_SIZE = 32;
-const PROTECT_SCRIPT =
-  "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security; " +
-  "$inputText=[Console]::In.ReadLine(); " +
-  "$bytes=[Convert]::FromBase64String($inputText); " +
-  "$protected=[System.Security.Cryptography.ProtectedData]::Protect($bytes,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser); " +
-  "[Convert]::ToBase64String($protected)";
-const UNPROTECT_SCRIPT =
-  "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security; " +
-  "$inputText=[Console]::In.ReadLine(); " +
-  "$bytes=[Convert]::FromBase64String($inputText); " +
-  "$plain=[System.Security.Cryptography.ProtectedData]::Unprotect($bytes,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser); " +
-  "[Convert]::ToBase64String($plain)";
+export const WINDOWS_SERVER_SECRET_SCOPE_ENV =
+  "QUICKHACK_WINDOWS_SECRET_SCOPE";
+export const WINDOWS_SERVER_SECRET_SCOPES = Object.freeze([
+  "CURRENT_USER",
+  "LOCAL_MACHINE",
+]);
+
+const WINDOWS_SERVER_SECRET_SCOPE_SET = new Set(WINDOWS_SERVER_SECRET_SCOPES);
+
+export function resolveWindowsServerSecretScope(value) {
+  const scope = String(value ?? "CURRENT_USER").trim().toUpperCase();
+  if (!WINDOWS_SERVER_SECRET_SCOPE_SET.has(scope)) {
+    throw new TypeError("Unsupported Windows server secret identity scope.");
+  }
+  return scope;
+}
+
+function scopeContract(value) {
+  const scope = resolveWindowsServerSecretScope(value);
+  return Object.freeze({
+    scope,
+    dpapiScope: scope === "LOCAL_MACHINE" ? "LocalMachine" : "CurrentUser",
+    includeNetworkService: scope === "LOCAL_MACHINE",
+    metadata: createServerSecretProtectionMetadata({
+      protection: scope === "LOCAL_MACHINE"
+        ? "WINDOWS_DPAPI_LOCAL_MACHINE"
+        : "WINDOWS_DPAPI_CURRENT_USER",
+      identityScope: scope === "LOCAL_MACHINE"
+        ? "LOCAL_WINDOWS_MACHINE"
+        : "CURRENT_WINDOWS_USER",
+      portable: false,
+      formatVersion: 1,
+      lifecycle: "OPAQUE_PAYLOAD",
+    }),
+  });
+}
+
+function dpapiScript(operation, dpapiScope) {
+  const method = operation === "PROTECT" ? "Protect" : "Unprotect";
+  const result = operation === "PROTECT" ? "protected" : "plain";
+  return (
+    "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security; " +
+    "$inputText=[Console]::In.ReadLine(); " +
+    "$bytes=[Convert]::FromBase64String($inputText); " +
+    `$${result}=[System.Security.Cryptography.ProtectedData]::${method}($bytes,$null,[System.Security.Cryptography.DataProtectionScope]::${dpapiScope}); ` +
+    `[Convert]::ToBase64String($${result})`
+  );
+}
 
 export const windowsServerSecretProtectionMetadata =
-  createServerSecretProtectionMetadata({
-    protection: "WINDOWS_DPAPI_CURRENT_USER",
-    identityScope: "CURRENT_WINDOWS_USER",
-    portable: false,
-    formatVersion: 1,
-    lifecycle: "OPAQUE_PAYLOAD",
-  });
+  scopeContract("CURRENT_USER").metadata;
+export const windowsMachineServerSecretProtectionMetadata =
+  scopeContract("LOCAL_MACHINE").metadata;
 
 function decodeStrictBase64(value, label) {
   const normalized = String(value ?? "").trim();
@@ -177,12 +209,15 @@ export function createWindowsServerSecretProtector(options = {}) {
   const runScript = options.runScript ?? runPowerShellScript;
   const runScriptSync = options.runScriptSync ?? runPowerShellScriptSync;
   const platform = options.platform ?? process.platform;
+  const contract = scopeContract(options.scope);
+  const protectScript = dpapiScript("PROTECT", contract.dpapiScope);
+  const unprotectScript = dpapiScript("UNPROTECT", contract.dpapiScope);
   const secretDirectoryInitializations = new Map();
   let currentWindowsIdentityPromise;
 
   function requireWindows() {
     if (platform !== "win32") {
-      throw new Error("Windows user-protected secret storage is unavailable.");
+      throw new Error("Windows DPAPI server secret storage is unavailable.");
     }
   }
 
@@ -240,14 +275,17 @@ export function createWindowsServerSecretProtector(options = {}) {
     await fs.mkdir(resolvedPath, { recursive: true, mode: 0o700 });
     const identity = await currentWindowsIdentity();
     const currentSid = identity.sid;
-    const expectedPrincipals = ["SY", "BA", currentSid];
-    if (includeNetworkService) expectedPrincipals.splice(1, 0, "NS");
-    const grants = [
-      `*${currentSid}:(OI)(CI)F`,
-      "*S-1-5-18:(OI)(CI)F",
-      ...(includeNetworkService ? ["*S-1-5-20:(OI)(CI)F"] : []),
-      "*S-1-5-32-544:(OI)(CI)F",
+    const expectedPrincipals = [
+      ...new Set([
+        currentSid,
+        "S-1-5-18",
+        ...(includeNetworkService ? ["S-1-5-20"] : []),
+        "S-1-5-32-544",
+      ]),
     ];
+    const grants = expectedPrincipals.map(
+      (principal) => `*${principal}:(OI)(CI)F`
+    );
     const verificationPath = path.join(
       os.tmpdir(),
       `.quickhack-acl-${process.pid}-${randomUUID()}.txt`
@@ -294,7 +332,7 @@ export function createWindowsServerSecretProtector(options = {}) {
     assertServerSecretBuffer(secret, "server secret");
     try {
       return decodeStrictBase64(
-        await runScript(PROTECT_SCRIPT, {
+        await runScript(protectScript, {
           inputLine: secret.toString("base64"),
           timeoutMs: WINDOWS_SECURITY_OPERATION_TIMEOUT_MS,
           timeoutAttempts: 2,
@@ -312,7 +350,7 @@ export function createWindowsServerSecretProtector(options = {}) {
     assertServerSecretBuffer(payload, "protected server secret");
     try {
       return decodeStrictBase64(
-        await runScript(UNPROTECT_SCRIPT, {
+        await runScript(unprotectScript, {
           inputLine: payload.toString("base64"),
           timeoutMs: WINDOWS_SECURITY_OPERATION_TIMEOUT_MS,
           timeoutAttempts: 2,
@@ -322,7 +360,7 @@ export function createWindowsServerSecretProtector(options = {}) {
       );
     } catch {
       throw new Error(
-        "Windows DPAPI could not open the server-owned secret for the current Windows account."
+        `Windows DPAPI could not open the server-owned secret in ${contract.scope} scope.`
       );
     }
   }
@@ -332,7 +370,7 @@ export function createWindowsServerSecretProtector(options = {}) {
     assertServerSecretBuffer(payload, "protected server secret");
     try {
       return decodeStrictBase64(
-        runScriptSync(UNPROTECT_SCRIPT, {
+        runScriptSync(unprotectScript, {
           inputLine: payload.toString("base64"),
           timeoutMs: WINDOWS_SECURITY_OPERATION_TIMEOUT_MS,
           timeoutAttempts: 2,
@@ -342,7 +380,7 @@ export function createWindowsServerSecretProtector(options = {}) {
       );
     } catch {
       throw new Error(
-        "Windows DPAPI could not open the server-owned secret for the current Windows account."
+        `Windows DPAPI could not open the server-owned secret in ${contract.scope} scope.`
       );
     }
   }
@@ -352,7 +390,9 @@ export function createWindowsServerSecretProtector(options = {}) {
     const normalizedPath = path.resolve(directoryPath).toLowerCase();
     const existing = secretDirectoryInitializations.get(normalizedPath);
     if (existing) return existing;
-    const initialization = secureDirectoryAcl(directoryPath).catch(() => {
+    const initialization = secureDirectoryAcl(directoryPath, {
+      includeNetworkService: contract.includeNetworkService,
+    }).catch(() => {
       throw new Error(
         "The server could not secure the protected-secret directory ACL."
       );
@@ -374,7 +414,7 @@ export function createWindowsServerSecretProtector(options = {}) {
       state: "READY",
       ownerStage: "PR-05",
     }),
-    metadata: windowsServerSecretProtectionMetadata,
+    metadata: contract.metadata,
     async protect(kind, secret) {
       assertServerSecretKind(kind);
       return protectBytes(secret);
@@ -410,7 +450,9 @@ export function createWindowsServerSecretProtector(options = {}) {
   });
 }
 
-const windowsServerSecret = createWindowsServerSecretProtector();
+const windowsServerSecret = createWindowsServerSecretProtector({
+  scope: "CURRENT_USER",
+});
 
 export const windowsServerSecretProtector = windowsServerSecret.protector;
 export const protectForCurrentWindowsUser = windowsServerSecret.protectBytes;
