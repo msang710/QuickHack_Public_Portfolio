@@ -41,7 +41,6 @@ async function probeTls(status, ca) {
           hostname: "127.0.0.1",
           port: address.port,
           path: "/",
-          servername: "localhost",
           ca,
           rejectUnauthorized: true,
         },

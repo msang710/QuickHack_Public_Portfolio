@@ -27,6 +27,14 @@ const certificateGuardian = readFileSync(
   ),
   "utf8"
 );
+const nativeTlsInitializer = readFileSync(
+  new URL("../../tools/initialize-https.ps1", import.meta.url),
+  "utf8"
+);
+const nativeTlsLifecycle = readFileSync(
+  new URL("../regression/test-server-console-tls.mjs", import.meta.url),
+  "utf8"
+);
 
 assert.equal(config.schemaVersion, 1);
 assert.match(config.version, /^24\.[0-9]+\.[0-9]+$/u);
@@ -61,5 +69,8 @@ assert.doesNotMatch(nativeClientLifecycle, /@\("Root", "TrustedPeople", "My"\)/u
 assert.match(certificateGuardian, /Cert:\\LocalMachine\\TrustedPeople/u);
 assert.match(certificateGuardian, /StoreLocation\]::LocalMachine/u);
 assert.match(certificateGuardian, /"TrustedPeople"/u);
+assert.match(nativeTlsInitializer, /\$chainCertificate\.RawData/u);
+assert.match(nativeTlsInitializer, /\$publicChainCertificate\.Dispose\(\)/u);
+assert.doesNotMatch(nativeTlsLifecycle, /servername:\s*"localhost"/u);
 
 console.log("Pinned Windows Node runtime and package-owned client launcher contract verified.");

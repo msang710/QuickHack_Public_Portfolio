@@ -395,15 +395,28 @@ function Export-PrivatePfx {
     [object[]]$ChainCertificates = @()
   )
   $collection = [System.Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
+  $publicChainCertificates = New-Object `
+    System.Collections.Generic.List[System.Security.Cryptography.X509Certificates.X509Certificate2]
   [void]$collection.Add($Certificate)
-  foreach ($chainCertificate in $ChainCertificates) {
-    if ($chainCertificate) { [void]$collection.Add($chainCertificate) }
+  try {
+    foreach ($chainCertificate in $ChainCertificates) {
+      if (-not $chainCertificate) { continue }
+      $publicChainCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+        $chainCertificate.RawData
+      )
+      $publicChainCertificates.Add($publicChainCertificate)
+      [void]$collection.Add($publicChainCertificate)
+    }
+    $bytes = $collection.Export(
+      [System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,
+      $Passphrase
+    )
+    [System.IO.File]::WriteAllBytes($Path, $bytes)
+  } finally {
+    foreach ($publicChainCertificate in $publicChainCertificates) {
+      $publicChainCertificate.Dispose()
+    }
   }
-  $bytes = $collection.Export(
-    [System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,
-    $Passphrase
-  )
-  [System.IO.File]::WriteAllBytes($Path, $bytes)
 }
 
 if ($HttpsPort -lt 1 -or $HttpsPort -gt 65535) {
