@@ -45,8 +45,8 @@ function fixtureAdapter(options = {}) {
       mutations.push(step.id);
       if (step.id === options.failOnceAt && !failed) {
         failed = true;
-        const error = new Error("fixture interruption");
-        error.code = "PROVISIONING_INTERRUPTED";
+        const error = new Error(options.failMessage ?? "fixture interruption");
+        error.code = options.failCode ?? "PROVISIONING_INTERRUPTED";
         throw error;
       }
       if (step.id === "INITIAL_LEADER" && !options.acknowledged) {
@@ -102,6 +102,48 @@ try {
   assert.deepEqual(resumed.completedSteps, SERVER_PROVISIONING_STEPS.map((step) => step.id));
   assert.equal(interruptedAdapter.mutations.filter((step) => step === "PREFLIGHT").length, 1);
   assert.equal(interruptedAdapter.mutations.filter((step) => step === "SCHEMA").length, 2);
+
+  const externalCodeJournal = journal("external-code");
+  const externalCodeAdapter = fixtureAdapter({
+    failOnceAt: "SCHEMA",
+    failCode: "42501",
+    failMessage: "temporaryPassword=must-not-be-persisted",
+    acknowledged: true,
+  });
+  const externalCodeCore = createServerProvisioningCore({
+    artifactKind,
+    journal: externalCodeJournal,
+    adapter: externalCodeAdapter,
+  });
+  await assert.rejects(
+    () => externalCodeCore.run({ transactionId: randomUUID() }),
+    (error) =>
+      error.code === "PROVISIONING_SCHEMA_FAILED" &&
+      error.message === "Provisioning step failed for SCHEMA." &&
+      error.provisioningResult?.state === "REPAIR_REQUIRED" &&
+      error.provisioningResult?.errorCode === "PROVISIONING_SCHEMA_FAILED"
+  );
+  const externalCodeRecord = await externalCodeJournal.read();
+  assert.equal(externalCodeRecord.error.code, "PROVISIONING_SCHEMA_FAILED");
+  assert.doesNotMatch(
+    readFileSync(externalCodeJournal.journalPath, "utf8"),
+    /must-not-be-persisted/u
+  );
+
+  const platformCodeJournal = journal("platform-code");
+  const platformCodeCore = createServerProvisioningCore({
+    artifactKind,
+    journal: platformCodeJournal,
+    adapter: fixtureAdapter({ failOnceAt: "STATE_ROOT", failCode: "EPERM", acknowledged: true }),
+  });
+  await assert.rejects(
+    () => platformCodeCore.run({ transactionId: randomUUID() }),
+    (error) => error.code === "PROVISIONING_STATE_ROOT_FAILED"
+  );
+  assert.equal(
+    (await platformCodeJournal.read()).error.code,
+    "PROVISIONING_STATE_ROOT_FAILED"
+  );
 
   const handoffJournal = journal("handoff");
   const handoffAdapter = fixtureAdapter({ acknowledged: false, generation: 1 });

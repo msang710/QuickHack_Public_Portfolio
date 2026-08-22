@@ -13,6 +13,24 @@ function failure(code, message) {
   return error;
 }
 
+const STABLE_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{2,95}$/u;
+
+function normalizeProvisioningError(error, stepId) {
+  const candidate = String(error?.code ?? "").trim().toUpperCase();
+  if (
+    STABLE_ERROR_CODE_PATTERN.test(candidate) &&
+    candidate.includes("_") &&
+    !candidate.startsWith("ERR_")
+  ) {
+    if (error instanceof Error && error.code === candidate) return error;
+    return failure(candidate, error instanceof Error ? error.message : "Provisioning step failed.");
+  }
+  return failure(
+    `PROVISIONING_${stepId}_FAILED`,
+    `Provisioning step failed for ${stepId}.`
+  );
+}
+
 function observedReady(value) {
   return value === true || value?.ready === true;
 }
@@ -47,8 +65,10 @@ export function createServerProvisioningCore(options) {
       let record = await journal.initialize(requestedTransactionId);
       const transactionId = record.transactionId;
       const context = Object.freeze({ artifactKind, transactionId, input });
+      let activeStepId = "STEP";
       try {
         for (const step of SERVER_PROVISIONING_STEPS) {
+          activeStepId = step.id;
           let observed = await adapter.probe(step, context);
           if (!observedReady(observed)) {
             if (record.completedSteps.includes(step.id)) {
@@ -80,9 +100,8 @@ export function createServerProvisioningCore(options) {
         }
         return createServerProvisioningResult(record, { retryable: false });
       } catch (error) {
-        const code = assertServerProvisioningErrorCode(
-          error?.code ?? "PROVISIONING_STEP_FAILED"
-        );
+        const normalizedError = normalizeProvisioningError(error, activeStepId);
+        const code = assertServerProvisioningErrorCode(normalizedError.code);
         const state = provisioningFailureState(code);
         const retryable = !["UNSUPPORTED", "CONFLICT"].includes(state);
         record = await journal.recordFailure({
@@ -91,12 +110,12 @@ export function createServerProvisioningCore(options) {
           state,
           retryable,
         });
-        error.provisioningResult = createServerProvisioningResult(record, {
+        normalizedError.provisioningResult = createServerProvisioningResult(record, {
           state,
           errorCode: code,
           retryable,
         });
-        throw error;
+        throw normalizedError;
       }
     });
   }
