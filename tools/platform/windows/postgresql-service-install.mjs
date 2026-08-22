@@ -411,7 +411,7 @@ async function ensureServiceStarted(serviceName) {
       "POSTGRESQL_START_SERVICE_STOP_COMMAND_FAILED",
       () => runPowerShellScript(
         "$ErrorActionPreference='Stop'; " +
-          `Stop-Service -Name '${serviceName}' -ErrorAction Stop; 'STOP_REQUESTED'`,
+          `Stop-Service -Name '${serviceName}' -Force -ErrorAction Stop; 'STOP_REQUESTED'`,
         { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
       )
     );

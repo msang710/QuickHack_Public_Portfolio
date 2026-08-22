@@ -162,7 +162,10 @@ for (const code of serviceStartDetailCodes) {
   previousServiceStartStep = index;
 }
 assert.match(startServiceSource, /Get-Service -Name '\$\{serviceName\}'/u);
-assert.match(startServiceSource, /Stop-Service -Name '\$\{serviceName\}'/u);
+assert.match(
+  startServiceSource,
+  /Stop-Service -Name '\$\{serviceName\}' -Force -ErrorAction Stop/u
+);
 assert.match(startServiceSource, /Start-Service -Name '\$\{serviceName\}'/u);
 assert.match(startServiceSource, /Get-CimInstance Win32_Service/u);
 assert.match(startServiceSource, /observed\?\.state !== "Running"/u);
