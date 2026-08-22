@@ -84,6 +84,19 @@ await withRole("operator", async (pool) => {
       );
     }
   }
+
+  const mainDatabase = manifest.databases.find((database) => database.kind === "main");
+  for (const role of manifest.roles) {
+    const privilege = await pool.query(
+      "SELECT has_database_privilege($1, $2, 'CREATE') AS allowed",
+      [role.user, mainDatabase.name]
+    );
+    assert.equal(
+      privilege.rows[0]?.allowed,
+      role.kind === "operator" || role.kind === "migrator",
+      `${role.kind} CREATE main`
+    );
+  }
 });
 
 async function assertPermissionDenied(pool, sql) {

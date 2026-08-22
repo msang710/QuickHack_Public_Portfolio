@@ -573,8 +573,12 @@ async function provisionRolesAndDatabases({ connectionString, config, passwords 
       );
     }
     const mainDatabase = manifest.databases.find((database) => database.kind === "main");
+    const migratorRole = manifest.roles.find((role) => role.kind === "migrator");
     const runtimeRole = manifest.roles.find((role) => role.kind === "runtime");
     const backupRole = manifest.roles.find((role) => role.kind === "backup");
+    await client.query(
+      `GRANT CONNECT, CREATE ON DATABASE ${quoteIdentifier(mainDatabase.name)} TO ${quoteIdentifier(migratorRole.user)}`
+    );
     await client.query(
       `GRANT CONNECT ON DATABASE ${quoteIdentifier(mainDatabase.name)} TO ${quoteIdentifier(runtimeRole.user)}, ${quoteIdentifier(backupRole.user)}`
     );

@@ -141,6 +141,13 @@ for (const adapter of installerAdapters) {
   assert.match(adapter, /manifest\.roles\.filter/u);
   assert.match(adapter, /manifest\.flavor === "OPERATIONAL"/u);
   assert.match(adapter, /GRANT CONNECT ON DATABASE/u);
+  assert.match(adapter, /role\.kind === "migrator"/u);
+  assert.equal(adapter.match(/GRANT CONNECT, CREATE ON DATABASE/gu)?.length, 1);
+  assert.ok(
+    adapter.indexOf("REVOKE CONNECT, TEMPORARY, CREATE ON DATABASE") <
+      adapter.indexOf("GRANT CONNECT, CREATE ON DATABASE"),
+    "The migrator database grant must restore privileges after the role-wide revoke."
+  );
 }
 assert.doesNotMatch(
   installer,
