@@ -13,10 +13,20 @@ function argumentsFrom(argv) {
     if (!name?.startsWith("--") || !value || value.startsWith("--")) {
       throw new TypeError("QuickHack demo-client fixture arguments are incomplete.");
     }
-    result[name.slice(2)] = path.resolve(value);
+    result[name.slice(2)] = ["deployment-flavor", "artifact-kind"].includes(name.slice(2))
+      ? value.toUpperCase()
+      : path.resolve(value);
   }
   for (const required of ["config-dir", "work-dir", "ready-file", "stop-file"]) {
     if (!result[required]) throw new TypeError(`--${required} is required.`);
+  }
+  result["deployment-flavor"] ??= "DEMONSTRATION";
+  result["artifact-kind"] ??= `${result["deployment-flavor"]}_SERVER`;
+  if (
+    !["DEMONSTRATION", "OPERATIONAL"].includes(result["deployment-flavor"]) ||
+    result["artifact-kind"] !== `${result["deployment-flavor"]}_SERVER`
+  ) {
+    throw new TypeError("QuickHack client fixture flavor and server artifact kind must match.");
   }
   return result;
 }
@@ -58,8 +68,8 @@ const payload = JSON.stringify({
   ok: true,
   runtimeContractVersion: QUICKHACK_RUNTIME_CONTRACT_VERSION,
   role: "server",
-  deploymentFlavor: "DEMONSTRATION",
-  artifactKind: "DEMONSTRATION_SERVER",
+  deploymentFlavor: input["deployment-flavor"],
+  artifactKind: input["artifact-kind"],
   publicOrigin: origin,
   serverUrl: "",
   instanceId: "",

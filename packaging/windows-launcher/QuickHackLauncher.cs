@@ -50,6 +50,8 @@ internal static class QuickHackLauncher
     private const string PackageFlavor = "DEMONSTRATION";
     private const string ServerConsoleEntry = "server-console-demonstration.mjs";
     private const string ServerServiceName = "QuickHackDemoServerConsole";
+    private const string OppositeServerServiceName = "QuickHackOperationalServerConsole";
+    private const string ServerSetupExecutable = "QuickHack-Demo-Server-Setup.exe";
 #else
     private const string ProductName = "QuickHack Operational Server";
     private const string ArtifactKind = "OPERATIONAL_SERVER";
@@ -57,6 +59,8 @@ internal static class QuickHackLauncher
     private const string PackageFlavor = "OPERATIONAL";
     private const string ServerConsoleEntry = "server-console-operational.mjs";
     private const string ServerServiceName = "QuickHackOperationalServerConsole";
+    private const string OppositeServerServiceName = "QuickHackDemoServerConsole";
+    private const string ServerSetupExecutable = "QuickHack-Operational-Server-Setup.exe";
 #endif
 
     [STAThread]
@@ -356,12 +360,10 @@ internal static class QuickHackLauncher
     private static int StartServer(string root)
     {
         ValidatePackage(root);
-#if QUICKHACK_DEMONSTRATION
         if (IsPackagedProcess())
         {
-            return StartPackagedDemoServer(root);
+            return StartPackagedServer(root);
         }
-#endif
         using (ServiceController service = new ServiceController(ServerServiceName))
         {
             try
@@ -387,9 +389,9 @@ internal static class QuickHackLauncher
         return 0;
     }
 
-#if QUICKHACK_DEMONSTRATION
-    private static int StartPackagedDemoServer(string root)
+    private static int StartPackagedServer(string root)
     {
+        AssertNoOppositeServerService();
         string commonData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         string readyMarker = Path.Combine(
             commonData,
@@ -400,7 +402,7 @@ internal static class QuickHackLauncher
         );
         if (!File.Exists(readyMarker))
         {
-            string setup = RequiredFile(root, "QuickHack-Demo-Server-Setup.exe");
+            string setup = RequiredFile(root, ServerSetupExecutable);
             Process.Start(new ProcessStartInfo
             {
                 FileName = setup,
@@ -425,7 +427,26 @@ internal static class QuickHackLauncher
         });
         return 0;
     }
-#endif
+
+    private static void AssertNoOppositeServerService()
+    {
+        using (ServiceController opposite = new ServiceController(OppositeServerServiceName))
+        {
+            try
+            {
+                ServiceControllerStatus ignored = opposite.Status;
+                throw new InvalidOperationException(
+                    "OPPOSITE_SERVER_FLAVOR_PRESENT: The opposite QuickHack server flavor is installed. Remove it before starting this server."
+                );
+            }
+            catch (InvalidOperationException error)
+            {
+                Win32Exception inner = error.InnerException as Win32Exception;
+                if (inner != null && inner.NativeErrorCode == 1060) return;
+                throw;
+            }
+        }
+    }
 
     private static bool IsPackagedProcess()
     {

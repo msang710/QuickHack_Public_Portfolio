@@ -18,6 +18,22 @@ const verifier = readFileSync(
   new URL("../../tools/verify-msix-package.mjs", import.meta.url),
   "utf8"
 );
+const exactFourBuild = readFileSync(
+  new URL("../../packaging/build-msix-four-artifacts.ps1", import.meta.url),
+  "utf8"
+);
+const exactFourVerifier = readFileSync(
+  new URL("../../packaging/windows/msix/four-artifact-distribution.mjs", import.meta.url),
+  "utf8"
+);
+const exactFourNative = readFileSync(
+  new URL("../integration/windows/msix/test-four-artifact-msix.ps1", import.meta.url),
+  "utf8"
+);
+const centralFixture = readFileSync(
+  new URL("../integration/windows/msix/demo-client-central-server-fixture.mjs", import.meta.url),
+  "utf8"
+);
 
 for (const target of ["demo-server", "demo-client", "operational-server", "operational-client"]) {
   const config = msixArtifactConfig(target);
@@ -67,7 +83,8 @@ assert.throws(
 );
 const server = msixArtifactConfig("demo-server");
 assert.equal(server.serviceHostsReady, true);
-assert.equal(msixArtifactConfig("operational-server").serviceHostsReady, false);
+const operationalServer = msixArtifactConfig("operational-server");
+assert.equal(operationalServer.serviceHostsReady, true);
 const productionDemoServerManifest = renderAppxManifest({
   target: "demo-server",
   version: "1.0.0",
@@ -75,14 +92,13 @@ const productionDemoServerManifest = renderAppxManifest({
 });
 assert.match(productionDemoServerManifest, /Name="QuickHackDemoPostgreSQL"/u);
 assert.match(productionDemoServerManifest, /Name="QuickHackDemoServerConsole"/u);
-assert.throws(
-  () => renderAppxManifest({
-    target: "operational-server",
-    version: "1.0.0",
-    includeServices: true,
-  }),
-  (error) => error.code === "MSIX_SERVICE_GATE_CLOSED"
-);
+const operationalServerManifest = renderAppxManifest({
+  target: "operational-server",
+  version: "1.0.0",
+  includeServices: true,
+});
+assert.match(operationalServerManifest, /Name="QuickHackOperationalPostgreSQL"/u);
+assert.match(operationalServerManifest, /Name="QuickHackOperationalServerConsole"/u);
 const serverSetupManifest = renderAppxManifest({
   target: "demo-server",
   version: "1.0.0",
@@ -167,5 +183,25 @@ assert.match(sdkResolver, /Microsoft\.Windows\.SDK\.BuildTools/u);
 assert.match(verifier, /AppxSignature\.p7x/u);
 assert.match(verifier, /visualAssetManifestSha256/u);
 assert.match(verifier, /canonical branding revision/u);
+assert.match(exactFourBuild, /@\("demo-server", "demo-client", "operational-server", "operational-client"\)/u);
+assert.match(exactFourBuild, /IncludeServices/u);
+assert.match(exactFourBuild, /IncludeServerSetup/u);
+assert.match(exactFourBuild, /four-artifact-distribution\.mjs/u);
+assert.match(exactFourVerifier, /Expected exact four MSIX outputs and eight sidecars/u);
+assert.match(exactFourVerifier, /MSIX_FOUR_ARTIFACT_PROVENANCE_MISMATCH/u);
+for (const contract of [
+  /OPPOSITE_SERVER_FLAVOR_PRESENT/u,
+  /INITIAL_LEADER_PENDING_ACK/u,
+  /packageFlavor -ne "OPERATIONAL"/u,
+  /credentials\.Count -ne 4/u,
+  /PACKAGE_FLAVOR_MISMATCH/u,
+  /dualClientPorts/u,
+  /normalUninstallPreservedState/u,
+  /residueCount/u,
+]) {
+  assert.match(exactFourNative, contract);
+}
+assert.match(centralFixture, /"deployment-flavor"/u);
+assert.match(centralFixture, /\$\{result\["deployment-flavor"\]\}_SERVER/u);
 
 console.log("QuickHack MSIX manifest, layout, pack, signature, and verifier contracts verified.");

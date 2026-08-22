@@ -24,17 +24,9 @@ import {
   matchingBootstrapLeader,
   planExistingBootstrapLeader,
 } from "./server-provisioning-leader-policy.mjs";
+import { windowsServerProvisioningArtifactConfig } from "./server-provisioning-artifact-config.mjs";
 
 const { Pool } = pg;
-const EXPECTED_ARTIFACT = "DEMONSTRATION_SERVER";
-const EXPECTED_FLAVOR = "DEMONSTRATION";
-const POSTGRESQL_SERVICE = "QuickHackDemoPostgreSQL";
-const CONSOLE_SERVICE = "QuickHackDemoServerConsole";
-const FIREWALL_RULE = "QuickHack HTTPS Server (Local Subnet)";
-const OPPOSITE_SERVICES = Object.freeze([
-  "QuickHackOperationalPostgreSQL",
-  "QuickHackOperationalServerConsole",
-]);
 
 function failure(code, message) {
   const error = new Error(message);
@@ -84,10 +76,10 @@ async function writeJsonAtomic(filename, value) {
   }
 }
 
-async function serviceStates() {
+async function serviceStates(serviceNames) {
   const result = await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
-      `$names=@('${POSTGRESQL_SERVICE}','${CONSOLE_SERVICE}'); ` +
+      `$names=@('${serviceNames.join("','")}'); ` +
       "$names | ForEach-Object { $service=Get-Service -Name $_ -ErrorAction SilentlyContinue; if($null -eq $service){\"$_=MISSING\"}else{\"$_=$($service.Status)\"} }",
     { timeoutMs: 60_000, maxOutputBytes: 64 * 1024 }
   );
@@ -99,11 +91,11 @@ async function serviceStates() {
   );
 }
 
-async function startPackagedServices() {
+async function startPackagedServices(services) {
   await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
-      `$postgres=Get-Service -Name '${POSTGRESQL_SERVICE}' -ErrorAction Stop; ` +
-      `$console=Get-Service -Name '${CONSOLE_SERVICE}' -ErrorAction Stop; ` +
+      `$postgres=Get-Service -Name '${services.postgresql}' -ErrorAction Stop; ` +
+      `$console=Get-Service -Name '${services.console}' -ErrorAction Stop; ` +
       "$stopped=[System.ServiceProcess.ServiceControllerStatus]::Stopped; " +
       "$running=[System.ServiceProcess.ServiceControllerStatus]::Running; " +
       "if($console.Status -ne $stopped){Stop-Service -InputObject $console -Force; $console.WaitForStatus($stopped,[TimeSpan]::FromSeconds(60))}; " +
@@ -114,13 +106,13 @@ async function startPackagedServices() {
   );
 }
 
-async function firewallRuleReady(packageRoot) {
+async function firewallRuleReady(packageRoot, firewallRuleName) {
   const nodePath = path.join(packageRoot, "runtime", "node", "node.exe");
   const encodedPath = Buffer.from(nodePath, "utf8").toString("base64");
   const result = await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
       "$program=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine())); " +
-      `$rules=@(Get-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue); ` +
+      `$rules=@(Get-NetFirewallRule -DisplayName '${firewallRuleName}' -ErrorAction SilentlyContinue); ` +
       "if($rules.Count -ne 1){'NOT_READY'; exit 0}; " +
       "$rule=$rules[0]; $application=$rule | Get-NetFirewallApplicationFilter; $port=$rule | Get-NetFirewallPortFilter; $address=$rule | Get-NetFirewallAddressFilter; " +
       "if($rule.Direction -eq 'Inbound' -and $rule.Action -eq 'Allow' -and $rule.Enabled -eq 'True' -and $application.Program -eq $program -and $port.Protocol -eq 'TCP' -and $port.LocalPort -eq '3443' -and @($address.RemoteAddress) -contains 'LocalSubnet'){'READY'}else{'NOT_READY'}",
@@ -129,30 +121,30 @@ async function firewallRuleReady(packageRoot) {
   return result === "READY";
 }
 
-async function ensureFirewallRule(packageRoot) {
+async function ensureFirewallRule(packageRoot, firewallRuleName) {
   const nodePath = path.join(packageRoot, "runtime", "node", "node.exe");
   const encodedPath = Buffer.from(nodePath, "utf8").toString("base64");
   await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
       "$program=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine())); " +
-      `Get-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction Stop; ` +
-      `New-NetFirewallRule -DisplayName '${FIREWALL_RULE}' -Description 'Allows encrypted QuickHack client access from the local subnet.' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3443 -Program $program -RemoteAddress LocalSubnet -Profile Any -Enabled True | Out-Null; 'READY'`,
+      `Get-NetFirewallRule -DisplayName '${firewallRuleName}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction Stop; ` +
+      `New-NetFirewallRule -DisplayName '${firewallRuleName}' -Description 'Allows encrypted QuickHack client access from the local subnet.' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3443 -Program $program -RemoteAddress LocalSubnet -Profile Any -Enabled True | Out-Null; 'READY'`,
     { inputLine: encodedPath, timeoutMs: 60_000, maxOutputBytes: 64 * 1024 }
   );
 }
 
-async function assertNoOppositeServer() {
+async function assertNoOppositeServer(config) {
   const result = await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
-      `$package=Get-AppxPackage -Name 'QuickHack.Operational.Server' -ErrorAction SilentlyContinue; ` +
-      `$service=@('${OPPOSITE_SERVICES.join("','")}') | ForEach-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } | Select-Object -First 1; ` +
+      `$package=Get-AppxPackage -Name '${config.opposite.identityName}' -ErrorAction SilentlyContinue; ` +
+      `$service=@('${config.opposite.services.join("','")}') | ForEach-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } | Select-Object -First 1; ` +
       "if($null -ne $package -or $null -ne $service){'CONFLICT'}else{'CLEAR'}",
     { timeoutMs: 60_000, maxOutputBytes: 64 * 1024 }
   );
   if (result !== "CLEAR") {
     throw failure(
       "OPPOSITE_SERVER_FLAVOR_PRESENT",
-      "The operational server package or service is already present."
+      `The ${config.opposite.packageTarget} package or service is already present.`
     );
   }
 }
@@ -161,12 +153,10 @@ export function createWindowsServerProvisioningAdapter(input) {
   if (process.platform !== "win32") {
     throw failure("PROVISIONING_PLATFORM_UNSUPPORTED", "Windows server provisioning requires Windows.");
   }
-  if (input?.artifactKind !== EXPECTED_ARTIFACT) {
-    throw failure("PROVISIONING_ARTIFACT_NOT_READY", "Only the demonstration server is enabled in PR-05.");
-  }
+  const config = windowsServerProvisioningArtifactConfig(input?.artifactKind);
   const packageRoot = path.resolve(String(input?.packageRoot ?? ""));
   const programData = path.resolve(String(input?.programData ?? ""));
-  const mutableRoot = path.join(programData, "QuickHack", "demonstration-server");
+  const mutableRoot = path.join(programData, "QuickHack", config.mutableRootName);
   const dataDir = path.join(mutableRoot, "data");
   const runtimeConfigPath = path.join(mutableRoot, "config", "server-runtime.json");
   const provisioningRoot = path.join(mutableRoot, "provisioning");
@@ -183,8 +173,8 @@ export function createWindowsServerProvisioningAdapter(input) {
       throw failure("UNSUPPORTED_WINDOWS_VERSION", "QuickHack Server MSIX requires Windows build 19041 or newer.");
     }
     const manifest = JSON.parse(await fs.readFile(packageManifestPath, "utf8"));
-    if (manifest.schemaVersion !== 1 || manifest.artifactKind !== EXPECTED_ARTIFACT) {
-      throw failure("PACKAGE_FLAVOR_MISMATCH", "The installed package manifest is not the demonstration server.");
+    if (manifest.schemaVersion !== 1 || manifest.artifactKind !== config.artifactKind) {
+      throw failure("PACKAGE_FLAVOR_MISMATCH", "The installed package manifest does not match Server Setup.");
     }
     for (const filename of [
       path.join(packageRoot, "runtime", "node", "node.exe"),
@@ -196,11 +186,11 @@ export function createWindowsServerProvisioningAdapter(input) {
         throw failure("RUNTIME_INTEGRITY_FAILED", "A required package runtime file is missing.");
       }
     }
-    await assertNoOppositeServer();
+    await assertNoOppositeServer(config);
     const legacy = classifyLegacyWindowsInstall({
-      target: "demo-server",
+      target: config.packageTarget,
       observation: await observeLegacyWindowsInstall({
-        target: "demo-server",
+        target: config.packageTarget,
         packageRoot,
         programData,
       }),
@@ -227,7 +217,7 @@ export function createWindowsServerProvisioningAdapter(input) {
         configPath: runtimeConfigPath,
         kind: "operational",
       }).config;
-      return loaded.packageFlavor === EXPECTED_FLAVOR && path.resolve(loaded.dataDirectory) === dataDir;
+      return loaded.packageFlavor === config.expectedFlavor && path.resolve(loaded.dataDirectory) === dataDir;
     } catch {
       return false;
     }
@@ -238,30 +228,20 @@ export function createWindowsServerProvisioningAdapter(input) {
     await secureWindowsDirectoryAcl(mutableRoot, { includeNetworkService: true });
     await writeJsonAtomic(runtimeConfigPath, {
       schemaVersion: 3,
-      packageFlavor: EXPECTED_FLAVOR,
+      packageFlavor: config.expectedFlavor,
       environment: "production",
       coupangWriteApiEnabled: false,
       logenWriteApiEnabled: false,
       dataDirectory: dataDir,
       backupRetentionCount: 30,
-      database: {
-        host: "127.0.0.1",
-        port: 5432,
-        name: "quickhack",
-        runtimeUser: "quickhack_runtime",
-        migratorUser: "quickhack_migrator",
-        coupangMockName: "quickhack_mock_coupang",
-        coupangMockUser: "quickhack_mock_coupang",
-        logenMockName: "quickhack_mock_logen",
-        logenMockUser: "quickhack_mock_logen",
-      },
+      database: config.runtimeDatabase,
     });
   }
 
   async function credentialsReady() {
     return (
       await Promise.all(
-        postgresqlRoleKindsForFlavor(EXPECTED_FLAVOR).map((role) =>
+        postgresqlRoleKindsForFlavor(config.expectedFlavor).map((role) =>
           regularFile(postgresqlCredentialPath(role, dataDir))
         )
       )
@@ -273,7 +253,7 @@ export function createWindowsServerProvisioningAdapter(input) {
       installDir: packageRoot,
       dataDir,
       runtimeConfig: runtimeConfigPath,
-      serviceName: POSTGRESQL_SERVICE,
+      serviceName: config.services.postgresql,
       serviceOwnership: "PACKAGED",
     });
   }
@@ -289,7 +269,7 @@ export function createWindowsServerProvisioningAdapter(input) {
     if (!(await regularFile(postgresMarker)) || !(await regularFile(versionPath))) return false;
     const version = String(await fs.readFile(versionPath, "utf8")).trim();
     if (version !== String(POSTGRESQL_MAJOR_VERSION)) return false;
-    return (await serviceStates()).get(POSTGRESQL_SERVICE) === "RUNNING";
+    return (await serviceStates([config.services.postgresql])).get(config.services.postgresql) === "RUNNING";
   }
 
   async function schemaReady() {
@@ -397,11 +377,11 @@ export function createWindowsServerProvisioningAdapter(input) {
 
   async function servicesReady() {
     if (!(await regularFile(servicesMarker))) return false;
-    const states = await serviceStates();
+    const states = await serviceStates(Object.values(config.services));
     return (
-      states.get(POSTGRESQL_SERVICE) === "RUNNING" &&
-      states.get(CONSOLE_SERVICE) === "RUNNING" &&
-      (await firewallRuleReady(packageRoot))
+      states.get(config.services.postgresql) === "RUNNING" &&
+      states.get(config.services.console) === "RUNNING" &&
+      (await firewallRuleReady(packageRoot, config.firewallRuleName))
     );
   }
 
@@ -432,9 +412,9 @@ export function createWindowsServerProvisioningAdapter(input) {
       case "SCHEMA": await deployPostgresqlMigrations(); return { changed: true };
       case "INITIAL_LEADER": return provisionLeader();
       case "SERVICES":
-        await ensureFirewallRule(packageRoot);
+        await ensureFirewallRule(packageRoot, config.firewallRuleName);
         await atomicMarker(servicesMarker, "QUICKHACK_SERVICES_READY_V1");
-        await startPackagedServices();
+        await startPackagedServices(config.services);
         return { changed: true };
       case "FINAL_READINESS":
         await atomicMarker(readyMarker, "QUICKHACK_SERVER_READY_V1");
