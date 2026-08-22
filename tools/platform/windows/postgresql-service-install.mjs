@@ -387,14 +387,84 @@ async function publishPostgresqlReadinessMarker(markerPath) {
   }
 }
 
+async function postgresqlServiceControlStep(code, operation) {
+  try {
+    return await operation();
+  } catch {
+    const error = new Error("QuickHack PostgreSQL service control did not complete.");
+    error.code = code;
+    throw error;
+  }
+}
+
 async function ensureServiceStarted(serviceName) {
-  await runPowerShellScript(
-    "$ErrorActionPreference='Stop'; " +
-      `$service=Get-Service -Name '${serviceName}' -ErrorAction Stop; ` +
-      "if($service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running){Stop-Service -InputObject $service; $service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(60))}; " +
-      "Start-Service -InputObject $service; " +
-      "$service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(60)); 'RUNNING'",
-    { timeoutMs: 130_000, maxOutputBytes: 64 * 1024 }
+  const initialStatus = await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_QUERY_FAILED",
+    () => runPowerShellScript(
+      "$ErrorActionPreference='Stop'; " +
+        `(Get-Service -Name '${serviceName}' -ErrorAction Stop).Status.ToString()`,
+      { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+    )
+  );
+  if (initialStatus === "Running") {
+    await postgresqlServiceControlStep(
+      "POSTGRESQL_START_SERVICE_STOP_COMMAND_FAILED",
+      () => runPowerShellScript(
+        "$ErrorActionPreference='Stop'; " +
+          `Stop-Service -Name '${serviceName}' -ErrorAction Stop; 'STOP_REQUESTED'`,
+        { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+      )
+    );
+    await postgresqlServiceControlStep(
+      "POSTGRESQL_START_SERVICE_WAIT_STOPPED_FAILED",
+      () => runPowerShellScript(
+        "$ErrorActionPreference='Stop'; " +
+          `$service=Get-Service -Name '${serviceName}' -ErrorAction Stop; ` +
+          "$service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(60)); " +
+          "$service.Refresh(); " +
+          "if($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped){throw 'STOP_POSTCONDITION_FAILED'}; 'STOPPED'",
+        { timeoutMs: 70_000, maxOutputBytes: 64 * 1024 }
+      )
+    );
+  }
+  await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_START_COMMAND_FAILED",
+    () => runPowerShellScript(
+      "$ErrorActionPreference='Stop'; " +
+        `Start-Service -Name '${serviceName}' -ErrorAction Stop; 'START_REQUESTED'`,
+      { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+    )
+  );
+  await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_WAIT_RUNNING_FAILED",
+    () => runPowerShellScript(
+      "$ErrorActionPreference='Stop'; " +
+        `$service=Get-Service -Name '${serviceName}' -ErrorAction Stop; ` +
+        "$service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(60)); " +
+        "$service.Refresh(); " +
+        "if($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running){throw 'RUNNING_POSTCONDITION_FAILED'}; 'RUNNING'",
+      { timeoutMs: 70_000, maxOutputBytes: 64 * 1024 }
+    )
+  );
+  await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_POSTCONDITION_FAILED",
+    async () => {
+      const source = await runPowerShellScript(
+        "$ErrorActionPreference='Stop'; " +
+          `$service=Get-CimInstance Win32_Service -Filter "Name='${serviceName}'" -ErrorAction Stop; ` +
+          "[pscustomobject]@{state=[string]$service.State;processId=[int]$service.ProcessId;exitCode=[int]$service.ExitCode}|ConvertTo-Json -Compress",
+        { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+      );
+      const observed = JSON.parse(source);
+      if (
+        observed?.state !== "Running" ||
+        !Number.isSafeInteger(observed?.processId) ||
+        observed.processId < 1 ||
+        observed?.exitCode !== 0
+      ) {
+        throw new Error("QuickHack PostgreSQL service start postcondition failed.");
+      }
+    }
   );
 }
 

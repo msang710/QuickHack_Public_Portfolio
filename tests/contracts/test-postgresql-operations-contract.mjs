@@ -27,6 +27,10 @@ const initializeClusterSource = serviceSource.slice(
   serviceSource.indexOf("async function initializeCluster"),
   serviceSource.indexOf("async function writeTextFileAtomic")
 );
+const startServiceSource = serviceSource.slice(
+  serviceSource.indexOf("async function ensureServiceStarted"),
+  serviceSource.indexOf("async function roleExists")
+);
 
 assert.doesNotMatch(consoleSource, /POSTGRESQL_OPERATIONS_NOT_READY/);
 assert.doesNotMatch(consoleSource, /postgresql-restore\.mjs|deploy-postgresql-migrations\.mjs/);
@@ -142,6 +146,28 @@ for (const code of [
   assert.ok(serviceSource.includes(code), `Windows PostgreSQL adapter is missing ${code}.`);
   assert.ok(serviceCoreSource.includes(code), `PostgreSQL core allowlist is missing ${code}.`);
 }
+const serviceStartDetailCodes = [
+  "POSTGRESQL_START_SERVICE_QUERY_FAILED",
+  "POSTGRESQL_START_SERVICE_STOP_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_STOPPED_FAILED",
+  "POSTGRESQL_START_SERVICE_START_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_RUNNING_FAILED",
+  "POSTGRESQL_START_SERVICE_POSTCONDITION_FAILED",
+];
+let previousServiceStartStep = -1;
+for (const code of serviceStartDetailCodes) {
+  const index = startServiceSource.indexOf(code);
+  assert.ok(index > previousServiceStartStep, `Windows PostgreSQL service step is out of order: ${code}.`);
+  assert.ok(serviceCoreSource.includes(code), `PostgreSQL core allowlist is missing ${code}.`);
+  previousServiceStartStep = index;
+}
+assert.match(startServiceSource, /Get-Service -Name '\$\{serviceName\}'/u);
+assert.match(startServiceSource, /Stop-Service -Name '\$\{serviceName\}'/u);
+assert.match(startServiceSource, /Start-Service -Name '\$\{serviceName\}'/u);
+assert.match(startServiceSource, /Get-CimInstance Win32_Service/u);
+assert.match(startServiceSource, /observed\?\.state !== "Running"/u);
+assert.match(startServiceSource, /observed\.processId < 1/u);
+assert.match(startServiceSource, /observed\?\.exitCode !== 0/u);
 assert.match(restoreSource, /DELETE FROM user_sessions/);
 assert.match(restoreSource, /DELETE FROM mobile_registered_devices/);
 assert.match(restoreSource, /DELETE FROM user_totp_credentials/);

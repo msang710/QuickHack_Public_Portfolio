@@ -112,6 +112,34 @@ await assert.rejects(
   (error) => error.code === "POSTGRESQL_INITIALIZE_CLUSTER_FAILED"
 );
 
+const serviceStartDetailCodes = [
+  "POSTGRESQL_START_SERVICE_QUERY_FAILED",
+  "POSTGRESQL_START_SERVICE_STOP_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_STOPPED_FAILED",
+  "POSTGRESQL_START_SERVICE_START_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_RUNNING_FAILED",
+  "POSTGRESQL_START_SERVICE_POSTCONDITION_FAILED",
+];
+for (const failureCode of serviceStartDetailCodes) {
+  const detailFailure = fixture({ failAt: "startService", failureCode });
+  await assert.rejects(
+    () => createPostgresqlServiceCore(detailFailure.adapter).installOrRepair({ runtimeConfig }),
+    (error) =>
+      error.code === failureCode &&
+      error.categoryCode === "POSTGRESQL_SERVICE_SETUP_FAILED" &&
+      error.failedStep === "START_SERVICE" &&
+      !JSON.stringify(error).includes("must-not-leak")
+  );
+}
+const unlistedServiceStartDetail = fixture({
+  failAt: "startService",
+  failureCode: "POSTGRESQL_START_SERVICE_MUST_NOT_LEAK_FAILED",
+});
+await assert.rejects(
+  () => createPostgresqlServiceCore(unlistedServiceStartDetail.adapter).installOrRepair({ runtimeConfig }),
+  (error) => error.code === "POSTGRESQL_START_SERVICE_FAILED"
+);
+
 const failed = fixture({ failAt: "activateCredentials" });
 await assert.rejects(
   () => createPostgresqlServiceCore(failed.adapter).installOrRepair({ runtimeConfig }),
