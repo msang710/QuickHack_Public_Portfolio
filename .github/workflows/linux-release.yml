@@ -40,6 +40,13 @@ jobs:
           run_id="$(gh run list --workflow pull-request-checks.yml --commit "$GITHUB_SHA" --status success --json databaseId,headSha --limit 20 --jq 'map(select(.headSha == env.GITHUB_SHA))[0].databaseId // empty')"
           [[ -n "$run_id" ]] || { echo "No successful Final Integration run exists for $GITHUB_SHA."; exit 1; }
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Require full-integration release marker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: final-integration-complete
+          path: release/final-integration
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.integration.outputs.run_id }}
       - name: Download exact verified Arch package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:

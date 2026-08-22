@@ -14,6 +14,12 @@ on:
         required: true
         default: "CN=QuickHack Integration, O=QuickHack"
         type: string
+      scope:
+        description: Full gate or focused recovery of the failed source and Linux lanes
+        required: true
+        default: all
+        type: choice
+        options: [all, source-linux]
 
 permissions:
   contents: read
@@ -24,6 +30,7 @@ concurrency:
 
 jobs:
   source-and-postgresql:
+    if: inputs.scope == 'all' || inputs.scope == 'source-linux'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
@@ -68,6 +75,7 @@ jobs:
         run: npm run verify:postgresql
 
   windows-msix-package-set:
+    if: inputs.scope == 'all'
     runs-on: windows-2025
     timeout-minutes: 120
     steps:
@@ -135,6 +143,7 @@ jobs:
           retention-days: 30
 
   linux-package-set:
+    if: inputs.scope == 'all' || inputs.scope == 'source-linux'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container: archlinux:latest
@@ -170,11 +179,27 @@ jobs:
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: linux-exact-four
-          path: release/distribution/linux/
+          name: linux-demo-server
+          path: release/distribution/linux/demo-server/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-demo-client
+          path: release/distribution/linux/demo-client/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-operational-server
+          path: release/distribution/linux/operational-server/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-operational-client
+          path: release/distribution/linux/operational-client/
           if-no-files-found: error
 
   android-build:
+    if: inputs.scope == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -197,12 +222,30 @@ jobs:
     steps:
       - name: Require every automated integration gate
         env:
+          INTEGRATION_SCOPE: ${{ inputs.scope }}
           SOURCE_RESULT: ${{ needs.source-and-postgresql.result }}
           WINDOWS_RESULT: ${{ needs.windows-msix-package-set.result }}
           LINUX_RESULT: ${{ needs.linux-package-set.result }}
           ANDROID_RESULT: ${{ needs.android-build.result }}
         run: |
           [[ "$SOURCE_RESULT" == "success" ]]
-          [[ "$WINDOWS_RESULT" == "success" ]]
           [[ "$LINUX_RESULT" == "success" ]]
-          [[ "$ANDROID_RESULT" == "success" ]]
+          if [[ "$INTEGRATION_SCOPE" == "all" ]]; then
+            [[ "$WINDOWS_RESULT" == "success" ]]
+            [[ "$ANDROID_RESULT" == "success" ]]
+          else
+            [[ "$INTEGRATION_SCOPE" == "source-linux" ]]
+            [[ "$WINDOWS_RESULT" == "skipped" ]]
+            [[ "$ANDROID_RESULT" == "skipped" ]]
+          fi
+      - name: Record full-integration release eligibility
+        if: inputs.scope == 'all'
+        run: |
+          mkdir -p release/final-integration
+          printf '%s\n' "$GITHUB_SHA" > release/final-integration/source-commit.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: inputs.scope == 'all'
+        with:
+          name: final-integration-complete
+          path: release/final-integration/source-commit.txt
+          if-no-files-found: error

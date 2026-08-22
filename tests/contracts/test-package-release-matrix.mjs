@@ -55,7 +55,11 @@ assert.equal(
 );
 assert.match(integrationWorkflowSource, /four-artifact-distribution\.mjs/);
 assert.match(integrationWorkflowSource, /windows-msix-exact-four-unsigned/);
-assert.match(integrationWorkflowSource, /linux-exact-four/);
+assert.match(integrationWorkflowSource, /options: \[all, source-linux\]/);
+assert.match(integrationWorkflowSource, /name: final-integration-complete/);
+for (const target of ["demo-server", "demo-client", "operational-server", "operational-client"]) {
+  assert.match(integrationWorkflowSource, new RegExp(`name: linux-${target}`));
+}
 assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*npm ci/);
 assert.equal([...integrationWorkflowSource.matchAll(/sudo -u builder npm run build/g)].length, 1);
 assert.equal([...integrationWorkflowSource.matchAll(/release:linux:/g)].length, 1);
@@ -66,6 +70,7 @@ assert.doesNotMatch(
 );
 assert.match(linuxWorkflowSource, /actions: read/);
 assert.match(linuxWorkflowSource, /Resolve successful same-revision Final Integration run/);
+assert.match(linuxWorkflowSource, /name: final-integration-complete/);
 assert.match(linuxWorkflowSource, /verify-package-release-artifact\.mjs/);
 assert.doesNotMatch(linuxWorkflowSource, /npm run (?:build|stage:|release:|verify)/);
 assert.doesNotMatch(`${windowsWorkflowSource}\n${linuxWorkflowSource}`, /Portable-|\.zip/u);
@@ -75,6 +80,7 @@ assert.match(windowsDemoWorkflowSource, /azure\/artifact-signing-action@[a-f0-9]
 assert.match(windowsDemoWorkflowSource, /id-token: write/);
 assert.match(windowsDemoWorkflowSource, /--require-unsigned/);
 assert.match(windowsDemoWorkflowSource, /sign-msix\.ps1/);
+assert.match(windowsDemoWorkflowSource, /name: final-integration-complete/);
 assert.doesNotMatch(windowsDemoWorkflowSource, /windows-demo|Inno|\.exe/iu);
 assert.match(windowsNativeWorkflowSource, /\[self-hosted, windows, x64, quickhack-msix-release/);
 assert.match(windowsNativeWorkflowSource, /run-release-candidate-matrix\.ps1/);
