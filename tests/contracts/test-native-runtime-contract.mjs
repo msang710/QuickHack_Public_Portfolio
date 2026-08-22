@@ -43,8 +43,8 @@ assert.equal(
 );
 assert.equal(
   windowsDemoWorkflow.match(/npm install --global npm@12\.0\.2/g)?.length,
-  1,
-  "The Windows demo workflow must pin npm 12.0.2."
+  undefined,
+  "The production signing workflow must not install npm when it only consumes prebuilt artifacts."
 );
 assert.equal(parsePostgresqlMajorVersion("postgres (PostgreSQL) 18.4"), 18);
 assert.equal(parsePostgresqlMajorVersion("pg_dump (PostgreSQL) 18.1", "pg_dump"), 18);

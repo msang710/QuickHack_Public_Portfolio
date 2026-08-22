@@ -424,6 +424,11 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.0"
+    }
+  },
   "allowScripts": {
     "prisma@7.9.1": true,
     "@prisma/engines@7.9.1": true,

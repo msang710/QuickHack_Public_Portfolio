@@ -45,7 +45,7 @@ assert.match(integrationWorkflowSource, /PR labels are work\/review units, not e
 assert.match(integrationWorkflowSource, /version:/);
 assert.match(integrationWorkflowSource, /source-and-postgresql:/);
 assert.match(integrationWorkflowSource, /windows-msix-package-set:/);
-assert.match(integrationWorkflowSource, /linux-package-matrix:/);
+assert.match(integrationWorkflowSource, /linux-package-set:/);
 assert.match(integrationWorkflowSource, /android-build:/);
 assert.match(integrationWorkflowSource, /final-integration-complete:/);
 assert.match(integrationWorkflowSource, /if: always\(\)/);
@@ -55,6 +55,9 @@ assert.equal(
 );
 assert.match(integrationWorkflowSource, /four-artifact-distribution\.mjs/);
 assert.match(integrationWorkflowSource, /windows-msix-exact-four-unsigned/);
+assert.match(integrationWorkflowSource, /linux-exact-four/);
+assert.equal([...integrationWorkflowSource.matchAll(/sudo -u builder npm run build/g)].length, 1);
+assert.equal([...integrationWorkflowSource.matchAll(/release:linux:/g)].length, 1);
 assert.doesNotMatch(integrationWorkflowSource, /innosetup|build-installer/iu);
 assert.doesNotMatch(
   integrationWorkflowSource,

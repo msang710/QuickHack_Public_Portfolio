@@ -7,18 +7,18 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const EXPECTED_VERIFY_ENVIRONMENT = {
   HOME: "${{ runner.temp }}\\home",
   LOCALAPPDATA: "${{ runner.temp }}\\local-app-data",
-  QUICKHACK_PACKAGE_TARGET: "${{ matrix.target }}",
   QUICKHACK_RELEASE_VERSION: "${{ inputs.version }}",
+  QUICKHACK_MSIX_PUBLISHER: "${{ inputs.windows_publisher }}",
   USERPROFILE: "${{ runner.temp }}\\user-profile",
 };
 const WORKFLOWS = [
   {
     path: ".github/workflows/pull-request-checks.yml",
-    verifyStep: "Build selected Windows package",
+    verifyStep: "Build and stage exact four Windows artifacts once",
     requiredCommands: [
       "npm run build",
-      'npm run "stage:windows:$env:QUICKHACK_PACKAGE_TARGET"',
-      'npm run "release:windows:$env:QUICKHACK_PACKAGE_TARGET"',
+      "./packaging/stage-windows-four-artifacts.ps1",
+      "./packaging/build-msix-four-artifacts.ps1",
     ],
   },
 ];
@@ -101,8 +101,8 @@ for (const workflow of WORKFLOWS) {
 
   assert.match(
     source,
-    /^\s*runs-on:\s*windows-latest\s*$/m,
-    `${workflow.path} must run verification on windows-latest.`
+    /^\s*runs-on:\s*windows-2025\s*$/m,
+    `${workflow.path} must run verification on windows-2025.`
   );
   for (const command of workflow.requiredCommands) {
     assert.ok(
@@ -143,16 +143,14 @@ const releaseWorkflow = fs.readFileSync(
   path.join(ROOT, ".github/workflows/windows-release.yml"),
   "utf8"
 );
-assert.match(releaseWorkflow, /runs-on:\s*windows-latest/);
-assert.match(
-  releaseWorkflow,
-  /target:\s*\[demo-server, demo-client, operational-server, operational-client\]/
-);
-assert.match(releaseWorkflow, /gh run list --workflow pull-request-checks\.yml/);
-assert.match(releaseWorkflow, /name:\s*Download exact verified Windows package/);
-assert.match(releaseWorkflow, /node tools\/verify-package-release-artifact\.mjs/);
+assert.match(releaseWorkflow, /runs-on:\s*ubuntu-latest/);
+assert.doesNotMatch(releaseWorkflow, /matrix:/);
+assert.match(releaseWorkflow, /candidate_run_id:/);
+assert.match(releaseWorkflow, /windows_10_evidence_run_id:/);
+assert.match(releaseWorkflow, /windows_11_evidence_run_id:/);
+assert.match(releaseWorkflow, /release-candidate\.mjs/);
 assert.doesNotMatch(releaseWorkflow, /closure-(?:evidence|attestation)|review-closure|closure-ledger/);
-assert.match(releaseWorkflow, /gh release upload/);
+assert.match(releaseWorkflow, /gh release create/);
 assert.doesNotMatch(releaseWorkflow, /npm ci|npm run build|npm run verify|choco install/);
 assert.doesNotMatch(releaseWorkflow, /^\s+QUICKHACK_DATA_DIR:/m);
 

@@ -134,14 +134,13 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  linux-package-matrix:
+  linux-package-set:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container: archlinux:latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [demo-server, demo-client, operational-server, operational-client]
+    env:
+      NODE_ENV: test
+      QUICKHACK_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - name: Install Arch build toolchain
         run: |
@@ -153,25 +152,22 @@ jobs:
         run: useradd --create-home builder && chown -R builder:builder "$GITHUB_WORKSPACE"
       - run: sudo -u builder npm ci
       - run: sudo -u builder npm run build
-      - name: Build selected Linux package
+      - name: Build and verify exact four Linux packages once
         env:
-          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
           QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
-        run: sudo -u builder npm run "release:linux:$QUICKHACK_PACKAGE_TARGET" -- --version="$QUICKHACK_RELEASE_VERSION"
-      - name: Verify selected Arch release artifact
-        env:
-          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
-          QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
-        run: >-
-          sudo -u builder node tools/verify-package-release-artifact.mjs
-          --artifact-dir="release/distribution/linux/$QUICKHACK_PACKAGE_TARGET"
-          --platform=linux
-          --target="$QUICKHACK_PACKAGE_TARGET"
-          --release-version="$QUICKHACK_RELEASE_VERSION"
+        run: |
+          for target in demo-server demo-client operational-server operational-client; do
+            sudo -u builder npm run "release:linux:$target" -- --version="$QUICKHACK_RELEASE_VERSION"
+            sudo -u builder node tools/verify-package-release-artifact.mjs \
+              --artifact-dir="release/distribution/linux/$target" \
+              --platform=linux \
+              --target="$target" \
+              --release-version="$QUICKHACK_RELEASE_VERSION"
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: linux-${{ matrix.target }}
-          path: release/distribution/linux/${{ matrix.target }}/
+          name: linux-exact-four
+          path: release/distribution/linux/
           if-no-files-found: error
 
   android-build:
@@ -191,7 +187,7 @@ jobs:
     needs:
       - source-and-postgresql
       - windows-msix-package-set
-      - linux-package-matrix
+      - linux-package-set
       - android-build
     runs-on: ubuntu-latest
     steps:
@@ -199,7 +195,7 @@ jobs:
         env:
           SOURCE_RESULT: ${{ needs.source-and-postgresql.result }}
           WINDOWS_RESULT: ${{ needs.windows-msix-package-set.result }}
-          LINUX_RESULT: ${{ needs.linux-package-matrix.result }}
+          LINUX_RESULT: ${{ needs.linux-package-set.result }}
           ANDROID_RESULT: ${{ needs.android-build.result }}
         run: |
           [[ "$SOURCE_RESULT" == "success" ]]

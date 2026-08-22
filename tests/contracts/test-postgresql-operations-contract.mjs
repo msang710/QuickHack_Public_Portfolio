@@ -195,17 +195,22 @@ assert.match(initializeSource, /packageFlavor = \$expectedFlavor/);
 assert.match(initializeSource, /postgresql-service-install\.mjs/);
 assert.match(stagingSource, /PostgreSQL \$\{POSTGRESQL_MAJOR_VERSION\} runtime was not found/);
 assert.match(stagingSource, /assertPostgresqlToolVersions/);
-assert.match(stagingSource, /copyInstalledPackageClosure\("prisma"\)/);
+assert.equal(
+  [...stagingSource.matchAll(/copyInstalledPackageClosure\("prisma",\s*(?:serverTargetDir|outputDir)\)/g)].length,
+  2,
+);
 assert.match(stagingSource, /POSTGRESQL_TOOL_CAPABILITIES\.package/);
 assert.match(stagingSource, /`\$\{tool\}\.exe`/);
 assert.match(backupSource, /createPostgresqlBackup/);
 assert.match(backupSource, /verifyPostgresqlBackupsAndApplyRetention/);
 assert.doesNotMatch(workflowSource, /release-not-ready|POSTGRESQL_OPERATIONS_NOT_READY/);
-assert.match(workflowSource, /matrix:[\s\S]*demo-server[\s\S]*operational-server/u);
+assert.match(workflowSource, /release-candidate\.mjs/);
+assert.match(workflowSource, /"\$\{#assets\[@\]\}" -eq 16/);
+assert.doesNotMatch(workflowSource, /matrix:/);
 assert.doesNotMatch(pullRequestWorkflowSource, /pull_request:/);
 assert.match(pullRequestWorkflowSource, /workflow_dispatch:/);
-assert.match(pullRequestWorkflowSource, /windows-package-matrix/);
-assert.match(pullRequestWorkflowSource, /linux-package-matrix/);
+assert.match(pullRequestWorkflowSource, /windows-msix-package-set/);
+assert.match(pullRequestWorkflowSource, /linux-package-set/);
 assert.match(serviceSmokeSource, /Join-Path \$env:ProgramData "QuickHack-CI"/);
 assert.doesNotMatch(serviceSmokeSource, /RUNNER_TEMP/);
 assert.match(installerSource, /function PrepareToInstall/);
