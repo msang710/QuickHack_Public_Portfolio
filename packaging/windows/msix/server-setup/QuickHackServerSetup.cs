@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -260,48 +259,34 @@ internal sealed class QuickHackSetupDefinition
         arguments.Add("--program-data");
         arguments.Add(Quote(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)));
 
-        ProcessStartInfo startInfo = new ProcessStartInfo();
-        startInfo.FileName = node;
-        startInfo.Arguments = String.Join(" ", arguments.ToArray());
-        startInfo.WorkingDirectory = packageRoot;
-        startInfo.UseShellExecute = false;
-        startInfo.CreateNoWindow = true;
-        startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-        startInfo.RedirectStandardOutput = true;
-        startInfo.RedirectStandardError = true;
-        ConfigureEnvironment(startInfo.EnvironmentVariables, node, manifest);
-
+        StringDictionary environment = QuickHackDesktopAppProcess.InheritCurrentEnvironment();
+        ConfigureEnvironment(environment, node, manifest);
         string errorCode = "PROVISIONING_STEP_FAILED";
         QuickHackSetupHandoff handoff = new QuickHackSetupHandoff();
-        using (Process child = new Process())
-        {
-            child.StartInfo = startInfo;
-            child.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs eventArgs) {
-                string errorLine = eventArgs.Data ?? String.Empty;
+        int exitCode = QuickHackDesktopAppProcess.Run(
+            node,
+            String.Join(" ", arguments.ToArray()),
+            packageRoot,
+            environment,
+            delegate(string line)
+            {
+                handoff.Accept(line);
+            },
+            delegate(string errorLine)
+            {
                 if (errorLine.StartsWith("errorCode=", StringComparison.Ordinal))
                 {
                     string candidate = errorLine.Substring("errorCode=".Length);
                     if (StableCode.IsMatch(candidate)) errorCode = candidate;
                 }
-            };
-            if (!child.Start())
-            {
-                throw new InvalidOperationException("QuickHack server provisioner did not start.");
             }
-            child.BeginErrorReadLine();
-            string line;
-            while ((line = child.StandardOutput.ReadLine()) != null)
-            {
-                handoff.Accept(line);
-            }
-            child.WaitForExit();
-            if (child.ExitCode != 0)
-            {
-                AppendAuditEvent(errorCode);
-                throw new InvalidOperationException(
-                    "QuickHack Server Setup stopped with " + errorCode + ". Check server-setup.log."
-                );
-            }
+        );
+        if (exitCode != 0)
+        {
+            AppendAuditEvent(errorCode);
+            throw new InvalidOperationException(
+                "QuickHack Server Setup stopped with " + errorCode + ". Check server-setup.log."
+            );
         }
         handoff.Validate();
         AppendAuditEvent(handoff.Status == "READY" ? "PROVISIONING_READY" : "INITIAL_LEADER_ACK_REQUIRED");

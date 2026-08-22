@@ -7,6 +7,10 @@ const setupSource = readFileSync(
   new URL("../../packaging/windows/msix/server-setup/QuickHackServerSetup.cs", import.meta.url),
   "utf8"
 );
+const processSource = readFileSync(
+  new URL("../../packaging/windows/msix/server-setup/QuickHackDesktopAppProcess.cs", import.meta.url),
+  "utf8"
+);
 const executableManifest = readFileSync(
   new URL("../../packaging/windows/msix/server-setup/QuickHackServerSetup.exe.manifest", import.meta.url),
   "utf8"
@@ -53,14 +57,15 @@ assert.match(executableManifest, /requestedExecutionLevel level="requireAdminist
 assert.match(buildScript, /\/win32manifest:\$manifestPath/u);
 assert.match(buildScript, /\/platform:x64/u);
 assert.match(buildScript, /\/target:winexe/u);
+assert.match(buildScript, /QuickHackDesktopAppProcess\.cs/u);
 assert.match(buildMsix, /IncludeServerSetup/u);
 assert.match(buildMsix, /--include-server-setup/u);
 
 for (const contract of [
   /runtime", "node", "node\.exe/u,
   /server-provisioning-cli\.mjs/u,
-  /RedirectStandardOutput = true/u,
-  /RedirectStandardError = true/u,
+  /QuickHackDesktopAppProcess\.InheritCurrentEnvironment/u,
+  /QuickHackDesktopAppProcess\.Run/u,
   /QUICKHACK_SERVER_SETUP_HANDOFF_V1/u,
   /--acknowledge/u,
   /--generation/u,
@@ -79,9 +84,27 @@ for (const contract of [
 ]) {
   assert.match(setupSource, contract);
 }
+for (const contract of [
+  /CreateProcessW/u,
+  /StartupInfoEx/u,
+  /ProcThreadAttributeHandleList = 0x00020002/u,
+  /ProcThreadAttributeDesktopAppPolicy = 0x00020012/u,
+  /ProcessCreationDesktopAppBreakawayDisableProcessTree = 0x00000002/u,
+  /CreateUnicodeEnvironment \| CreateNoWindow \| ExtendedStartupInfoPresent/u,
+  /SetHandleInformation\(parentRead, HandleFlagInherit, 0\)/u,
+  /SetHandleInformation\(parentWrite, HandleFlagInherit, 0\)/u,
+  /SERVER_SETUP_PACKAGE_CONTEXT_INITIALIZE_FAILED/u,
+  /SERVER_SETUP_PACKAGE_CONTEXT_CREATE_FAILED/u,
+  /TerminateProcess/u,
+]) {
+  assert.match(processSource, contract);
+}
+assert.doesNotMatch(setupSource, /Process\.Start|ProcessStartInfo/u);
+assert.doesNotMatch(processSource, /Process\.Start|ProcessStartInfo/u);
 assert.doesNotMatch(setupSource, /File\.(?:WriteAllText|AppendAllText)\([^\n]*(?:Password|TemporaryPassword)/u);
 assert.doesNotMatch(setupSource, /arguments\.Add\([^\n]*(?:Password|TemporaryPassword)/u);
 assert.doesNotMatch(setupSource, /AppendAuditEvent\([^\n]*\.Message/u);
+assert.doesNotMatch(processSource, /WriteAllText|AppendAllText|temporaryPassword|TemporaryPassword/u);
 
 for (const contract of [
   /INITIAL_LEADER_PENDING_ACK/u,

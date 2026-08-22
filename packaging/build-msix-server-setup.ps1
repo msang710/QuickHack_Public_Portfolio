@@ -37,6 +37,7 @@ if (-not $csc) {
 
 $sourceRoot = Join-Path $PSScriptRoot "windows\msix\server-setup"
 $sourcePath = Join-Path $sourceRoot "QuickHackServerSetup.cs"
+$processSourcePath = Join-Path $sourceRoot "QuickHackDesktopAppProcess.cs"
 $manifestPath = Join-Path $sourceRoot "QuickHackServerSetup.exe.manifest"
 $iconPath = Join-Path $repositoryRoot "assets\app.ico"
 $define = if ($Target -eq "demo-server") { "QUICKHACK_DEMONSTRATION" } else { "QUICKHACK_OPERATIONAL" }
@@ -65,7 +66,8 @@ $targetPath = Join-Path $outputPath $fileName
   /reference:System.Drawing.dll `
   /reference:System.Windows.Forms.dll `
   "/out:$targetPath" `
-  $sourcePath
+  $sourcePath `
+  $processSourcePath
 
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
   throw "Failed to build QuickHack Server Setup: $fileName"
