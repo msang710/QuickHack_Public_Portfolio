@@ -602,7 +602,7 @@ const serverRuntimeFiles = collectServerRuntimeClosure({
     "tools/provision-initial-leader.mjs",
     "tools/postgresql-backup.mjs",
     "tools/postgresql-restore.mjs",
-    ...(packageTarget === "demo-server" ? ["tools/server-provisioning-cli.mjs"] : []),
+    ...(isServerPackage ? ["tools/server-provisioning-cli.mjs"] : []),
   ],
 });
 for (const relativePath of serverRuntimeFiles) {
@@ -704,7 +704,7 @@ copyFile(
   path.join(launcherSourceDir, launcherFileName),
   path.join(outputDir, launcherFileName)
 );
-if (packageTarget === "demo-server") {
+if (isServerPackage) {
   copyFile(
     path.join(msixServiceHostSourceDir, "QuickHackPostgresqlServiceHost.exe"),
     path.join(outputDir, "Services", "QuickHackPostgresqlServiceHost.exe")
@@ -714,8 +714,8 @@ if (packageTarget === "demo-server") {
     path.join(outputDir, "Services", "QuickHackServerServiceHost.exe")
   );
   copyFile(
-    path.join(msixServerSetupSourceDir, "QuickHack-Demo-Server-Setup.exe"),
-    path.join(outputDir, "QuickHack-Demo-Server-Setup.exe")
+    path.join(msixServerSetupSourceDir, `QuickHack-${productQualifier}-Server-Setup.exe`),
+    path.join(outputDir, `QuickHack-${productQualifier}-Server-Setup.exe`)
   );
 }
 copyFile(

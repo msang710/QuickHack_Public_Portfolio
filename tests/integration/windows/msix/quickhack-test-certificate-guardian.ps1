@@ -2,6 +2,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$CertificateV1,
   [Parameter(Mandatory = $true)][string]$CertificateV2,
+  [string]$CertificateV3 = "",
+  [string]$CertificateV4 = "",
   [Parameter(Mandatory = $true)][string]$ReadyFile,
   [Parameter(Mandatory = $true)][string]$StopFile
 )
@@ -17,7 +19,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 $thumbprints = @()
 try {
-  foreach ($certificatePath in @($CertificateV1, $CertificateV2)) {
+  foreach ($certificatePath in @($CertificateV1, $CertificateV2, $CertificateV3, $CertificateV4) | Where-Object { $_ }) {
     if (-not (Test-Path -LiteralPath $certificatePath -PathType Leaf)) {
       throw "QuickHack test certificate was not found: $certificatePath"
     }

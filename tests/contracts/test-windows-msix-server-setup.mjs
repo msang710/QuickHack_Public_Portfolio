@@ -31,6 +31,9 @@ const nativeTest = readFileSync(
 const demoServer = msixArtifactConfig("demo-server");
 assert.equal(demoServer.setup.applicationId, "QuickHackDemoServerSetup");
 assert.equal(demoServer.setup.executable, "QuickHack-Demo-Server-Setup.exe");
+const operationalServer = msixArtifactConfig("operational-server");
+assert.equal(operationalServer.setup.applicationId, "QuickHackOperationalServerSetup");
+assert.equal(operationalServer.setup.executable, "QuickHack-Operational-Server-Setup.exe");
 assert.equal(msixArtifactConfig("demo-client").setup, null);
 
 const serverManifest = renderAppxManifest({
@@ -42,6 +45,13 @@ assert.match(serverManifest, /Id="QuickHackDemoServerSetup"/u);
 assert.match(serverManifest, /Executable="QuickHack-Demo-Server-Setup\.exe"/u);
 assert.match(serverManifest, /Name="allowElevation"/u);
 assert.equal((serverManifest.match(/<Application\b/gu) ?? []).length, 2);
+const operationalServerManifest = renderAppxManifest({
+  target: "operational-server",
+  version: "1.0.0",
+  includeServerSetup: true,
+});
+assert.match(operationalServerManifest, /Id="QuickHackOperationalServerSetup"/u);
+assert.match(operationalServerManifest, /Executable="QuickHack-Operational-Server-Setup\.exe"/u);
 assert.throws(
   () => renderAppxManifest({
     target: "demo-client",

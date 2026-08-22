@@ -9,6 +9,10 @@ const adapter = readFileSync(
   new URL("../../tools/platform/windows/server-provisioning-adapter.mjs", import.meta.url),
   "utf8"
 );
+const artifactConfig = readFileSync(
+  new URL("../../tools/platform/windows/server-provisioning-artifact-config.mjs", import.meta.url),
+  "utf8"
+);
 
 for (const contract of [
   /QUICKHACK_SERVER_SETUP_HANDOFF_V1/u,
@@ -39,7 +43,6 @@ for (const contract of [
   /coupangWriteApiEnabled: false/u,
   /logenWriteApiEnabled: false/u,
   /includeNetworkService: true/u,
-  /QuickHack HTTPS Server \(Local Subnet\)/u,
   /RemoteAddress LocalSubnet/u,
   /bootstrapUsers/u,
   /credential_revision/u,
@@ -50,6 +53,15 @@ for (const contract of [
   /Start-Service -InputObject \$postgres[\s\S]*Start-Service -InputObject \$console/u,
 ]) {
   assert.match(adapter, contract);
+}
+for (const contract of [
+  /QuickHack HTTPS Server \(Local Subnet\)/u,
+  /coupangMockName/u,
+  /packageFlavor === "DEMONSTRATION"/u,
+  /serviceName\(own, "postgresql"\)/u,
+  /opposite\.services\.map/u,
+]) {
+  assert.match(artifactConfig, contract);
 }
 assert.doesNotMatch(adapter, /pg_ctl|registerService/u);
 

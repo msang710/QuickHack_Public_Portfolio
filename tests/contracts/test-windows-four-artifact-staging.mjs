@@ -37,7 +37,8 @@ assert.match(stagingSource, /isDemonstrationPackage/);
 assert.match(stagingSource, /tools\/server-provisioning-cli\.mjs/u);
 assert.match(stagingSource, /QuickHackPostgresqlServiceHost\.exe/u);
 assert.match(stagingSource, /QuickHackServerServiceHost\.exe/u);
-assert.match(stagingSource, /QuickHack-Demo-Server-Setup\.exe/u);
+assert.match(stagingSource, /QuickHack-\$\{productQualifier\}-Server-Setup\.exe/u);
+assert.match(stagingSource, /isServerPackage \? \["tools\/server-provisioning-cli\.mjs"\] : \[\]/u);
 assert.match(stagingSource, /runtimeTargetDir, "node", "quickhack-node-runtime\.json"/u);
 assert.doesNotMatch(installerBuild, /Compress-Archive|Portable-/);
 assert.match(installerBuild, /ConvertTo-InnoEscapedAppId/);
@@ -49,7 +50,10 @@ assert.doesNotMatch(clientRuntimeLauncher, /composeOperatorPlatform/);
 assert.match(clientRuntimeBootstrap, /composeProcessExecution/);
 assert.doesNotMatch(clientRuntimeBootstrap, /composeOperatorPlatform/);
 assert.match(launcherSource, /GetCurrentPackageFullName/u);
-assert.match(launcherSource, /StartPackagedDemoServer/u);
+assert.match(launcherSource, /StartPackagedServer/u);
+assert.match(launcherSource, /ServerSetupExecutable/u);
+assert.match(launcherSource, /OppositeServerServiceName/u);
+assert.match(launcherSource, /NativeErrorCode == 1060/u);
 assert.match(launcherSource, /provisioning",[\s\S]*"READY"/u);
 assert.match(launcherSource, /QuickHack-Demo-Server-Setup\.exe/u);
 for (const config of configs) {
@@ -58,5 +62,9 @@ for (const config of configs) {
   assert.ok(installerBuild.includes(config.mutableRootName));
   assert.ok(launcherSource.includes(config.artifactKind));
 }
+assert.match(
+  JSON.stringify(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).scripts),
+  /prestage:windows:operational-server[\s\S]*build:windows-msix-service-hosts[\s\S]*operational-server[\s\S]*build:windows-msix-server-setup/u
+);
 
 console.log("Windows four-artifact staging, launcher, and installer identities verified.");

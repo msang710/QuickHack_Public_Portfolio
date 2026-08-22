@@ -30,10 +30,31 @@ npm run release:linux:operational-server -- --version=1.0.0
 
 The old `stage:demo-server`, `stage:demo-client`, `release:demo-server`, and `release:demo-client` names remain Windows compatibility aliases.
 
+### Exact-four Windows MSIX candidate
+
+PR-07 adds a build-only MSIX candidate without changing the public Windows release workflow yet. Stage all four targets at one source revision, then create one exact set:
+
+```powershell
+npm run stage:windows:demo-server -- --postgresql-runtime-dir=C:\qh\runtimes\postgresql-18
+npm run stage:windows:demo-client
+npm run stage:windows:operational-server -- --postgresql-runtime-dir=C:\qh\runtimes\postgresql-18
+npm run stage:windows:operational-client
+npm run release:msix:four -- -Version 1.0.0 -SigningMode TestCertificate -SdkRoot C:\qh\sdk-buildtools
+```
+
+The exact output contains these four packages and one manifest/checksum pair for each package:
+
+- `QuickHack-Demo-Server-<version>.msix`
+- `QuickHack-Demo-Client-<version>.msix`
+- `QuickHack-Operational-Server-<version>.msix`
+- `QuickHack-Operational-Client-<version>.msix`
+
+Both server MSIX builds require packaged services and the elevated Server Setup application. Both client builds forbid those declarations and PostgreSQL content. The exact-four verifier rejects extra/stale files, mixed source commits, dirty source by default, mismatched package hashes, and mixed Publisher/signing modes. Production signing and the public MSIX-only cutover remain PR-08 gates.
+
 ## Installation and lifecycle
 
 - Demonstration and operational clients may coexist. They reject a central server with the wrong role, runtime contract, flavor, or artifact identity before local application traffic starts.
-- Demonstration and operational servers may not coexist on one host. Windows registry/SCM and Linux package/unit preflight reject the opposite server before data, credentials, or databases are changed.
+- Demonstration and operational READY server runtimes may not coexist on one host. Inno registry/SCM and Linux package/unit preflight reject the opposite server before data, credentials, or databases are changed. Distinct MSIX identities may both be registered as immutable packages because MSIX provides no mutual-exclusion manifest declaration; each packaged server launcher and Setup therefore observes the opposite service/package and fails before DB, ACL, credential, service, or firewall mutation. Remove the inert opposite package before continuing Setup.
 - Arch packages depend on system Node.js 24, and server packages depend on system PostgreSQL 18. They do not bundle or modify Arch's default PostgreSQL cluster or account.
 - Installing an Arch server package creates package files, service users/directories, and reloads systemd only. The artifact-specific `quickhack-<flavor>-server-setup` command then requests administrator authentication and performs finite setup. The non-root console service remains the long-lived parent of the backend, gateway, and demonstration simulators.
 - Upgrade, repair, ordinary Windows uninstall, and `pacman -R` preserve config, database, encrypted credentials, and backups. Only the separate artifact-specific purge action removes mutable state after exact artifact and backup/no-recovery confirmation.

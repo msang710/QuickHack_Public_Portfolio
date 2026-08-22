@@ -31,7 +31,7 @@ for (const config of configs) {
   assert.match(config.legacyAppId, /^\{[A-F0-9-]{36}\}$/u);
   assert.equal(
     config.serviceHostsReady,
-    config.packageTarget === "demo-server"
+    config.role === "server"
   );
 }
 assert.equal(msixArtifactConfig("demo-server").oppositeServerIdentity, "QuickHack.Operational.Server");
