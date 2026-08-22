@@ -143,6 +143,7 @@ assert.equal(
 
 const client = productionService.read({
   QUICKHACK_RUNTIME_ROLE: "client",
+  QUICKHACK_ARTIFACT_KIND: "DEMONSTRATION_CLIENT",
   QUICKHACK_SERVER_URL: "https://192.168.0.7:3443/",
   QUICKHACK_APP_ROOT: "C:\\QuickHackClient",
 });
@@ -150,6 +151,19 @@ assert.equal(client.role, "client");
 assert.equal(client.endpoints.remoteServerUrl, "https://192.168.0.7:3443");
 assert.equal(client.policies.coupangWriteApiEnabled, false);
 assert.equal(client.policies.logenWriteApiEnabled, false);
+assert.equal(
+  client.paths.stateDir,
+  "C:\\Users\\quickhack-test\\AppData\\Local\\QuickHack\\demonstration-client"
+);
+assert.throws(
+  () =>
+    productionService.read({
+      QUICKHACK_RUNTIME_ROLE: "client",
+      QUICKHACK_ARTIFACT_KIND: "DEMONSTRATION_SERVER",
+      QUICKHACK_APP_ROOT: "C:\\QuickHackClient",
+    }),
+  /must identify a client artifact/
+);
 
 assert.throws(
   () => validateServerRuntimeConfig({ ...developmentConfig, otpKey: "secret" }),

@@ -45,6 +45,9 @@ const packageTarget = targetArgument?.slice("--target=".length) || "demo-server"
 const postgresqlRuntimeArgument = process.argv
   .slice(2)
   .find((argument) => argument.startsWith("--postgresql-runtime-dir="));
+const nodeRuntimeArgument = process.argv
+  .slice(2)
+  .find((argument) => argument.startsWith("--node-runtime-dir="));
 const packageTargets = new Set(QUICKHACK_PACKAGE_TARGETS);
 
 if (!packageTargets.has(packageTarget)) {
@@ -65,11 +68,13 @@ const launcherSourceDir = path.resolve(rootDir, "release", "windows", "launchers
 const serverSourceDir = path.join(rootDir, ".next", "standalone");
 const staticSourceDir = path.join(rootDir, ".next", "static");
 const configuredNodeRuntimeDir = String(
-  process.env.QUICKHACK_NODE_RUNTIME_DIR || ""
+  nodeRuntimeArgument?.slice("--node-runtime-dir=".length) ||
+  process.env.QUICKHACK_NODE_RUNTIME_DIR ||
+  ""
 ).trim();
 const nodeSourceDir = configuredNodeRuntimeDir
   ? path.resolve(rootDir, configuredNodeRuntimeDir)
-  : path.join(rootDir, "tools", "node-portable", "node-v24.17.0-win-x64");
+  : path.join(rootDir, "release", "windows", "runtimes", "node-v24.17.0-win-x64");
 
 function copyDir(source, target) {
   if (!existsSync(source)) {
@@ -410,12 +415,14 @@ if (isClientPackage) {
     path.join(rootDir, "tools", "quickhack-raw-print.ps1"),
     path.join(runtimeTargetDir, "printer", "quickhack-raw-print.ps1")
   );
-  if (existsSync(path.join(nodeSourceDir, "LICENSE"))) {
-    copyFile(
-      path.join(nodeSourceDir, "LICENSE"),
-      path.join(runtimeTargetDir, "node", "LICENSE")
-    );
-  }
+  copyFile(
+    path.join(nodeSourceDir, "LICENSE"),
+    path.join(runtimeTargetDir, "node", "LICENSE")
+  );
+  copyFile(
+    path.join(nodeSourceDir, "quickhack-node-runtime.json"),
+    path.join(runtimeTargetDir, "node", "quickhack-node-runtime.json")
+  );
 
   const platformToolsDir = findPlatformToolsDir();
 

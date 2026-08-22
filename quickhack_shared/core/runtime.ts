@@ -22,12 +22,42 @@ function resolveRuntimeDirectories(input: {
   dataDirectory?: string;
   environment: NodeJS.ProcessEnv;
   deployment: "development" | "system-service";
+  artifactKind?:
+    | "DEMONSTRATION_SERVER"
+    | "DEMONSTRATION_CLIENT"
+    | "OPERATIONAL_SERVER"
+    | "OPERATIONAL_CLIENT";
 }) {
-  const provider =
-    input.role === "client"
-      ? clientPlatform.runtimeDirectories
-      : serverPlatform.runtimeDirectories;
-  return provider.resolve({ ...input, homeDirectory: os.homedir() });
+  const homeDirectory = os.homedir();
+  if (input.role === "client") {
+    const artifactKind =
+      input.artifactKind === "DEMONSTRATION_CLIENT" ||
+      input.artifactKind === "OPERATIONAL_CLIENT"
+        ? input.artifactKind
+        : undefined;
+    return clientPlatform.runtimeDirectories.resolve({
+      appRoot: input.appRoot,
+      runtimeDir: input.runtimeDir,
+      environment: input.environment,
+      deployment: input.deployment,
+      artifactKind,
+      homeDirectory,
+    });
+  }
+  const artifactKind =
+    input.artifactKind === "DEMONSTRATION_SERVER" ||
+    input.artifactKind === "OPERATIONAL_SERVER"
+      ? input.artifactKind
+      : undefined;
+  return serverPlatform.runtimeDirectories.resolve({
+    appRoot: input.appRoot,
+    runtimeDir: input.runtimeDir,
+    dataDirectory: input.dataDirectory,
+    environment: input.environment,
+    deployment: input.deployment,
+    artifactKind,
+    homeDirectory,
+  });
 }
 
 function readConfiguredServerRuntime() {

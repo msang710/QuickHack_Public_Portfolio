@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "24.17.0",
+  "architecture": "win-x64",
+  "archiveFile": "node-v24.17.0-win-x64.zip",
+  "archiveSha256": "f2aa33b35b75aca5f3f7b85675a6f6423201053e9381911e64961f3bda2528ab",
+  "downloadUrl": "https://nodejs.org/dist/v24.17.0/node-v24.17.0-win-x64.zip",
+  "checksumUrl": "https://nodejs.org/dist/v24.17.0/SHASUMS256.txt",
+  "directoryName": "node-v24.17.0-win-x64"
+}

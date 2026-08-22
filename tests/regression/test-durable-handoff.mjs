@@ -386,12 +386,26 @@ function stateInput(ownerToken = "a".repeat(48), instanceId = "b".repeat(48)) {
   stateStore.publishClaimed(prepared, process.pid);
   const child = new EventEmitter();
   child.kill = () => true;
+  let childEnvironmentInput = null;
+  let spawnedEnvironment = null;
+  const runtimeEnvironment = {
+    QUICKHACK_RUNTIME_ROLE: "client",
+    QUICKHACK_ARTIFACT_KIND: "DEMONSTRATION_CLIENT",
+    QUICKHACK_PACKAGE_MANIFEST: "C:\\QuickHack\\quickhack-package.json",
+    NODE_EXTRA_CA_CERTS: "C:\\QuickHack\\security\\root-ca.pem",
+    NODE_OPTIONS: "--require=C:\\hostile.js",
+  };
   const run = runClientRuntimeBootstrap(args, {
     claimTimeoutMs: 50,
+    environment: runtimeEnvironment,
     processExecution: {
-      childEnvironment: () => ({}),
-      spawnOwnedChild() {
+      childEnvironment(input) {
+        childEnvironmentInput = input;
+        return input.overrides;
+      },
+      spawnOwnedChild(_executable, _argumentsList, options) {
         spawned = true;
+        spawnedEnvironment = options.env;
         queueMicrotask(() => child.emit("exit", 0, null));
         return child;
       },
@@ -399,6 +413,18 @@ function stateInput(ownerToken = "a".repeat(48), instanceId = "b".repeat(48)) {
   });
   assert.equal(await run, 0);
   assert.equal(spawned, true);
+  assert.equal(childEnvironmentInput.source, runtimeEnvironment);
+  assert.equal(spawnedEnvironment.QUICKHACK_RUNTIME_ROLE, "client");
+  assert.equal(spawnedEnvironment.QUICKHACK_ARTIFACT_KIND, "DEMONSTRATION_CLIENT");
+  assert.equal(
+    spawnedEnvironment.QUICKHACK_PACKAGE_MANIFEST,
+    "C:\\QuickHack\\quickhack-package.json"
+  );
+  assert.equal(
+    spawnedEnvironment.NODE_EXTRA_CA_CERTS,
+    "C:\\QuickHack\\security\\root-ca.pem"
+  );
+  assert.equal("NODE_OPTIONS" in spawnedEnvironment, false);
   stateStore.removeOwned({ ownerToken: prepared.ownerToken, instanceId: prepared.instanceId, pid: process.pid });
 }
 

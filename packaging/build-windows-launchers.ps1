@@ -42,7 +42,7 @@ function Build-Launcher {
   & $csc `
     /nologo `
     /target:winexe `
-    /platform:anycpu `
+    /platform:x64 `
     /optimize+ `
     /utf8output `
     "/define:$Define" `

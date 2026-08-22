@@ -308,6 +308,7 @@ async function startRuntime(serverUrl, caCertificateFile) {
                 HOSTNAME: host,
                 NODE_ENV: runtimePlan.nodeEnv,
                 QUICKHACK_RUNTIME_ROLE: "client",
+                QUICKHACK_ARTIFACT_KIND: packageIdentity?.artifactKind,
                 QUICKHACK_SERVER_URL: serverUrl,
                 QUICKHACK_APP_ROOT: root,
                 QUICKHACK_RUNTIME_DIR: runtimeDirectories.runtimeDir,
