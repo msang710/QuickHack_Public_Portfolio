@@ -1,5 +1,6 @@
 import path from "node:path";
 import { POSTGRESQL_MAJOR_VERSION } from "../../../quickhack_shared/platform/native-runtime-contract.mjs";
+import { packageArtifactContract } from "../../package-artifact-contract.mjs";
 import { msixArtifactConfig } from "./msix-artifact-config.mjs";
 
 export const QUICKHACK_LEGACY_INSTALL_CLASSIFICATIONS = Object.freeze([
@@ -20,7 +21,7 @@ function failure(code, message) {
 }
 
 function serverConfig(value) {
-  const config = msixArtifactConfig(value);
+  const config = msixArtifactConfig(packageArtifactContract(value).packageTarget);
   if (config.role !== "server") {
     throw failure("LEGACY_INSTALL_TARGET_INVALID", "Legacy migration requires a server artifact.");
   }

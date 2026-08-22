@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { classifyLegacyWindowsInstall } from "../../../packaging/windows/msix/legacy-install-detector.mjs";
 import { msixArtifactConfig } from "../../../packaging/windows/msix/msix-artifact-config.mjs";
+import { packageArtifactContract } from "../../../packaging/package-artifact-contract.mjs";
 import { verifyMsixPackage } from "../../verify-msix-package.mjs";
 import { runPowerShellScript } from "../../../quickhack_server/security/async-powershell.mjs";
 import { observeLegacyWindowsInstall } from "./legacy-install-observer.mjs";
@@ -47,7 +48,9 @@ export function createWindowsServerRepairAdapter(input) {
   if (process.platform !== "win32" && input?.allowNonWindows !== true) {
     throw failure("PROVISIONING_PLATFORM_UNSUPPORTED", "Windows server repair requires Windows.");
   }
-  const config = msixArtifactConfig(input?.target ?? input?.artifactKind);
+  const config = msixArtifactConfig(
+    packageArtifactContract(input?.target ?? input?.artifactKind).packageTarget
+  );
   if (config.role !== "server") throw failure("LEGACY_INSTALL_TARGET_INVALID", "Server repair requires a server artifact.");
   const packageRoot = path.win32.resolve(String(input?.packageRoot ?? ""));
   const programData = path.win32.resolve(String(input?.programData ?? ""));

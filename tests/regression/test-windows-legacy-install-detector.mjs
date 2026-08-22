@@ -68,6 +68,13 @@ assert.deepEqual(compatible.legacyServices, [
   "QuickHackDemoPostgreSQL",
   "QuickHackDemoServerConsole",
 ]);
+assert.equal(
+  classifyLegacyWindowsInstall({
+    artifactKind: "DEMONSTRATION_SERVER",
+    observation: observation(),
+  }).classification,
+  "COMPATIBLE"
+);
 
 const preserved = classifyLegacyWindowsInstall({
   target: "demo-server",

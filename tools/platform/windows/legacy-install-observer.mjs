@@ -1,6 +1,7 @@
 import path from "node:path";
 import { runPowerShellScript } from "../../../quickhack_server/security/async-powershell.mjs";
 import { msixArtifactConfig } from "../../../packaging/windows/msix/msix-artifact-config.mjs";
+import { packageArtifactContract } from "../../../packaging/package-artifact-contract.mjs";
 
 function failure(code, message) {
   const error = new Error(message);
@@ -9,7 +10,7 @@ function failure(code, message) {
 }
 
 function serverConfigs(value) {
-  const own = msixArtifactConfig(value);
+  const own = msixArtifactConfig(packageArtifactContract(value).packageTarget);
   if (own.role !== "server") {
     throw failure("LEGACY_INSTALL_TARGET_INVALID", "Legacy observation requires a server artifact.");
   }

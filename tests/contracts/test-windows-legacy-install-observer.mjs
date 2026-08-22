@@ -19,7 +19,7 @@ assert.doesNotMatch(LEGACY_INSTALL_OBSERVE_SCRIPT, /Remove-|Stop-Service|Start-S
 
 let invocation;
 const observed = await observeLegacyWindowsInstall({
-  target: "demo-server",
+  artifactKind: "DEMONSTRATION_SERVER",
   packageRoot: "C:\\Program Files\\WindowsApps\\QuickHack.Demonstration.Server_1.0.0.0_x64",
   programData: "C:\\ProgramData",
   allowNonWindows: true,
