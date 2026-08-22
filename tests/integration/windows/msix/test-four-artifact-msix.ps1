@@ -390,7 +390,7 @@ try {
   Copy-Item -LiteralPath $fixtures[0].configRoot -Destination $operationalClient.mutableRoot -Recurse
   Invoke-ClientLauncher -Artifact $operationalClient -Command start -ExpectFailure
   Wait-ClientRuntime -Artifact $operationalClient -Expected $false | Out-Null
-  $crossFlavorLog = Join-Path $operationalClient.mutableRoot "logs\client-runtime.log"
+  $crossFlavorLog = Join-Path $operationalClient.mutableRoot "launcher-error.log"
   if (
     -not (Test-Path -LiteralPath $crossFlavorLog -PathType Leaf) -or
     (Get-Content -LiteralPath $crossFlavorLog -Raw -Encoding utf8) -notmatch 'PACKAGE_FLAVOR_MISMATCH'
