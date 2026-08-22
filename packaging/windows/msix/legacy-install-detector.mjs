@@ -111,13 +111,16 @@ function validateState(observation, config, expectedRoot) {
     return { exists: true, valid: false, ambiguous: true, reasonCode: "LEGACY_STATE_ROOT_AMBIGUOUS" };
   }
   const runtime = state.runtimeConfig;
+  if (!runtime || state.postgresqlMajor === null || state.postgresqlMajor === undefined) {
+    return { exists: true, valid: false, incomplete: true, reasonCode: "STATE_PROVISIONING_INCOMPLETE" };
+  }
   if (
     runtime?.schemaVersion !== CURRENT_RUNTIME_CONFIG_SCHEMA ||
     runtime?.packageFlavor !== config.packageFlavor ||
     !samePath(runtime?.dataDirectory, path.win32.join(expectedRoot, "data")) ||
     String(state.postgresqlMajor ?? "") !== String(POSTGRESQL_MAJOR_VERSION)
   ) {
-    return { exists: true, valid: false, ambiguous: false, reasonCode: "STATE_SCHEMA_INCOMPATIBLE" };
+    return { exists: true, valid: false, ambiguous: false, incomplete: false, reasonCode: "STATE_SCHEMA_INCOMPATIBLE" };
   }
   return { exists: true, valid: true };
 }
@@ -156,7 +159,8 @@ export function classifyLegacyWindowsInstall(input) {
   }
 
   const state = validateState(observation, own, expectedStateRoot);
-  if (!state.valid) {
+  const ownPackageObserved = packageObserved(observation.packages, own.identityName);
+  if (!state.valid && !state.incomplete) {
     return classification(
       state.ambiguous ? "AMBIGUOUS" : "INCOMPATIBLE",
       state.reasonCode,
@@ -176,6 +180,11 @@ export function classifyLegacyWindowsInstall(input) {
     if (observedOwnServices.length > 0 && !packageServiceOnly) {
       return classification("AMBIGUOUS", "LEGACY_PARTIAL_SERVICE_REGISTRATION");
     }
+    if (state.incomplete && ownPackageObserved) {
+      return classification("NONE", "MSIX_STATE_PENDING_PROVISIONING", {
+        expectedArtifactKind: own.artifactKind,
+      });
+    }
     if (state.exists) {
       return classification("COMPATIBLE", "LEGACY_PRESERVED_STATE_COMPATIBLE", {
         mode: "PRESERVED_STATE",
@@ -188,6 +197,10 @@ export function classifyLegacyWindowsInstall(input) {
     return classification("NONE", "LEGACY_INSTALL_NOT_FOUND", {
       expectedArtifactKind: own.artifactKind,
     });
+  }
+
+  if (state.incomplete) {
+    return classification("AMBIGUOUS", "LEGACY_STATE_INCOMPLETE");
   }
 
   if (
