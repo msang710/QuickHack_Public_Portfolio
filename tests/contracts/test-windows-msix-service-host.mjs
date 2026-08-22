@@ -35,6 +35,18 @@ assert.match(
 );
 assert.match(host, /RedirectStandardOutput = CaptureChildDiagnostics/u);
 assert.match(host, /RedirectStandardError = CaptureChildDiagnostics/u);
+assert.match(host, /internal bool RedirectChildStandardInput/u);
+assert.match(
+  host,
+  /internal bool RedirectChildStandardInput[\s\S]*#if QUICKHACK_POSTGRESQL[\s\S]*return true;[\s\S]*#else[\s\S]*return false;[\s\S]*#endif/u
+);
+assert.match(host, /RedirectStandardInput = RedirectChildStandardInput/u);
+assert.match(host, /definition\.RedirectChildStandardInput/u);
+assert.match(host, /started\.StandardInput\.Close\(\)/u);
+assert.ok(
+  host.indexOf("started.StandardInput.Close()") < host.indexOf("started.BeginOutputReadLine()"),
+  "PostgreSQL stdin must become EOF before redirected diagnostics begin."
+);
 assert.match(host, /started\.OutputDataReceived \+= diagnostics\.Observe/u);
 assert.match(host, /started\.ErrorDataReceived \+= diagnostics\.Observe/u);
 assert.match(host, /started\.BeginOutputReadLine\(\)/u);

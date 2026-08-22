@@ -200,6 +200,18 @@ internal sealed class QuickHackServiceDefinition
         }
     }
 
+    internal bool RedirectChildStandardInput
+    {
+        get
+        {
+#if QUICKHACK_POSTGRESQL
+            return true;
+#else
+            return false;
+#endif
+        }
+    }
+
     internal void ValidatePackageFiles()
     {
         RequiredFile(ChildExecutable);
@@ -226,7 +238,7 @@ internal sealed class QuickHackServiceDefinition
         startInfo.UseShellExecute = false;
         startInfo.CreateNoWindow = true;
         startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-        startInfo.RedirectStandardInput = false;
+        startInfo.RedirectStandardInput = RedirectChildStandardInput;
         startInfo.RedirectStandardOutput = CaptureChildDiagnostics;
         startInfo.RedirectStandardError = CaptureChildDiagnostics;
         ReplaceEnvironment(startInfo.EnvironmentVariables, Path.GetDirectoryName(ChildExecutable));
@@ -408,6 +420,19 @@ internal sealed class QuickHackWindowsService : ServiceBase
         if (started == null)
         {
             throw new InvalidOperationException("QuickHack packaged service child did not start.");
+        }
+        if (definition.RedirectChildStandardInput)
+        {
+            try
+            {
+                started.StandardInput.Close();
+            }
+            catch
+            {
+                try { started.Kill(); } catch { }
+                started.Dispose();
+                throw;
+            }
         }
         QuickHackPostgresqlChildDiagnosticClassifier diagnostics = null;
         if (definition.CaptureChildDiagnostics)
