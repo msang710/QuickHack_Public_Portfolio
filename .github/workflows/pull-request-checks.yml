@@ -150,7 +150,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Prepare unprivileged makepkg user
         run: useradd --create-home builder && chown -R builder:builder "$GITHUB_WORKSPACE"
-      - run: sudo -u builder npm ci
+      - run: >-
+          sudo -u builder env
+          NODE_ENV="$NODE_ENV"
+          QUICKHACK_TEST_DATABASE_URL="$QUICKHACK_TEST_DATABASE_URL"
+          npm ci
       - run: sudo -u builder npm run build
       - name: Build and verify exact four Linux packages once
         env:

@@ -56,6 +56,7 @@ assert.equal(
 assert.match(integrationWorkflowSource, /four-artifact-distribution\.mjs/);
 assert.match(integrationWorkflowSource, /windows-msix-exact-four-unsigned/);
 assert.match(integrationWorkflowSource, /linux-exact-four/);
+assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*npm ci/);
 assert.equal([...integrationWorkflowSource.matchAll(/sudo -u builder npm run build/g)].length, 1);
 assert.equal([...integrationWorkflowSource.matchAll(/release:linux:/g)].length, 1);
 assert.doesNotMatch(integrationWorkflowSource, /innosetup|build-installer/iu);
