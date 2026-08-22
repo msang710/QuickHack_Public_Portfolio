@@ -14,6 +14,7 @@ const temporaryDirectory = temporaryDatabase.directory;
 const runtimeConfigPath = path.join(temporaryDirectory, "server-runtime.json");
 const qhkeyFile = path.join(
   temporaryDirectory,
+  ...(process.platform === "linux" ? ["quickhack"] : []),
   "qhkey",
   "quickhack-keys",
   "logen.qhkey"
@@ -24,6 +25,7 @@ const masterKeyFile = path.join(
   "qhkey-master.key"
 );
 const originalCredentialsDirectory = process.env.CREDENTIALS_DIRECTORY;
+const originalXdgDataHome = process.env.XDG_DATA_HOME;
 if (process.platform === "linux") {
   const credentialDirectory = path.join(temporaryDirectory, "credentials");
   fs.mkdirSync(credentialDirectory, { recursive: true });
@@ -33,6 +35,7 @@ if (process.platform === "linux") {
     { mode: 0o600 }
   );
   process.env.CREDENTIALS_DIRECTORY = credentialDirectory;
+  process.env.XDG_DATA_HOME = temporaryDirectory;
 }
 const originalFetch = globalThis.fetch;
 
@@ -69,6 +72,12 @@ function writeRuntimeConfig(environment) {
 
 writeRuntimeConfig("development");
 configureIntegrationTestEnvironment(temporaryDatabase.databaseUrl);
+if (process.platform === "linux") {
+  const runtimeConfigArgumentIndex = process.argv.indexOf("--runtime-config");
+  if (runtimeConfigArgumentIndex >= 0) {
+    process.argv.splice(runtimeConfigArgumentIndex, 2);
+  }
+}
 process.env.LOGEN_API_MODE = "mock";
 process.env.LOGEN_LIVE_WRITE_ENABLED = "false";
 process.env.QUICKHACK_LOGEN_QHKEY_FILE = "C:\\attacker\\logen.qhkey";
@@ -165,7 +174,7 @@ try {
 
   const status = await getLogenCredentialStatus();
   assert.equal(status.providerType, "USB_QHKEY");
-  assert.equal(status.status, "ACTIVE");
+  assert.equal(status.status, "ACTIVE", JSON.stringify(status));
   assert.equal(status.keyFingerprint, firstMetadata.keyFingerprint);
   assert.equal(status.readEnabled, true);
   assert.equal(status.writeEnabled, true);
@@ -278,6 +287,11 @@ try {
     delete process.env.CREDENTIALS_DIRECTORY;
   } else {
     process.env.CREDENTIALS_DIRECTORY = originalCredentialsDirectory;
+  }
+  if (originalXdgDataHome === undefined) {
+    delete process.env.XDG_DATA_HOME;
+  } else {
+    process.env.XDG_DATA_HOME = originalXdgDataHome;
   }
   await prisma.$disconnect();
   temporaryDatabase.cleanup();
