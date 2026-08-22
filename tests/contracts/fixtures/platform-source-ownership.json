@@ -66,7 +66,7 @@
     { "path": "tools/platform/windows/legacy-install-observer.mjs", "token": "path.win32", "count": 4, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/legacy-install-observer.mjs", "token": "powershell", "count": 4, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/legacy-install-observer.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
-    { "path": "tools/platform/windows/legacy-msix-migration-adapter.mjs", "token": "path.win32", "count": 13, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-msix-migration-adapter.mjs", "token": "path.win32", "count": 14, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/legacy-msix-migration-adapter.mjs", "token": "powershell", "count": 6, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/legacy-msix-migration-adapter.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/legacy-msix-migration-journal.mjs", "token": "path.win32", "count": 3, "classification": "adapter-owned" },
