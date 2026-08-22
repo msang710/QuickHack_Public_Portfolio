@@ -36,6 +36,7 @@ $certificateThumbprint = ""
 $phaseFailure = $null
 $cleanupFailure = $null
 $phase = "PREFLIGHT"
+$installed = $null
 
 foreach ($boundedPath in @($validationRoot, $EvidencePath)) {
   if (-not $boundedPath.StartsWith(
@@ -304,6 +305,24 @@ function Get-RepairEnvironmentDiagnostic {
   }
 }
 
+function Get-RepairAdapterDiagnostic {
+  if (-not $installed -or -not (Test-Path -LiteralPath $installed.InstallLocation -PathType Container)) {
+    return $null
+  }
+  $nodePath = Join-Path $installed.InstallLocation "runtime\node\node.exe"
+  $scriptPath = Join-Path $PSScriptRoot "diagnose-demo-server-repair.mjs"
+  try {
+    $output = & $nodePath `
+      $scriptPath `
+      "--package-root=$($installed.InstallLocation)" `
+      "--program-data=$env:ProgramData" 2>$null
+    if ($LASTEXITCODE -ne 0) { return [ordered]@{ status = "DIAGNOSTIC_FAILED" } }
+    return $output | ConvertFrom-Json
+  } catch {
+    return [ordered]@{ status = "DIAGNOSTIC_FAILED" }
+  }
+}
+
 if (-not (Test-IsAdministrator)) { throw "QuickHack PR-06 native lifecycle requires administrator elevation." }
 if (-not $AcknowledgeTestStatePurge) { throw "QuickHack PR-06 native lifecycle requires -AcknowledgeTestStatePurge." }
 if (Get-AppxPackage -Name $identityName -ErrorAction SilentlyContinue) { throw "QuickHack demo-server package is already installed." }
@@ -455,6 +474,7 @@ try {
     migration = $migrationDiagnostic
     provisioning = $provisioningDiagnostic
     repairEnvironment = Get-RepairEnvironmentDiagnostic
+    repairAdapter = Get-RepairAdapterDiagnostic
   } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 } finally {
   try { Remove-ExactTestState } catch { $cleanupFailure = $_ }
