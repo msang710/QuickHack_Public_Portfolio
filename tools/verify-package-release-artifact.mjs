@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { packageReleaseVariant } from "../packaging/package-release-matrix.mjs";
 import { assertPackageManifest } from "../packaging/common/package-manifest.mjs";
+import { assertProductionMsixPublisher } from "../packaging/windows/msix/msix-artifact-config.mjs";
 
 function invalid(code, message) {
   const error = new Error(`${code}: ${message}`);
@@ -95,18 +96,40 @@ export function verifyPackageReleaseArtifact({
   } catch (error) {
     throw invalid("INVALID_PACKAGE_MANIFEST", `package manifest is not valid JSON: ${error.message}`);
   }
-  const manifest = assertPackageManifest(manifestValue);
-  const expectedManifestPlatform = normalizedPlatform === "windows" ? "win32" : "linux";
-  if (
-    manifest.version !== version ||
-    manifest.platform !== expectedManifestPlatform ||
-    manifest.packageTarget !== normalizedTarget ||
-    manifest.artifactKind !== release.artifactKind
-  ) {
-    throw invalid(
-      "PACKAGE_MANIFEST_IDENTITY_MISMATCH",
-      `manifest does not match ${normalizedPlatform}/${normalizedTarget}/${version}`
-    );
+  if (normalizedPlatform === "windows") {
+    if (
+      manifestValue.schemaVersion !== 2 ||
+      manifestValue.semanticVersion !== version ||
+      manifestValue.packageTarget !== normalizedTarget ||
+      manifestValue.artifactKind !== release.artifactKind ||
+      manifestValue.packageFile !== release.artifactFileName ||
+      manifestValue.signingMode !== "PRODUCTION" ||
+      !["AZURE_ARTIFACT_SIGNING", "CA_CERTIFICATE"].includes(manifestValue.signingProvider) ||
+      !/^[a-f0-9]{40}$/u.test(manifestValue.sourceCommit ?? "") ||
+      manifestValue.sourceDirty !== false ||
+      manifestValue.signature?.status !== "VALID" ||
+      manifestValue.signature?.subject !== manifestValue.publisher ||
+      manifestValue.signature?.timestampVerified !== true
+    ) {
+      throw invalid(
+        "PACKAGE_MANIFEST_IDENTITY_MISMATCH",
+        `production MSIX sidecar does not match ${normalizedTarget}/${version}`
+      );
+    }
+    assertProductionMsixPublisher(manifestValue.publisher);
+  } else {
+    const manifest = assertPackageManifest(manifestValue);
+    if (
+      manifest.version !== version ||
+      manifest.platform !== "linux" ||
+      manifest.packageTarget !== normalizedTarget ||
+      manifest.artifactKind !== release.artifactKind
+    ) {
+      throw invalid(
+        "PACKAGE_MANIFEST_IDENTITY_MISMATCH",
+        `manifest does not match ${normalizedPlatform}/${normalizedTarget}/${version}`
+      );
+    }
   }
 
   const checksumPath = path.join(directory, release.checksumFileName);
@@ -123,6 +146,12 @@ export function verifyPackageReleaseArtifact({
     if (actualDigest !== expectedDigest) {
       throw invalid("PACKAGE_ARTIFACT_DIGEST_MISMATCH", `${fileName} does not match its SHA-256 checksum`);
     }
+  }
+  if (
+    normalizedPlatform === "windows" &&
+    manifestValue.packageSha256 !== checksums.get(release.artifactFileName)
+  ) {
+    throw invalid("PACKAGE_ARTIFACT_DIGEST_MISMATCH", "MSIX sidecar package hash does not match its checksum");
   }
 
   return Object.freeze({

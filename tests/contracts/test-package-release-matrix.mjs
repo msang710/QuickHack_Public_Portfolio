@@ -12,7 +12,8 @@ for (const item of QUICKHACK_RELEASE_MATRIX) {
   assert.ok(item.manifestFileName.endsWith("-manifest-VERSION.json"));
   assert.ok(item.checksumFileName.endsWith("-SHA256SUMS.txt"));
 }
-assert.match(packageReleaseVariant("windows", "operational-client", "2.0.0").artifactFileName, /QuickHack-Operational-Client-Setup-2\.0\.0\.exe/);
+assert.match(packageReleaseVariant("windows", "operational-client", "2.0.0").artifactFileName, /QuickHack-Operational-Client-2\.0\.0\.msix/);
+assert.equal(packageReleaseVariant("windows", "demo-server").distributionRoot, "release/distribution/windows/msix/demo-server");
 assert.match(packageReleaseVariant("linux", "demo-server", "2.0.0").artifactFileName, /quickhack-demonstration-server-2\.0\.0-1-x86_64\.pkg\.tar\.zst/);
 
 const packageJson = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
@@ -28,9 +29,12 @@ assert.equal(packageJson.scripts["stage:demo-client"], "npm run stage:windows:de
 const integrationWorkflowSource = readFileSync(new URL("../../.github/workflows/pull-request-checks.yml", import.meta.url), "utf8");
 const windowsWorkflowSource = readFileSync(new URL("../../.github/workflows/windows-release.yml", import.meta.url), "utf8");
 const windowsDemoWorkflowSource = readFileSync(new URL("../../.github/workflows/windows-demo-release.yml", import.meta.url), "utf8");
+const windowsNativeWorkflowSource = readFileSync(new URL("../../.github/workflows/windows-msix-native-evidence.yml", import.meta.url), "utf8");
 const linuxWorkflowSource = readFileSync(new URL("../../.github/workflows/linux-release.yml", import.meta.url), "utf8");
-for (const source of [integrationWorkflowSource, windowsWorkflowSource, linuxWorkflowSource]) {
+for (const source of [integrationWorkflowSource, windowsWorkflowSource, windowsDemoWorkflowSource, windowsNativeWorkflowSource, linuxWorkflowSource]) {
   assert.doesNotThrow(() => parseYaml(source));
+}
+for (const source of [integrationWorkflowSource, linuxWorkflowSource]) {
   for (const target of ["demo-server", "demo-client", "operational-server", "operational-client"]) {
     assert.ok(source.includes(target));
   }
@@ -40,39 +44,57 @@ assert.match(integrationWorkflowSource, /^\s*workflow_dispatch:/mu);
 assert.match(integrationWorkflowSource, /PR labels are work\/review units, not execution blockers/);
 assert.match(integrationWorkflowSource, /version:/);
 assert.match(integrationWorkflowSource, /source-and-postgresql:/);
-assert.match(integrationWorkflowSource, /windows-package-matrix:/);
-assert.match(integrationWorkflowSource, /linux-package-matrix:/);
+assert.match(integrationWorkflowSource, /windows-msix-package-set:/);
+assert.match(integrationWorkflowSource, /linux-package-set:/);
 assert.match(integrationWorkflowSource, /android-build:/);
 assert.match(integrationWorkflowSource, /final-integration-complete:/);
 assert.match(integrationWorkflowSource, /if: always\(\)/);
 assert.equal(
   [...integrationWorkflowSource.matchAll(/verify-package-release-artifact\.mjs/g)].length,
-  2
+  1
 );
+assert.match(integrationWorkflowSource, /four-artifact-distribution\.mjs/);
+assert.match(integrationWorkflowSource, /windows-msix-exact-four-unsigned/);
+assert.match(integrationWorkflowSource, /options: \[all, source-linux, source\]/);
+assert.match(integrationWorkflowSource, /name: final-integration-complete/);
+for (const target of ["demo-server", "demo-client", "operational-server", "operational-client"]) {
+  assert.match(integrationWorkflowSource, new RegExp(`name: linux-${target}`));
+}
+assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*QUICKHACK_TEST_MIGRATOR_DATABASE_URL="\$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"[\s\S]*npm ci/);
+assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*QUICKHACK_TEST_MIGRATOR_DATABASE_URL="\$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"[\s\S]*npm run build/);
+assert.equal([...integrationWorkflowSource.matchAll(/release:linux:/g)].length, 1);
+assert.match(integrationWorkflowSource, /npm run release:linux:demo-server/);
+assert.doesNotMatch(integrationWorkflowSource, /innosetup|build-installer/iu);
 assert.doesNotMatch(
   integrationWorkflowSource,
   /WINDOWS_PHYSICAL|LINUX_PHYSICAL|HARDWARE_MANUAL|closure-(?:evidence|attestation)|review-closure|114 findings|closure-ledger/
 );
-for (const source of [windowsWorkflowSource, linuxWorkflowSource]) {
-  assert.match(source, /actions: read/);
-  assert.match(source, /Resolve successful same-revision Final Integration run/);
-  assert.match(source, /Verify package manifest, version, target, and hashes/);
-  assert.match(source, /verify-package-release-artifact\.mjs/);
-  assert.doesNotMatch(source, /closure-(?:evidence|attestation)|review-closure|closure-ledger/);
-  assert.doesNotMatch(source, /npm run (?:build|stage:|release:|verify)/);
-}
+assert.match(linuxWorkflowSource, /actions: read/);
+assert.match(linuxWorkflowSource, /Resolve successful same-revision Final Integration run/);
+assert.match(linuxWorkflowSource, /name: final-integration-complete/);
+assert.match(linuxWorkflowSource, /verify-package-release-artifact\.mjs/);
+assert.doesNotMatch(linuxWorkflowSource, /npm run (?:build|stage:|release:|verify)/);
 assert.doesNotMatch(`${windowsWorkflowSource}\n${linuxWorkflowSource}`, /Portable-|\.zip/u);
 
-assert.doesNotThrow(() => parseYaml(windowsDemoWorkflowSource));
-assert.match(windowsDemoWorkflowSource, /release-requests\/windows-demo\/\*\.json/);
-assert.match(windowsDemoWorkflowSource, /target: \[demo-server, demo-client\]/);
-assert.doesNotMatch(windowsDemoWorkflowSource, /target: \[[^\]]*operational-/);
-assert.match(windowsDemoWorkflowSource, /postgresql-18\.4-1-windows-x64-binaries\.zip/);
-assert.match(windowsDemoWorkflowSource, /7EFFE34C0BF89027B3F171447D351CBC460F4566C8D0F643DAEC67F140787858/);
-assert.match(windowsDemoWorkflowSource, /matrix\.target == 'demo-server'/);
-assert.doesNotMatch(windowsDemoWorkflowSource, /choco install postgresql18/);
-assert.match(windowsDemoWorkflowSource, /--require-platform-tools/);
-assert.match(windowsDemoWorkflowSource, /--prerelease/);
-assert.match(windowsDemoWorkflowSource, /Expected 6 release assets/);
+assert.match(windowsDemoWorkflowSource, /^\s*workflow_dispatch:/mu);
+assert.match(windowsDemoWorkflowSource, /azure\/artifact-signing-action@[a-f0-9]{40}/u);
+assert.match(windowsDemoWorkflowSource, /id-token: write/);
+assert.match(windowsDemoWorkflowSource, /--require-unsigned/);
+assert.match(windowsDemoWorkflowSource, /sign-msix\.ps1/);
+assert.match(windowsDemoWorkflowSource, /name: final-integration-complete/);
+assert.doesNotMatch(windowsDemoWorkflowSource, /windows-demo|Inno|\.exe/iu);
+assert.match(windowsNativeWorkflowSource, /\[self-hosted, windows, x64, quickhack-msix-release/);
+assert.match(windowsNativeWorkflowSource, /run-release-candidate-matrix\.ps1/);
+assert.match(windowsWorkflowSource, /^\s*workflow_dispatch:/mu);
+assert.match(windowsWorkflowSource, /release-candidate\.mjs/);
+assert.match(windowsWorkflowSource, /Resolve successful same-revision Final Integration run/);
+assert.match(windowsWorkflowSource, /name: final-integration-complete/);
+assert.match(windowsWorkflowSource, /verify-package-release-artifact\.mjs/);
+assert.match(windowsWorkflowSource, /windows_10_evidence_run_id/);
+assert.match(windowsWorkflowSource, /windows_11_evidence_run_id/);
+assert.match(windowsWorkflowSource, /inputs\.publish == true/);
+assert.match(windowsWorkflowSource, /"\$\{#assets\[@\]\}" -eq 16/);
+assert.doesNotMatch(windowsWorkflowSource, /--clobber|build-installer|release:windows:/iu);
+assert.match(windowsWorkflowSource, /grep -Eiq '\\\.\(exe\|appinstaller\)\$'/u);
 
 console.log("Four logical artifacts and eight official platform release variants verified.");

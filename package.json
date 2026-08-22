@@ -62,11 +62,19 @@
     "test:windows-branding-manifest": "node tests/contracts/test-windows-branding-manifest.mjs",
     "test:windows-msix-package": "node tests/contracts/test-windows-msix-package.mjs",
     "test:windows-msix-four-artifact-distribution": "node tests/contracts/test-windows-msix-four-artifact-distribution.mjs",
+    "test:windows-msix-release-request": "node tests/contracts/test-windows-msix-release-request.mjs",
+    "test:windows-msix-release-candidate": "node tests/contracts/test-windows-msix-release-candidate.mjs",
+    "test:windows-msix-production-signing": "node tests/contracts/test-windows-msix-production-signing.mjs",
     "test:windows-msix-four-artifact-native": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/integration/windows/msix/test-four-artifact-msix.ps1",
     "test:windows-msix-foundation": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/integration/windows/test-msix-foundation.ps1",
     "test:windows-msix-service-host": "node tests/contracts/test-windows-msix-service-host.mjs",
     "test:windows-packaged-postgresql-ownership": "node tests/contracts/test-windows-packaged-postgresql-ownership.mjs",
     "test:windows-msix-server-setup": "node tests/contracts/test-windows-msix-server-setup.mjs",
+    "test:windows-legacy-install-observer": "node tests/contracts/test-windows-legacy-install-observer.mjs",
+    "test:windows-legacy-msix-migration-adapter": "node tests/contracts/test-windows-legacy-msix-migration-adapter.mjs",
+    "test:windows-legacy-install-detector": "node tests/regression/test-windows-legacy-install-detector.mjs",
+    "test:windows-legacy-msix-migration": "node tests/regression/test-windows-legacy-msix-migration.mjs",
+    "test:windows-server-secret-scope-migration": "node tests/regression/test-windows-server-secret-scope-migration.mjs",
     "test:windows-msix-packaged-services": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/integration/windows/msix/test-msix-packaged-services.ps1",
     "test:windows-node-runtime": "node tests/contracts/test-windows-node-runtime-contract.mjs",
     "test:windows-demo-client-msix": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/integration/windows/msix/test-demo-client-msix.ps1",
@@ -336,6 +344,7 @@
     "stage:windows:operational-server": "node packaging/windows/create-staging-package.mjs --target=operational-server",
     "prestage:windows:operational-client": "npm run prepare:windows-node-runtime && npm run build:windows-launchers",
     "stage:windows:operational-client": "node packaging/windows/create-staging-package.mjs --target=operational-client",
+    "stage:windows:four": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packaging/stage-windows-four-artifacts.ps1",
     "stage:linux:demo-server": "node packaging/linux/create-staging-package.mjs --target=demo-server",
     "stage:linux:demo-client": "node packaging/linux/create-staging-package.mjs --target=demo-client",
     "stage:linux:operational-server": "node packaging/linux/create-staging-package.mjs --target=operational-server",
@@ -352,6 +361,8 @@
     "release:msix:operational-server": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packaging/build-msix.ps1 -Target operational-server -IncludeServices -IncludeServerSetup",
     "release:msix:operational-client": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packaging/build-msix.ps1 -Target operational-client",
     "release:msix:four": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packaging/build-msix-four-artifacts.ps1",
+    "release:msix:sign": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File packaging/windows/msix/sign-msix.ps1",
+    "release:msix:candidate": "node packaging/windows/msix/release-candidate.mjs",
     "release:linux:demo-server": "node packaging/linux/build-arch-package.mjs --target=demo-server",
     "release:linux:demo-client": "node packaging/linux/build-arch-package.mjs --target=demo-client",
     "release:linux:operational-server": "node packaging/linux/build-arch-package.mjs --target=operational-server",
@@ -417,6 +428,11 @@
     "react-dom": "^19.2.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.0"
+    }
   },
   "allowScripts": {
     "prisma@7.9.1": true,

@@ -10,6 +10,7 @@
     { "path": "packaging/runtime-package-source-boundary.mjs", "token": "systemd", "count": 3, "classification": "build-only" },
     { "path": "packaging/server-migration-runtime-files.mjs", "token": "powershell", "count": 1, "classification": "build-only" },
     { "path": "packaging/server-migration-runtime-files.mjs", "token": "systemd", "count": 4, "classification": "build-only" },
+    { "path": "packaging/windows/msix/legacy-install-detector.mjs", "token": "path.win32", "count": 8, "classification": "build-only" },
 
     { "path": "quickhack_client/components/security/sensitive-action-guards.tsx", "token": "dpapi", "count": 1, "classification": "observation-only" },
     { "path": "quickhack_client/components/user/account-totp-panel.tsx", "token": "dpapi", "count": 1, "classification": "observation-only" },
@@ -37,7 +38,7 @@
     { "path": "quickhack_server/platform/windows/security-process.mjs", "token": "powershell", "count": 19, "classification": "adapter-owned" },
     { "path": "quickhack_server/platform/windows/server-secret-protector.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
     { "path": "quickhack_server/platform/windows/server-secret-protector.mjs", "token": "powershell", "count": 4, "classification": "adapter-owned" },
-    { "path": "quickhack_server/platform/windows/server-secret-protector.mjs", "token": "dpapi", "count": 9, "classification": "adapter-owned" },
+    { "path": "quickhack_server/platform/windows/server-secret-protector.mjs", "token": "dpapi", "count": 18, "classification": "adapter-owned" },
     { "path": "quickhack_server/security/async-powershell.d.mts", "token": "powershell", "count": 2, "classification": "transitional", "ownerStage": "PR-09" },
     { "path": "quickhack_server/security/async-powershell.mjs", "token": "powershell", "count": 2, "classification": "transitional", "ownerStage": "PR-09" },
 
@@ -62,12 +63,26 @@
     { "path": "tools/platform/linux/systemd-credential-provisioner.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
     { "path": "tools/platform/linux/systemd-credential-provisioner.mjs", "token": "systemd", "count": 9, "classification": "adapter-owned" },
     { "path": "tools/platform/linux/systemd-service-process.mjs", "token": "systemd", "count": 2, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-install-observer.mjs", "token": "path.win32", "count": 4, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-install-observer.mjs", "token": "powershell", "count": 4, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-install-observer.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-msix-migration-adapter.mjs", "token": "path.win32", "count": 14, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-msix-migration-adapter.mjs", "token": "powershell", "count": 6, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-msix-migration-adapter.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/legacy-msix-migration-journal.mjs", "token": "path.win32", "count": 3, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/postgresql-service-install.mjs", "token": "process.platform", "count": 2, "classification": "adapter-owned" },
-    { "path": "tools/platform/windows/postgresql-service-install.mjs", "token": "powershell", "count": 4, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/postgresql-service-install.mjs", "token": "powershell", "count": 10, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/process-execution.mjs", "token": "path.win32", "count": 4, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/server-console-runtime.mjs", "token": "path.win32", "count": 3, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/server-console-runtime.mjs", "token": "powershell", "count": 3, "classification": "adapter-owned" },
     { "path": "tools/platform/windows/server-console-tls-initializer.mjs", "token": "powershell", "count": 3, "classification": "adapter-owned" },
-    { "path": "tools/platform/windows/windows-service-process.mjs", "token": "powershell", "count": 3, "classification": "adapter-owned" }
+    { "path": "tools/platform/windows/server-provisioning-adapter.mjs", "token": "powershell", "count": 7, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/server-provisioning-adapter.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/server-provisioning-journal.mjs", "token": "path.win32", "count": 2, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/server-repair-adapter.mjs", "token": "path.win32", "count": 11, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/server-repair-adapter.mjs", "token": "powershell", "count": 6, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/server-repair-adapter.mjs", "token": "process.platform", "count": 1, "classification": "adapter-owned" },
+    { "path": "tools/platform/windows/windows-service-process.mjs", "token": "powershell", "count": 3, "classification": "adapter-owned" },
+    { "path": "tools/server-provisioning-cli.mjs", "token": "process.platform", "count": 1, "classification": "transitional", "ownerStage": "PR-09" }
   ]
 }

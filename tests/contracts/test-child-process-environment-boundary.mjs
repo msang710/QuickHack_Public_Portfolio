@@ -21,6 +21,7 @@ const RUNTIME_CHILD_PROCESS_FILES = new Set([
   "tools/platform/linux/systemd-one-shot-process.mjs",
   "tools/platform/linux/systemd-service-process.mjs",
   "tools/platform/windows/postgresql-service-install.mjs",
+  "tools/platform/windows/legacy-msix-migration-adapter.mjs",
   "tools/platform/windows/process-execution.mjs",
   "tools/platform/windows/server-console-runtime.mjs",
   "tools/qhkey-authorize.mjs",
@@ -30,6 +31,7 @@ const NON_RUNTIME_CHILD_PROCESS_FILES = new Set([
   "packaging/create-staging-package.mjs",
   "packaging/linux/build-arch-package.mjs",
   "packaging/sanitize-standalone.mjs",
+  "packaging/windows/msix/windows-release-request.mjs",
   "tools/deploy-postgresql-migrations.mjs",
 ]);
 const SOURCE_ROOTS = ["packaging", "quickhack_client", "quickhack_server", "quickhack_shared", "tools"];

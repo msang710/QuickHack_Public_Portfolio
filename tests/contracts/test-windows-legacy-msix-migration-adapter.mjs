@@ -17,6 +17,7 @@ for (const contract of [
   /\/SUPPRESSMSGBOXES/u,
   /\/NORESTART/u,
   /shell: false/u,
+  /processExecution\.childEnvironment/u,
   /REMOVE_LEGACY_BINARY/u,
   /PROVE_MSIX/u,
   /REPROTECT_CREDENTIALS/u,

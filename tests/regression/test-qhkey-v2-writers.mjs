@@ -22,6 +22,21 @@ import { writeTestServerRuntimeConfig } from "../support/runtime-config-file.mjs
 const temporaryDirectory = fs.mkdtempSync(
   path.join(os.tmpdir(), "quickhack-qhkey-v2-writers-")
 );
+const originalCredentialsDirectory = process.env.CREDENTIALS_DIRECTORY;
+const systemdCredentialDirectory = path.join(temporaryDirectory, "credentials");
+const systemdMasterKeyFile = path.join(
+  systemdCredentialDirectory,
+  "quickhack.qhkey-master-key"
+);
+const provisionTestMasterKey = (filePath, byte = 0x5a) => {
+  if (process.platform === "linux") {
+    fs.mkdirSync(systemdCredentialDirectory, { recursive: true });
+    fs.writeFileSync(systemdMasterKeyFile, Buffer.alloc(32, byte), { mode: 0o600 });
+    process.env.CREDENTIALS_DIRECTORY = systemdCredentialDirectory;
+    return;
+  }
+  writeQhkeyMasterKeyFile(filePath, false, { protection: "RAW" });
+};
 const runtimeConfigPath = writeTestServerRuntimeConfig(temporaryDirectory);
 const credential = {
   vendorId: "A123456",
@@ -155,7 +170,7 @@ try {
   const consoleDirectory = path.join(temporaryDirectory, "console");
   const consoleMasterKeyFile = path.join(consoleDirectory, "master.key");
   const consoleQhkeyFile = path.join(consoleDirectory, "coupang.qhkey");
-  writeQhkeyMasterKeyFile(consoleMasterKeyFile, false, { protection: "RAW" });
+  provisionTestMasterKey(consoleMasterKeyFile);
   writeCoupangQhkey(
     { environment: "live", keyAlias: "console-writer-v2" },
     {
@@ -193,7 +208,7 @@ try {
   const sharedMasterKeyFile = path.join(temporaryDirectory, "shared-master.key");
   const sharedCoupangFile = path.join(sharedKeyDirectory, "coupang.qhkey");
   const sharedLogenFile = path.join(sharedKeyDirectory, "logen.qhkey");
-  writeQhkeyMasterKeyFile(sharedMasterKeyFile, false, { protection: "RAW" });
+  provisionTestMasterKey(sharedMasterKeyFile);
   writeCoupangQhkey(
     { environment: "live", keyAlias: "shared-coupang" },
     {
@@ -223,13 +238,14 @@ try {
   const coupangBeforeFailure = fs.readFileSync(sharedCoupangFile);
   const logenBeforeFailure = fs.readFileSync(sharedLogenFile);
   const wrongMasterKeyFile = path.join(temporaryDirectory, "wrong-master.key");
-  writeQhkeyMasterKeyFile(wrongMasterKeyFile, false, { protection: "RAW" });
+  provisionTestMasterKey(wrongMasterKeyFile, 0x3c);
   assert.throws(
     () => validateQhkeyProviderFilesWithMaster(sharedRoot, wrongMasterKeyFile),
     (error) => error?.code === "QHKEY_DECRYPT_FAILED"
   );
   assert.deepEqual(fs.readFileSync(sharedCoupangFile), coupangBeforeFailure);
   assert.deepEqual(fs.readFileSync(sharedLogenFile), logenBeforeFailure);
+  if (process.platform === "linux") provisionTestMasterKey(sharedMasterKeyFile);
 
   fs.copyFileSync(sharedLogenFile, sharedCoupangFile);
   assert.throws(
@@ -282,5 +298,10 @@ try {
   console.log("QHKey v2 CLI and server-console writer checks passed.");
 } finally {
   await new Promise((resolve) => mockServer.close(resolve));
+  if (originalCredentialsDirectory === undefined) {
+    delete process.env.CREDENTIALS_DIRECTORY;
+  } else {
+    process.env.CREDENTIALS_DIRECTORY = originalCredentialsDirectory;
+  }
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 }

@@ -16,11 +16,15 @@ export function packageReleaseVariant(platformValue, targetValue, version = "VER
     target: artifact.packageTarget,
     artifactKind: artifact.artifactKind,
     stagingRoot: `release/${platform}/${artifact.packageTarget}`,
-    distributionRoot: `release/distribution/${platform}/${artifact.packageTarget}`,
+    distributionRoot: platform === "windows"
+      ? `release/distribution/windows/msix/${artifact.packageTarget}`
+      : `release/distribution/linux/${artifact.packageTarget}`,
     artifactFileName: platform === "windows"
-      ? `${baseName}-Setup-${version}.exe`
+      ? `${baseName}-${version}.msix`
       : `${baseName}-${version}-1-x86_64.pkg.tar.zst`,
-    manifestFileName: `${baseName}-manifest-${version}.json`,
+    manifestFileName: platform === "windows"
+      ? `${baseName}-msix-manifest-${version}.json`
+      : `${baseName}-manifest-${version}.json`,
     checksumFileName: `${baseName}-SHA256SUMS.txt`,
     official: true,
   });

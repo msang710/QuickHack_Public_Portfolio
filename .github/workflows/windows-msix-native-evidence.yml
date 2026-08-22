@@ -1,0 +1,85 @@
+name: Windows MSIX workstation evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_path:
+        description: Reviewed release-requests/windows-msix JSON path
+        required: true
+        type: string
+      candidate_run_id:
+        description: Production candidate workflow run id
+        required: true
+        type: string
+      os_family:
+        description: Exact self-hosted workstation lane
+        required: true
+        type: choice
+        options:
+          - windows-10
+          - windows-11
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: quickhack-windows-msix-native-${{ inputs.os_family }}
+  cancel-in-progress: false
+
+jobs:
+  validate-workstation-evidence:
+    runs-on: [self-hosted, windows, x64, quickhack-msix-release, "${{ inputs.os_family }}"]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - name: Validate release request
+        id: request
+        env:
+          QUICKHACK_REQUEST_PATH: ${{ inputs.request_path }}
+          QUICKHACK_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        shell: pwsh
+        run: |
+          node packaging/windows/msix/windows-release-request.mjs "--request-path=$env:QUICKHACK_REQUEST_PATH"
+          if ($env:QUICKHACK_CANDIDATE_RUN_ID -notmatch '^[0-9]+$') { throw "Candidate run id is invalid." }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-msix-production-candidate-${{ steps.request.outputs.version }}
+          path: release/distribution/windows/msix/exact-four
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+      - name: Bind manually captured component proofs to the exact signed candidate
+        env:
+          QUICKHACK_OS_FAMILY: ${{ inputs.os_family }}
+          QUICKHACK_RELEASE_VERSION: ${{ steps.request.outputs.version }}
+          QUICKHACK_SOURCE_COMMIT: ${{ steps.request.outputs.source_commit }}
+          QUICKHACK_MSIX_PUBLISHER: ${{ steps.request.outputs.publisher }}
+        shell: pwsh
+        run: |
+          $family = if ($env:QUICKHACK_OS_FAMILY -eq "windows-10") { "WINDOWS_10" } else { "WINDOWS_11" }
+          $componentRoot = "C:\QuickHackReleaseEvidence\$env:QUICKHACK_RELEASE_VERSION\components"
+          $components = @(Get-ChildItem -LiteralPath $componentRoot -Filter "*.json" -File)
+          if ($components.Count -lt 1) { throw "No manually captured release component evidence exists." }
+          $componentCopyRoot = "release\windows\msix\release-components"
+          New-Item -ItemType Directory -Path $componentCopyRoot -Force | Out-Null
+          Copy-Item -LiteralPath $components.FullName -Destination $componentCopyRoot
+          $components = @(Get-ChildItem -LiteralPath $componentCopyRoot -Filter "*.json" -File)
+          $evidencePath = "release\windows\msix\release-native\$env:QUICKHACK_OS_FAMILY.json"
+          ./tests/integration/windows/msix/run-release-candidate-matrix.ps1 `
+            -OsFamily $family `
+            -Version $env:QUICKHACK_RELEASE_VERSION `
+            -Publisher $env:QUICKHACK_MSIX_PUBLISHER `
+            -SourceCommit $env:QUICKHACK_SOURCE_COMMIT `
+            -ComponentEvidencePath $components.FullName `
+            -EvidencePath $evidencePath
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-msix-native-evidence-${{ inputs.os_family }}-${{ steps.request.outputs.version }}
+          path: release/windows/msix/release-native/${{ inputs.os_family }}.json
+          if-no-files-found: error
+          retention-days: 30

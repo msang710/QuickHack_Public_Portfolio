@@ -26,7 +26,11 @@ import {
 import { LOGEN_LABEL_TEMPLATE } from "@/quickhack_shared/shipment/logen-label";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "quickhack-print-spool-"));
-const clientDataDir = path.join(root, "QuickHack", "client");
+const clientDataDir = process.platform === "win32"
+  ? path.join(root, "QuickHack", "client")
+  : path.join(root, "quickhack");
+const originalLocalAppData = process.env.LOCALAPPDATA;
+const originalXdgStateHome = process.env.XDG_STATE_HOME;
 const requestKey = "LOGEN-LABEL-77-123e4567-e89b-42d3-a456-426614174000";
 const payloadHash = "b".repeat(64);
 const trackingNumber = "12345678901";
@@ -45,7 +49,11 @@ try {
       LOGEN_LABEL_TEMPLATE.lengthDots
   );
   bitmap.write(sensitiveText, 0, "ascii");
-  process.env.LOCALAPPDATA = root;
+  if (process.platform === "win32") {
+    process.env.LOCALAPPDATA = root;
+  } else {
+    process.env.XDG_STATE_HOME = root;
+  }
   process.env.QUICKHACK_PRINT_SPOOL_INITIALIZED = "1";
   delete process.env.QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_CODE;
   delete process.env.QUICKHACK_PRINT_SPOOL_STARTUP_ERROR_MESSAGE;
@@ -521,5 +529,15 @@ try {
 
   console.log("Client print spool privacy and UNKNOWN recovery verified.");
 } finally {
+  if (originalLocalAppData === undefined) {
+    delete process.env.LOCALAPPDATA;
+  } else {
+    process.env.LOCALAPPDATA = originalLocalAppData;
+  }
+  if (originalXdgStateHome === undefined) {
+    delete process.env.XDG_STATE_HOME;
+  } else {
+    process.env.XDG_STATE_HOME = originalXdgStateHome;
+  }
   await rm(root, { recursive: true, force: true });
 }
