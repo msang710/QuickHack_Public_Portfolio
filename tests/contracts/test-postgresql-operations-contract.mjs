@@ -22,6 +22,10 @@ const asyncPowerShellSource = read("quickhack_server/platform/windows/security-p
 const protectedSecretSource = read("quickhack_server/platform/windows/server-secret-protector.mjs");
 const postgresqlCredentialSource = read("quickhack_server/core/database/postgresql-credential.mjs");
 const packageFlavorSource = read("quickhack_shared/core/package-flavor-contract.mjs");
+const initializeClusterSource = serviceSource.slice(
+  serviceSource.indexOf("async function initializeCluster"),
+  serviceSource.indexOf("async function writeTextFileAtomic")
+);
 
 assert.doesNotMatch(consoleSource, /POSTGRESQL_OPERATIONS_NOT_READY/);
 assert.doesNotMatch(consoleSource, /postgresql-restore\.mjs|deploy-postgresql-migrations\.mjs/);
@@ -109,6 +113,22 @@ assert.doesNotMatch(serviceSource, /--password/);
 assert.match(serviceSource, /quickhack-initdb-/);
 assert.match(serviceSource, /net\.createServer/);
 assert.doesNotMatch(serviceSource, /bootstrap-password|operator-password/);
+const parentAclIndex = initializeClusterSource.indexOf(
+  "await securePostgresqlClusterDirectory(path.dirname(clusterDirectory));"
+);
+const initdbIndex = initializeClusterSource.indexOf(
+  'await runExecutable(executable(binDirectory, "initdb")'
+);
+const clusterAclIndex = initializeClusterSource.indexOf(
+  "await securePostgresqlClusterDirectory(clusterDirectory);"
+);
+assert.ok(parentAclIndex >= 0 && parentAclIndex < initdbIndex);
+assert.ok(initdbIndex < clusterAclIndex);
+assert.doesNotMatch(
+  initializeClusterSource.slice(0, initdbIndex),
+  /securePostgresqlClusterDirectory\(clusterDirectory\)/,
+  "Windows initdb must create its own staging target inside the protected parent."
+);
 assert.match(restoreSource, /DELETE FROM user_sessions/);
 assert.match(restoreSource, /DELETE FROM mobile_registered_devices/);
 assert.match(restoreSource, /DELETE FROM user_totp_credentials/);

@@ -182,8 +182,14 @@ async function securePostgresqlClusterDirectory(clusterDirectory) {
 }
 
 async function initializeCluster({ binDirectory, clusterDirectory, operatorPassword }) {
-  await fs.mkdir(path.dirname(clusterDirectory), { recursive: true, mode: 0o700 });
-  await securePostgresqlClusterDirectory(clusterDirectory);
+  await securePostgresqlClusterDirectory(path.dirname(clusterDirectory));
+  const stagingDirectory = await fs.lstat(clusterDirectory).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  if (stagingDirectory) {
+    throw new Error("The PostgreSQL initialization staging directory already exists.");
+  }
   const pipeName = `\\\\.\\pipe\\quickhack-initdb-${process.pid}-${randomUUID()}`;
   let delivered = false;
   const passwordPipe = net.createServer((socket) => {
@@ -213,6 +219,7 @@ async function initializeCluster({ binDirectory, clusterDirectory, operatorPassw
       "--locale", "C",
     ]);
     if (!delivered) throw new Error("PostgreSQL initdb did not consume its protected bootstrap input.");
+    await securePostgresqlClusterDirectory(clusterDirectory);
   } finally {
     await new Promise((resolve) => passwordPipe.close(resolve));
   }
