@@ -35,6 +35,7 @@ $services = @("QuickHackDemoServerConsole", "QuickHackDemoPostgreSQL")
 $certificateThumbprint = ""
 $phaseFailure = $null
 $cleanupFailure = $null
+$phase = "PREFLIGHT"
 
 foreach ($boundedPath in @($validationRoot, $EvidencePath)) {
   if (-not $boundedPath.StartsWith(
@@ -244,12 +245,72 @@ function Remove-ExactTestState {
   }
 }
 
+function Get-RepairEnvironmentDiagnostic {
+  $packageCount = @(Get-AppxPackage -Name $identityName -ErrorAction SilentlyContinue).Count
+  $serviceStates = [ordered]@{}
+  foreach ($serviceName in $services) {
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    $serviceStates[$serviceName] = if ($service) { $service.Status.ToString().ToUpperInvariant() } else { "MISSING" }
+  }
+  $firewallRules = @(Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)
+  $aclReady = $false
+  if (Test-Path -LiteralPath $mutableRoot -PathType Container) {
+    try {
+      $acl = Get-Acl -LiteralPath $mutableRoot
+      $expected = @(
+        [Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
+        "S-1-5-18",
+        "S-1-5-20",
+        "S-1-5-32-544"
+      )
+      $observed = @(
+        $acl.Access |
+          ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } |
+          Sort-Object -Unique
+      )
+      $aclReady = $acl.AreAccessRulesProtected -and @($expected | Where-Object { $observed -notcontains $_ }).Count -eq 0
+    } catch { $aclReady = $false }
+  }
+  $machineScopeCount = 0
+  $currentUserScopeCount = 0
+  $unreadableScopeCount = 0
+  $credentialRoot = Join-Path $mutableRoot "data\security"
+  if (Test-Path -LiteralPath $credentialRoot -PathType Container) {
+    foreach ($credential in @(Get-ChildItem -LiteralPath $credentialRoot -Filter "*.credential" -File -ErrorAction SilentlyContinue)) {
+      $header = @(Get-Content -LiteralPath $credential.FullName -TotalCount 2 -Encoding utf8)
+      if ($header.Count -ge 2 -and $header[1] -eq "DPAPI_LOCAL_MACHINE") { $machineScopeCount += 1 }
+      elseif ($header.Count -ge 2 -and $header[1] -eq "DPAPI_CURRENT_USER") { $currentUserScopeCount += 1 }
+      else { $unreadableScopeCount += 1 }
+    }
+  }
+  $journalState = ""
+  if (Test-Path -LiteralPath $provisioningJournalPath -PathType Leaf) {
+    try {
+      $journalState = [string](Get-Content -LiteralPath $provisioningJournalPath -Raw -Encoding utf8 | ConvertFrom-Json).state
+    } catch { $journalState = "INVALID" }
+  }
+  return [ordered]@{
+    packageCount = $packageCount
+    mutableRootExists = (Test-Path -LiteralPath $mutableRoot -PathType Container)
+    runtimeConfigExists = (Test-Path -LiteralPath (Join-Path $mutableRoot "config\server-runtime.json") -PathType Leaf)
+    aclReady = $aclReady
+    serviceStates = $serviceStates
+    firewallRuleCount = $firewallRules.Count
+    readyMarkerExists = (Test-Path -LiteralPath (Join-Path $provisioningRoot "READY") -PathType Leaf)
+    provisioningJournalState = $journalState
+    machineScopeCredentialCount = $machineScopeCount
+    currentUserScopeCredentialCount = $currentUserScopeCount
+    unreadableScopeCredentialCount = $unreadableScopeCount
+  }
+}
+
 if (-not (Test-IsAdministrator)) { throw "QuickHack PR-06 native lifecycle requires administrator elevation." }
 if (-not $AcknowledgeTestStatePurge) { throw "QuickHack PR-06 native lifecycle requires -AcknowledgeTestStatePurge." }
 if (Get-AppxPackage -Name $identityName -ErrorAction SilentlyContinue) { throw "QuickHack demo-server package is already installed." }
 if (Test-Path -LiteralPath $mutableRoot) { throw "QuickHack demo-server mutable state already exists." }
 
 try {
+  $phase = "INSTALL"
   $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($CertificatePath)
   $certificateThumbprint = $certificate.Thumbprint
   & "$env:WINDIR\System32\certutil.exe" -f -addstore TrustedPeople $CertificatePath | Out-Null
@@ -269,6 +330,7 @@ try {
   $packageSourceCommit = [string]$packageBuildEvidence.sourceCommit
   $harnessSourceCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
 
+  $phase = "INITIAL_PROVISION"
   $initial = Invoke-SetupAction -Action PROVISION -InstallLocation $installed.InstallLocation
   if ($initial.status -ne "INITIAL_LEADER_PENDING_ACK") { throw "QuickHack initial provisioning did not request acknowledgement." }
   $ready = Invoke-SetupAction `
@@ -287,6 +349,7 @@ try {
   Remove-Item -LiteralPath $provisioningRoot -Recurse -Force
   New-LegacyUninstallerFixture
 
+  $phase = "MIGRATE"
   $migrated = Invoke-SetupAction -Action MIGRATE -InstallLocation $installed.InstallLocation
   if ($migrated.status -ne "READY") { throw "QuickHack legacy migration did not reach READY." }
   if ((Test-Path -LiteralPath $legacyRegistryPath) -or (Test-Path -LiteralPath $legacyInstallRoot)) {
@@ -309,12 +372,14 @@ try {
     throw "QuickHack migration changed the state continuity canary."
   }
 
+  $phase = "REPAIR"
   Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction Stop | Remove-NetFirewallRule -ErrorAction Stop
   $repaired = Invoke-SetupAction -Action REPAIR -InstallLocation $installed.InstallLocation
   if ($repaired.status -ne "READY" -or -not (Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue)) {
     throw "QuickHack product repair did not restore the firewall contract."
   }
 
+  $phase = "NORMAL_UNINSTALL"
   $configHash = (Get-FileHash -LiteralPath (Join-Path $mutableRoot "config\server-runtime.json") -Algorithm SHA256).Hash
   Stop-QuickHackServices
   Remove-AppxPackage -Package $installed.PackageFullName -Confirm:$false -ErrorAction Stop
@@ -330,10 +395,12 @@ try {
     throw "QuickHack normal uninstall did not preserve mutable state."
   }
 
+  $phase = "PURGE_DRY_RUN"
   $dryRun = Invoke-ExactPurge -DryRun
   if ($dryRun.Protocol -ne "QUICKHACK_PURGE_DRY_RUN_V1" -or $dryRun.MutationPerformed -ne $false -or -not (Test-Path -LiteralPath $mutableRoot)) {
     throw "QuickHack purge dry-run mutated state or returned an invalid plan."
   }
+  $phase = "PURGE"
   Invoke-ExactPurge
   if (Test-Path -LiteralPath $mutableRoot) { throw "QuickHack explicit purge left mutable state." }
   Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
@@ -383,9 +450,11 @@ try {
   [ordered]@{
     schemaVersion = 1
     status = "FAIL_DIAGNOSTIC"
-    stableCode = if ($_.Exception.Message -match '\b([A-Z][A-Z0-9_]{2,95})\b') { $Matches[1] } else { "PR06_NATIVE_LIFECYCLE_FAILED" }
+    phase = $phase
+    stableCode = if ($_.Exception.Message -cmatch '\b([A-Z][A-Z0-9_]{2,95})\b') { $Matches[1] } else { "PR06_NATIVE_LIFECYCLE_FAILED" }
     migration = $migrationDiagnostic
     provisioning = $provisioningDiagnostic
+    repairEnvironment = Get-RepairEnvironmentDiagnostic
   } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 } finally {
   try { Remove-ExactTestState } catch { $cleanupFailure = $_ }
