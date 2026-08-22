@@ -11,6 +11,10 @@ import {
 import {
   QUICKHACK_TRACE_ID_HEADER,
 } from "../../../quickhack_shared/observability/http-trace.ts";
+import {
+  addSeconds,
+  quickHackClock,
+} from "../../../quickhack_shared/core/time.ts";
 
 const temporaryDatabase = createTemporaryDatabase(
   "quickhack-sales-statistics-api-"
@@ -18,6 +22,16 @@ const temporaryDatabase = createTemporaryDatabase(
 configureIntegrationTestEnvironment(temporaryDatabase.databaseUrl);
 
 let prisma;
+
+const TEST_DAY_SECONDS = 24 * 60 * 60;
+function dateKeyDaysAgo(daysAgo) {
+  return quickHackClock.formatKstDate(
+    addSeconds(quickHackClock.nowDate(), -daysAgo * TEST_DAY_SECONDS)
+  );
+}
+function dateTimeDaysAgo(daysAgo, time) {
+  return new Date(`${dateKeyDaysAgo(daysAgo)}T${time}+09:00`);
+}
 
 function request(path, token) {
   return new NextRequest(`http://localhost${path}`, {
@@ -186,8 +200,8 @@ try {
         external_order_id: externalOrderId,
         external_shipment_id: externalShipmentId,
         external_order_status: "DELIVERING",
-        ordered_at: new Date("2026-05-10T09:00:00.000Z"),
-        paid_at: new Date("2026-05-10T09:01:00.000Z"),
+        ordered_at: dateTimeDaysAgo(index === 1 ? 70 : 40, "09:00:00"),
+        paid_at: dateTimeDaysAgo(index === 1 ? 70 : 40, "09:01:00"),
       },
     });
     const allocation = await prisma.match_worker_allocation.create({
@@ -208,14 +222,14 @@ try {
         external_order_id: externalOrderId,
         external_shipment_id: externalShipmentId,
         external_vendor_item_id: `SALES-STATS-ITEM-${index}`,
-        sold_at:
-          index === 1
-            ? new Date("2026-05-20T09:00:00.000Z")
-            : new Date("2026-06-20T09:00:00.000Z"),
+        sold_at: dateTimeDaysAgo(index === 1 ? 60 : 30, "09:00:00"),
         sale_status: status,
         sales_price: salesPrice,
         purchase_price: purchasePrice,
-        purchase_agreed_at: new Date("2026-05-01T09:00:00.000Z"),
+        purchase_agreed_at: dateTimeDaysAgo(
+          index === 1 ? 75 : 45,
+          "09:00:00"
+        ),
         model: "Ledger API Model",
         storage,
         color,
@@ -363,6 +377,10 @@ try {
   );
 } finally {
   if (prisma) {
+    const { flushOperationTraceQueue } = await import(
+      "@/quickhack_server/observability/trace-log-queue"
+    );
+    await flushOperationTraceQueue();
     await prisma.$disconnect();
   }
   temporaryDatabase.cleanup();
