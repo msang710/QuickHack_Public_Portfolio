@@ -18,6 +18,8 @@ import {
   provisionInitialLeaderHandoff,
 } from "../../provision-initial-leader.mjs";
 import { installPostgresqlService } from "./postgresql-service-install.mjs";
+import { classifyLegacyWindowsInstall } from "../../../packaging/windows/msix/legacy-install-detector.mjs";
+import { observeLegacyWindowsInstall } from "./legacy-install-observer.mjs";
 
 const { Pool } = pg;
 const EXPECTED_ARTIFACT = "DEMONSTRATION_SERVER";
@@ -169,6 +171,7 @@ export function createWindowsServerProvisioningAdapter(input) {
   const servicesMarker = path.join(provisioningRoot, "SERVICES_READY");
   const readyMarker = path.join(provisioningRoot, "READY");
   const journal = input?.journal;
+  const allowExistingLeaderAdoption = input?.allowExistingLeaderAdoption === true;
 
   async function assertPreflight() {
     const build = Number(os.release().split(".")[2] ?? 0);
@@ -190,6 +193,26 @@ export function createWindowsServerProvisioningAdapter(input) {
       }
     }
     await assertNoOppositeServer();
+    const legacy = classifyLegacyWindowsInstall({
+      target: "demo-server",
+      observation: await observeLegacyWindowsInstall({
+        target: "demo-server",
+        packageRoot,
+        programData,
+      }),
+    });
+    if (legacy.classification === "OPPOSITE") {
+      throw failure("OPPOSITE_SERVER_FLAVOR_PRESENT", "The opposite QuickHack server flavor is present.");
+    }
+    if (legacy.classification === "AMBIGUOUS") {
+      throw failure("LEGACY_INSTALL_AMBIGUOUS", "Legacy QuickHack state requires manual diagnosis before provisioning.");
+    }
+    if (legacy.classification === "INCOMPATIBLE") {
+      throw failure(legacy.reasonCode, "Legacy QuickHack state is incompatible with this package.");
+    }
+    if (legacy.classification === "COMPATIBLE" && legacy.mode === "INSTALLED_INNO") {
+      throw failure("LEGACY_INSTALL_MIGRATION_REQUIRED", "Run the explicit legacy migration action before provisioning.");
+    }
     return true;
   }
 
@@ -336,6 +359,23 @@ export function createWindowsServerProvisioningAdapter(input) {
           generation: Number(rows[0].credential_revision) + 1,
         };
       } else if (rows.length !== 0) {
+        if (
+          allowExistingLeaderAdoption &&
+          rows.length === 1 &&
+          matchingBootstrapLeader(rows[0])
+        ) {
+          const generation = Math.max(1, Number(rows[0].credential_revision) || 1);
+          await journal.setInitialLeaderPending({
+            transactionId: record.transactionId,
+            userId: Number(rows[0].user_id),
+            generation,
+          });
+          await journal.acknowledgeInitialLeader({
+            transactionId: record.transactionId,
+            generation,
+          });
+          return { changed: false, adoptedExistingLeader: true };
+        }
         throw failure(
           "INITIAL_LEADER_STATE_CONFLICT",
           "Existing users cannot be adopted as the protected initial LEADER handoff."

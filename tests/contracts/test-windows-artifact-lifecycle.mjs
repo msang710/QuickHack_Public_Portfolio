@@ -26,8 +26,22 @@ assert.deepEqual(uninstall.removeMutablePaths, []);
 const purgeSource = readFileSync(new URL("../../packaging/windows/purge-installation.ps1", import.meta.url), "utf8");
 assert.match(purgeSource, /ConfirmArtifactKind -cne \$ArtifactKind/);
 assert.match(purgeSource, /AcknowledgeNoRecovery/);
+assert.match(purgeSource, /ConfirmPackageIdentity -cne \$contract\.PackageIdentity/);
+assert.match(purgeSource, /QUICKHACK_PURGE_DRY_RUN_V1/);
+assert.match(purgeSource, /MutationPerformed = \$false/);
+assert.ok(purgeSource.indexOf("if ($DryRun)") < purgeSource.indexOf("Stop-Service"));
+assert.ok(purgeSource.indexOf("if ($DryRun)") < purgeSource.indexOf("Remove-Item"));
+for (const identity of [
+  "QuickHack.Demonstration.Server",
+  "QuickHack.Demonstration.Client",
+  "QuickHack.Operational.Server",
+  "QuickHack.Operational.Client",
+]) {
+  assert.ok(purgeSource.includes(identity));
+}
 assert.match(purgeSource, /FileAttributes\]::ReparsePoint/);
 assert.match(purgeSource, /PURGE_PARTIAL/);
+assert.match(purgeSource, /PURGE_SERVICE_STOP_FAILED/);
 for (const serviceName of [...Object.values(demo.services), ...Object.values(operational.services)]) {
   assert.ok(purgeSource.includes(serviceName));
 }

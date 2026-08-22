@@ -121,6 +121,20 @@ internal static class QuickHackServerSetup
                 handoff = definition.Provision();
             }
             else if (
+                args.Length == 2 &&
+                String.Equals(args[1], "REPAIR", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                handoff = definition.Repair();
+            }
+            else if (
+                args.Length == 2 &&
+                String.Equals(args[1], "MIGRATE", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                handoff = definition.Migrate();
+            }
+            else if (
                 args.Length == 4 &&
                 String.Equals(args[1], "ACKNOWLEDGE", StringComparison.OrdinalIgnoreCase)
             )
@@ -200,12 +214,29 @@ internal sealed class QuickHackSetupDefinition
         RequiredFile("tools", "server-provisioning-cli.mjs");
         RequiredFile("tools", "server-provisioning-core.mjs");
         RequiredFile("tools", "server-provisioning-contract.mjs");
+        RequiredFile("tools", "windows-legacy-msix-migration.mjs");
     }
 
     internal QuickHackSetupHandoff Provision()
     {
         return RunProvisioner(new[] {
             "--provision",
+            "--handoff-stdio",
+        });
+    }
+
+    internal QuickHackSetupHandoff Migrate()
+    {
+        return RunProvisioner(new[] {
+            "--migrate",
+            "--handoff-stdio",
+        });
+    }
+
+    internal QuickHackSetupHandoff Repair()
+    {
+        return RunProvisioner(new[] {
+            "--repair",
             "--handoff-stdio",
         });
     }
@@ -434,6 +465,8 @@ internal sealed class QuickHackSetupForm : Form
     private readonly TextBox usernameBox;
     private readonly TextBox passwordBox;
     private readonly Button acknowledgeButton;
+    private readonly Button migrationButton;
+    private readonly Button repairButton;
     private QuickHackSetupHandoff pending;
 
     internal bool Completed { get; private set; }
@@ -469,13 +502,31 @@ internal sealed class QuickHackSetupForm : Form
             Text = "비밀번호 복사 후 확인",
             Enabled = false
         };
+        migrationButton = new Button {
+            Location = new Point(24, 190),
+            Size = new Size(240, 38),
+            Text = "기존 Inno 설치를 MSIX로 이전",
+            Enabled = true
+        };
+        repairButton = new Button {
+            Location = new Point(274, 190),
+            Size = new Size(120, 38),
+            Text = "제품 복구",
+            Enabled = false
+        };
+        acknowledgeButton.Location = new Point(404, 190);
+        acknowledgeButton.Size = new Size(166, 38);
         acknowledgeButton.Click += AcknowledgeClicked;
+        migrationButton.Click += MigrationClicked;
+        repairButton.Click += RepairClicked;
         Controls.Add(statusLabel);
         Controls.Add(new Label { Location = new Point(24, 101), AutoSize = true, Text = "초기 관리자 계정" });
         Controls.Add(usernameBox);
         Controls.Add(new Label { Location = new Point(24, 139), AutoSize = true, Text = "임시 비밀번호" });
         Controls.Add(passwordBox);
         Controls.Add(acknowledgeButton);
+        Controls.Add(migrationButton);
+        Controls.Add(repairButton);
         Shown += delegate { BeginProvisioning(); };
         FormClosing += delegate {
             passwordBox.Clear();
@@ -485,6 +536,8 @@ internal sealed class QuickHackSetupForm : Form
 
     private void BeginProvisioning()
     {
+        migrationButton.Enabled = false;
+        repairButton.Enabled = false;
         SetBusy(true, "서버 데이터베이스와 서비스를 준비하고 있습니다...");
         BackgroundWorker worker = new BackgroundWorker();
         worker.DoWork += delegate(object sender, DoWorkEventArgs eventArgs) {
@@ -493,6 +546,8 @@ internal sealed class QuickHackSetupForm : Form
         worker.RunWorkerCompleted += delegate(object sender, RunWorkerCompletedEventArgs eventArgs) {
             if (eventArgs.Error != null)
             {
+                migrationButton.Enabled = true;
+                repairButton.Enabled = true;
                 SetBusy(false, eventArgs.Error.Message);
                 return;
             }
@@ -508,6 +563,8 @@ internal sealed class QuickHackSetupForm : Form
             Completed = true;
             SetBusy(false, "QuickHack Demo Server 준비가 완료되었습니다. 이 창을 닫아도 됩니다.");
             acknowledgeButton.Enabled = false;
+            migrationButton.Enabled = false;
+            repairButton.Enabled = false;
             return;
         }
         pending = handoff;
@@ -515,6 +572,8 @@ internal sealed class QuickHackSetupForm : Form
         passwordBox.Text = handoff.TemporaryPassword;
         statusLabel.Text = "아래 임시 비밀번호를 안전한 곳에 저장한 뒤 확인하십시오. 확인 전 종료하면 기존 비밀번호는 폐기되고 다음 실행에서 재발급됩니다.";
         acknowledgeButton.Enabled = true;
+        migrationButton.Enabled = false;
+        repairButton.Enabled = false;
     }
 
     private void AcknowledgeClicked(object sender, EventArgs eventArgs)
@@ -537,6 +596,50 @@ internal sealed class QuickHackSetupForm : Form
             passwordBox.Clear();
             pending.ClearSecret();
             pending = null;
+            ShowHandoff((QuickHackSetupHandoff)workerArgs.Result);
+        };
+        worker.RunWorkerAsync();
+    }
+
+    private void MigrationClicked(object sender, EventArgs eventArgs)
+    {
+        migrationButton.Enabled = false;
+        repairButton.Enabled = false;
+        SetBusy(true, "기존 QuickHack 설치와 데이터를 확인하고 MSIX로 이전하고 있습니다...");
+        BackgroundWorker worker = new BackgroundWorker();
+        worker.DoWork += delegate(object workerSender, DoWorkEventArgs workerArgs) {
+            workerArgs.Result = definition.Migrate();
+        };
+        worker.RunWorkerCompleted += delegate(object workerSender, RunWorkerCompletedEventArgs workerArgs) {
+            if (workerArgs.Error != null)
+            {
+                migrationButton.Enabled = true;
+                repairButton.Enabled = true;
+                SetBusy(false, workerArgs.Error.Message);
+                return;
+            }
+            ShowHandoff((QuickHackSetupHandoff)workerArgs.Result);
+        };
+        worker.RunWorkerAsync();
+    }
+
+    private void RepairClicked(object sender, EventArgs eventArgs)
+    {
+        migrationButton.Enabled = false;
+        repairButton.Enabled = false;
+        SetBusy(true, "패키지와 서버 상태를 진단하고 비파괴 복구를 수행하고 있습니다...");
+        BackgroundWorker worker = new BackgroundWorker();
+        worker.DoWork += delegate(object workerSender, DoWorkEventArgs workerArgs) {
+            workerArgs.Result = definition.Repair();
+        };
+        worker.RunWorkerCompleted += delegate(object workerSender, RunWorkerCompletedEventArgs workerArgs) {
+            if (workerArgs.Error != null)
+            {
+                migrationButton.Enabled = true;
+                repairButton.Enabled = true;
+                SetBusy(false, workerArgs.Error.Message);
+                return;
+            }
             ShowHandoff((QuickHackSetupHandoff)workerArgs.Result);
         };
         worker.RunWorkerAsync();

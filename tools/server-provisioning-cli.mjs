@@ -4,6 +4,11 @@ import { createServerProvisioningCore } from "./server-provisioning-core.mjs";
 import { assertServerProvisioningArtifact } from "./server-provisioning-contract.mjs";
 import { createWindowsServerProvisioningJournal } from "./platform/windows/server-provisioning-journal.mjs";
 import { createWindowsServerProvisioningAdapter } from "./platform/windows/server-provisioning-adapter.mjs";
+import { createWindowsLegacyMsixMigration } from "./windows-legacy-msix-migration.mjs";
+import { createWindowsLegacyMigrationJournal } from "./platform/windows/legacy-msix-migration-journal.mjs";
+import { createWindowsLegacyMsixMigrationAdapter } from "./platform/windows/legacy-msix-migration-adapter.mjs";
+import { createServerRepairCore } from "./server-repair-core.mjs";
+import { createWindowsServerRepairAdapter } from "./platform/windows/server-repair-adapter.mjs";
 
 export const SERVER_SETUP_HANDOFF_PROTOCOL = "QUICKHACK_SERVER_SETUP_HANDOFF_V1";
 
@@ -19,7 +24,7 @@ function parseArguments(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--provision" || argument === "--acknowledge") {
+    if (argument === "--provision" || argument === "--acknowledge" || argument === "--migrate" || argument === "--repair") {
       if (result.action) throw new TypeError("Server Setup accepts one action.");
       result.action = argument.slice(2).toUpperCase();
     } else if (argument === "--handoff-stdio") result.handoffStdio = true;
@@ -33,7 +38,7 @@ function parseArguments(argv) {
   if (!result.action || !result.packageRoot || !result.programData) {
     throw new TypeError("Server Setup action, package root, and ProgramData are required.");
   }
-  if (result.action === "PROVISION" && !result.handoffStdio) {
+  if (["PROVISION", "MIGRATE", "REPAIR"].includes(result.action) && !result.handoffStdio) {
     throw new TypeError("Server Setup provisioning requires the protected stdio handoff.");
   }
   if (result.action === "ACKNOWLEDGE" && (!result.transactionId || result.generation < 1)) {
@@ -90,17 +95,55 @@ export async function runServerProvisioningCommand(argv = process.argv.slice(2))
   );
   const runtimeArgumentIndex = process.argv.indexOf("--runtime-config");
   if (runtimeArgumentIndex < 0) process.argv.push("--runtime-config", runtimeConfigPath);
-  const adapter = createWindowsServerProvisioningAdapter({
-    artifactKind: input.artifactKind,
-    packageRoot: input.packageRoot,
-    programData: input.programData,
-    journal,
-  });
-  const result = await createServerProvisioningCore({
-    artifactKind: input.artifactKind,
-    adapter,
-    journal,
-  }).run(input.transactionId ? { transactionId: input.transactionId } : {});
+  const runProvisioning = (options = {}) => {
+    const adapter = createWindowsServerProvisioningAdapter({
+      artifactKind: input.artifactKind,
+      packageRoot: input.packageRoot,
+      programData: input.programData,
+      journal,
+      allowExistingLeaderAdoption: options.allowExistingLeaderAdoption === true,
+    });
+    return createServerProvisioningCore({
+      artifactKind: input.artifactKind,
+      adapter,
+      journal,
+    }).run(input.transactionId ? { transactionId: input.transactionId } : {});
+  };
+  let result;
+  if (input.action === "MIGRATE") {
+    const migrationJournal = createWindowsLegacyMigrationJournal({
+      artifactKind: input.artifactKind,
+      programData: input.programData,
+    });
+    const migrationAdapter = createWindowsLegacyMsixMigrationAdapter({
+      artifactKind: input.artifactKind,
+      packageRoot: input.packageRoot,
+      programData: input.programData,
+      provision: () => runProvisioning({ allowExistingLeaderAdoption: true }),
+    });
+    result = await createWindowsLegacyMsixMigration({
+      artifactKind: input.artifactKind,
+      adapter: migrationAdapter,
+      journal: migrationJournal,
+    }).run();
+  } else if (input.action === "REPAIR") {
+    const repairAdapter = createWindowsServerRepairAdapter({
+      artifactKind: input.artifactKind,
+      packageRoot: input.packageRoot,
+      programData: input.programData,
+      provision: () => runProvisioning(),
+    });
+    const repair = await createServerRepairCore(repairAdapter).run();
+    if (repair.disposition !== "READY") {
+      const error = new Error(`Server repair stopped with ${repair.code}. Check ${repair.logDirectory}.`);
+      error.code = repair.code;
+      throw error;
+    }
+    const readyJournal = await journal.read();
+    result = { state: "READY", transactionId: readyJournal?.transactionId };
+  } else {
+    result = await runProvisioning();
+  }
   writeHandoff(result);
   return result;
 }
