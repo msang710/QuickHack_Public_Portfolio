@@ -350,6 +350,30 @@ try {
   Write-Host "QuickHack PR-06 legacy migration, repair, uninstall, and purge lifecycle passed."
 } catch {
   $phaseFailure = $_
+  $migrationDiagnostic = if (Test-Path -LiteralPath $migrationJournalPath -PathType Leaf) {
+    $record = Get-Content -LiteralPath $migrationJournalPath -Raw -Encoding utf8 | ConvertFrom-Json
+    [ordered]@{
+      state = [string]$record.state
+      completedSteps = @($record.completedSteps)
+      errorCode = if ($record.error) { [string]$record.error.code } else { "" }
+    }
+  } else { $null }
+  $provisioningDiagnostic = if (Test-Path -LiteralPath $provisioningJournalPath -PathType Leaf) {
+    $record = Get-Content -LiteralPath $provisioningJournalPath -Raw -Encoding utf8 | ConvertFrom-Json
+    [ordered]@{
+      state = [string]$record.state
+      completedSteps = @($record.completedSteps)
+      errorCode = if ($record.error) { [string]$record.error.code } else { "" }
+    }
+  } else { $null }
+  New-Item -ItemType Directory -Path (Split-Path -Parent $EvidencePath) -Force | Out-Null
+  [ordered]@{
+    schemaVersion = 1
+    status = "FAIL_DIAGNOSTIC"
+    stableCode = if ($_.Exception.Message -match '\b([A-Z][A-Z0-9_]{2,95})\b') { $Matches[1] } else { "PR06_NATIVE_LIFECYCLE_FAILED" }
+    migration = $migrationDiagnostic
+    provisioning = $provisioningDiagnostic
+  } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 } finally {
   try { Remove-ExactTestState } catch { $cleanupFailure = $_ }
 }

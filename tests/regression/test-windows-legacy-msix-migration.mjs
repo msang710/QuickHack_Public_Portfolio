@@ -99,5 +99,29 @@ const rejecting = createWindowsLegacyMsixMigration({
 });
 await assert.rejects(() => rejecting.run(), (error) => error.code === "LEGACY_INSTALL_AMBIGUOUS");
 
+const postconditionJournal = createFileLegacyMigrationJournal({
+  artifactKind: "DEMONSTRATION_SERVER",
+  rootDirectory: path.join(temporary, "postcondition"),
+});
+const postconditionFailure = createWindowsLegacyMsixMigration({
+  artifactKind: "DEMONSTRATION_SERVER",
+  journal: postconditionJournal,
+  adapter: {
+    async probe(step) {
+      return step.id === "DISCOVER"
+        ? { ready: true, discovery: { classification: "COMPATIBLE", reasonCode: "LEGACY_INNO_INSTALL_COMPATIBLE", mode: "INSTALLED_INNO" } }
+        : { ready: false };
+    },
+    async mutate(step) {
+      return step.id === "SNAPSHOT" ? { snapshot } : {};
+    },
+    async postcondition() { return { ready: false }; },
+  },
+});
+await assert.rejects(
+  () => postconditionFailure.run(),
+  (error) => error.code === "LEGACY_MIGRATION_SNAPSHOT_POSTCONDITION_FAILED"
+);
+
 await fs.rm(temporary, { recursive: true, force: true });
 console.log("Windows legacy migration journal, interruption retry, and fail-closed core verified.");

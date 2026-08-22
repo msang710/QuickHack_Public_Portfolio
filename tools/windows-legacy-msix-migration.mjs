@@ -97,7 +97,7 @@ export function createWindowsLegacyMsixMigration(options) {
             observed = await adapter.postcondition(step, { ...context, record, mutation });
             if (!ready(observed)) {
               throw failure(
-                "LEGACY_MIGRATION_POSTCONDITION_FAILED",
+                `LEGACY_MIGRATION_${step.id}_POSTCONDITION_FAILED`,
                 `Legacy migration postcondition failed for ${step.id}.`
               );
             }

@@ -249,7 +249,18 @@ export function createWindowsLegacyMsixMigrationAdapter(input) {
       provisioningConverged = true;
       return {};
     }
-    if (step.id === "READY") return {};
+    if (step.id === "READY") {
+      if (!provisioningConverged) {
+        throw failure("LEGACY_MIGRATION_PROVISIONING_NOT_READY", "Provisioning did not converge before migration readiness.");
+      }
+      if (!(await provePackage())) {
+        throw failure("RUNTIME_INTEGRITY_FAILED", "Installed MSIX proof changed before migration readiness.");
+      }
+      if (!(await stateAttached(context.record.snapshot))) {
+        throw failure("LEGACY_MIGRATION_STATE_ATTACH_FAILED", "Preserved state proof changed before migration readiness.");
+      }
+      return {};
+    }
     throw failure("LEGACY_MIGRATION_STEP_INVALID", "Legacy migration mutation is invalid.");
   }
 
