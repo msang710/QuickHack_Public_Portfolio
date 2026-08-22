@@ -236,9 +236,12 @@ internal sealed class QuickHackServiceDefinition
     private static void ReplaceEnvironment(StringDictionary environment, string executableDirectory)
     {
         string systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? "C:\\Windows";
+        string commandProcessor = Path.Combine(systemRoot, "System32", "cmd.exe");
         string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        RequiredFile(commandProcessor);
         environment.Clear();
         environment["PATH"] = executableDirectory;
+        environment["COMSPEC"] = commandProcessor;
         environment["SystemRoot"] = systemRoot;
         environment["WINDIR"] = systemRoot;
         environment["ProgramData"] = programData;

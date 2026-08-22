@@ -62,6 +62,12 @@ assert.match(host, /environment\.Clear\(\)/u);
 assert.match(host, /environment\["PATH"\] = executableDirectory/u);
 assert.match(
   host,
+  /commandProcessor = Path\.Combine\(systemRoot, "System32", "cmd\.exe"\)/u
+);
+assert.match(host, /RequiredFile\(commandProcessor\)/u);
+assert.match(host, /environment\["COMSPEC"\] = commandProcessor/u);
+assert.match(
+  host,
   /environment\["QUICKHACK_WINDOWS_SECRET_SCOPE"\] = "LOCAL_MACHINE"/u
 );
 assert.match(host, /CreateJobObject/u);
@@ -69,6 +75,7 @@ assert.match(host, /AssignProcessToJobObject/u);
 assert.match(host, /JobObjectLimitKillOnJobClose/u);
 assert.match(host, /TerminateJobObject/u);
 assert.doesNotMatch(host, /Environment\.GetEnvironmentVariable\("PATH"\)/u);
+assert.doesNotMatch(host, /Environment\.GetEnvironmentVariable\("COMSPEC"\)/u);
 assert.match(build, /\/platform:x64/u);
 assert.match(build, /QUICKHACK_POSTGRESQL/u);
 assert.match(build, /QUICKHACK_CONSOLE/u);
