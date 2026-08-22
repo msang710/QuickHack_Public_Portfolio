@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { parseServerConsoleArguments } from "../../tools/server-console-core.mjs";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
@@ -36,5 +37,34 @@ assert.match(operational, /\/api\/qhkey\/logen\/rotate/);
 assert.doesNotMatch(demonstration, /rotateCoupangQhkey|rotateLogenQhkey|Access Key|Secret Key/iu);
 assert.match(demonstration, /\/api\/qhkey\/mock-issue/);
 assert.doesNotMatch(core, /spawnSync\([^\n]*(?:sudo|pkexec)|spawn\([^\n]*(?:sudo|pkexec)/u);
+
+const runtimeConfigPath = path.join(root, ".runtime", "server-runtime.json");
+const packageManifestPath = path.join(root, "quickhack-package.json");
+assert.deepEqual(
+  parseServerConsoleArguments([
+    "--runtime-config",
+    runtimeConfigPath,
+    "--package-manifest",
+    packageManifestPath,
+    "--system-service",
+    "--no-open",
+  ]),
+  {
+    runtimeConfigPath: path.resolve(runtimeConfigPath),
+    packageManifestPath: path.resolve(packageManifestPath),
+    noOpen: true,
+    systemService: true,
+  }
+);
+for (const invalidArguments of [
+  ["--runtime-config", "--no-open"],
+  ["--package-manifest"],
+  ["--unexpected"],
+]) {
+  assert.throws(
+    () => parseServerConsoleArguments(invalidArguments),
+    /requires a file path|Unsupported server console argument/
+  );
+}
 
 console.log("Server console immutable flavor, common action, and privilege policy checks passed.");
