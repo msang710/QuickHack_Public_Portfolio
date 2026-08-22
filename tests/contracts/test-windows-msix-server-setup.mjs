@@ -73,6 +73,9 @@ for (const contract of [
   /handoff = definition\.Provision\(\)/u,
   /handoff = definition\.Acknowledge\(args\[2\], generation\)/u,
   /WriteToStandardOutput/u,
+  /ResolveNativeTestErrorCode/u,
+  /\\b\[A-Z\]\[A-Z0-9_\]\{2,95\}\\b/u,
+  /match\.Success \? match\.Value : "SERVER_SETUP_NATIVE_TEST_FAILED"/u,
 ]) {
   assert.match(setupSource, contract);
 }

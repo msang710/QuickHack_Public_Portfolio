@@ -85,7 +85,7 @@ internal static class QuickHackServerSetup
         {
             if (nativeTestStdio)
             {
-                Console.Error.WriteLine("errorCode=SERVER_SETUP_NATIVE_TEST_FAILED");
+                Console.Error.WriteLine("errorCode=" + ResolveNativeTestErrorCode(error));
                 Console.Error.WriteLine("errorType=" + error.GetType().Name);
                 return 1;
             }
@@ -144,6 +144,16 @@ internal static class QuickHackServerSetup
         {
             if (handoff != null) handoff.ClearSecret();
         }
+    }
+
+    private static string ResolveNativeTestErrorCode(Exception error)
+    {
+        Match match = Regex.Match(
+            error.Message ?? String.Empty,
+            @"\b[A-Z][A-Z0-9_]{2,95}\b",
+            RegexOptions.CultureInvariant
+        );
+        return match.Success ? match.Value : "SERVER_SETUP_NATIVE_TEST_FAILED";
     }
 
     private static bool IsAdministrator()
