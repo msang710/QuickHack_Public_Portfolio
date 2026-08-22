@@ -2,6 +2,7 @@
 param(
   [string]$SdkRoot = $env:QUICKHACK_WINDOWS_SDK_ROOT,
   [string]$NodePath = $env:QUICKHACK_NODE_EXECUTABLE,
+  [string]$TestNodePath = "",
   [string]$StagingDir = "release\windows\demo-server",
   [switch]$RunNativeInstall,
   [switch]$ElevatedPhase,
@@ -269,54 +270,27 @@ function Invoke-Provisioner {
     [string]$TransactionId = "",
     [int]$Generation = 0
   )
-  $node = Join-Path $InstallLocation "runtime\node\node.exe"
-  $provisioner = Join-Path $InstallLocation "tools\server-provisioning-cli.mjs"
-  $manifest = Join-Path $InstallLocation "quickhack-package.json"
-  $arguments = @($provisioner)
+  $setup = Join-Path $InstallLocation "QuickHack-Demo-Server-Setup.exe"
+  $arguments = @("--native-test-stdio")
   if ($Action -eq "PROVISION") {
-    $arguments += @("--provision", "--handoff-stdio")
+    $arguments += "PROVISION"
   } else {
     if ($TransactionId -notmatch '^[0-9a-fA-F-]{36}$' -or $Generation -lt 1) {
       throw "QuickHack acknowledgement identity is invalid."
     }
-    $arguments += @(
-      "--acknowledge", "--transaction-id", $TransactionId,
-      "--generation", $Generation.ToString([Globalization.CultureInfo]::InvariantCulture)
-    )
+    $arguments += @("ACKNOWLEDGE", $TransactionId, $Generation.ToString(
+      [Globalization.CultureInfo]::InvariantCulture
+    ))
   }
-  $arguments += @(
-    "--artifact-kind", "DEMONSTRATION_SERVER",
-    "--package-root", $InstallLocation,
-    "--program-data", $env:ProgramData
-  )
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-  $startInfo.FileName = $node
+  $startInfo.FileName = $setup
   $startInfo.Arguments = ($arguments | ForEach-Object { Quote-NativeArgument -Value $_ }) -join " "
   $startInfo.WorkingDirectory = $InstallLocation
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardOutput = $true
   $startInfo.RedirectStandardError = $true
-  foreach ($name in @(
-    "NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS", "DATABASE_URL",
-    "QUICKHACK_PACKAGE_MANIFEST", "QUICKHACK_ARTIFACT_KIND",
-    "QUICKHACK_PACKAGE_FLAVOR", "QUICKHACK_WINDOWS_SECRET_SCOPE"
-  )) {
-    $startInfo.EnvironmentVariables.Remove($name)
-  }
-  $nodeDirectory = Split-Path -Parent $node
-  $startInfo.EnvironmentVariables["PATH"] = @(
-    $nodeDirectory,
-    (Join-Path $env:SystemRoot "System32"),
-    $env:SystemRoot,
-    (Join-Path $env:SystemRoot "System32\Wbem"),
-    (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0")
-  ) -join ";"
-  $startInfo.EnvironmentVariables["SystemRoot"] = $env:SystemRoot
-  $startInfo.EnvironmentVariables["WINDIR"] = $env:SystemRoot
-  $startInfo.EnvironmentVariables["ProgramData"] = $env:ProgramData
-  $startInfo.EnvironmentVariables["QUICKHACK_PACKAGE_MANIFEST"] = $manifest
-  $startInfo.EnvironmentVariables["QUICKHACK_WINDOWS_SECRET_SCOPE"] = "LOCAL_MACHINE"
+  $startInfo.EnvironmentVariables["QUICKHACK_SERVER_SETUP_NATIVE_TEST_GATE"] = "PR05_MSIX_GATE"
   $process = [System.Diagnostics.Process]::new()
   $process.StartInfo = $startInfo
   if (-not $process.Start()) { throw "QuickHack provisioner did not start." }
@@ -370,7 +344,10 @@ function Invoke-LeaderProof {
     [Parameter(Mandatory = $true)][int]$ExpectedGeneration
   )
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-  $startInfo.FileName = Join-Path $InstallLocation "runtime\node\node.exe"
+  if (-not $TestNodePath -or -not (Test-Path -LiteralPath $TestNodePath -PathType Leaf)) {
+    throw "QuickHack leader proof external test Node executable was not found."
+  }
+  $startInfo.FileName = $TestNodePath
   $startInfo.Arguments = @(
     (Quote-NativeArgument -Value $leaderProofPath),
     "--runtime-config",
@@ -812,7 +789,9 @@ if ($ElevatedPhase) {
     if (-not $requiredPath) { throw "QuickHack elevated phase is missing an output path." }
   }
   if ($LifecyclePhase -eq "Prepare") {
-    foreach ($requiredPath in @($PackageV1, $PackageV2, $CertificateV1, $CertificateV2)) {
+    foreach ($requiredPath in @(
+      $PackageV1, $PackageV2, $CertificateV1, $CertificateV2, $TestNodePath
+    )) {
       if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "QuickHack elevated Prepare input was not found: $requiredPath"
       }
@@ -891,7 +870,8 @@ if ($RunNativeInstall) {
       "-File", $PSCommandPath, "-ElevatedPhase", "-LifecyclePhase", "Prepare",
       "-PackageV1", $PackageV1, "-PackageV2", $PackageV2,
       "-CertificateV1", $CertificateV1, "-CertificateV2", $CertificateV2,
-      "-EvidencePath", $EvidencePath, "-CheckpointPath", $CheckpointPath
+      "-EvidencePath", $EvidencePath, "-CheckpointPath", $CheckpointPath,
+      "-TestNodePath", $NodePath
     )
     $process = Start-Process `
       -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" `

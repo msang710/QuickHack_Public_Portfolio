@@ -67,6 +67,12 @@ for (const contract of [
   /AppendAuditEvent/u,
   /passwordBox\.Clear\(\)/u,
   /environment\["QUICKHACK_WINDOWS_SECRET_SCOPE"\] = "LOCAL_MACHINE"/u,
+  /QUICKHACK_SERVER_SETUP_NATIVE_TEST_GATE/u,
+  /--native-test-stdio/u,
+  /RunNativeTestStdio/u,
+  /handoff = definition\.Provision\(\)/u,
+  /handoff = definition\.Acknowledge\(args\[2\], generation\)/u,
+  /WriteToStandardOutput/u,
 ]) {
   assert.match(setupSource, contract);
 }
@@ -84,9 +90,19 @@ for (const contract of [
   /Remove-AppxPackage/u,
   /normalUninstallPreservedState/u,
   /Invoke-TestOwnedPurge/u,
+  /QUICKHACK_SERVER_SETUP_NATIVE_TEST_GATE/u,
+  /\$startInfo\.FileName = \$setup/u,
+  /\[string\]\$TestNodePath/u,
+  /\$startInfo\.FileName = \$TestNodePath/u,
 ]) {
   assert.match(nativeTest, contract);
 }
 assert.doesNotMatch(nativeTest, /temporaryPassword\s*=\s*[^\r\n]*Set-Content/u);
+const invokeProvisioner = nativeTest.slice(
+  nativeTest.indexOf("function Invoke-Provisioner"),
+  nativeTest.indexOf("function Invoke-LeaderProof")
+);
+assert.doesNotMatch(invokeProvisioner, /runtime\\node\\node\.exe/u);
+assert.doesNotMatch(invokeProvisioner, /server-provisioning-cli\.mjs/u);
 
 console.log("QuickHack elevated MSIX Server Setup manifest, build, and pipe handoff contract verified.");

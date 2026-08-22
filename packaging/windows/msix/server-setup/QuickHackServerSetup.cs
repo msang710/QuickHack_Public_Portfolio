@@ -25,6 +25,8 @@ using System.Windows.Forms;
 internal static class QuickHackServerSetup
 {
     internal const string HandoffProtocol = "QUICKHACK_SERVER_SETUP_HANDOFF_V1";
+    internal const string NativeTestGateName = "QUICKHACK_SERVER_SETUP_NATIVE_TEST_GATE";
+    internal const string NativeTestGateValue = "PR05_MSIX_GATE";
 #if QUICKHACK_DEMONSTRATION
     internal const string ProductName = "QuickHack Demo Server Setup";
     internal const string ArtifactKind = "DEMONSTRATION_SERVER";
@@ -38,6 +40,11 @@ internal static class QuickHackServerSetup
     [STAThread]
     private static int Main(string[] args)
     {
+        bool nativeTestStdio = args.Length > 0 && String.Equals(
+            args[0],
+            "--native-test-stdio",
+            StringComparison.OrdinalIgnoreCase
+        );
         try
         {
             QuickHackSetupDefinition definition = QuickHackSetupDefinition.Create(
@@ -52,6 +59,10 @@ internal static class QuickHackServerSetup
                     IsAdministrator() ? "true" : "false"
                 );
                 return 0;
+            }
+            if (nativeTestStdio)
+            {
+                return RunNativeTestStdio(definition, args);
             }
             if (args.Length != 0)
             {
@@ -72,6 +83,12 @@ internal static class QuickHackServerSetup
         }
         catch (Exception error)
         {
+            if (nativeTestStdio)
+            {
+                Console.Error.WriteLine("errorCode=SERVER_SETUP_NATIVE_TEST_FAILED");
+                Console.Error.WriteLine("errorType=" + error.GetType().Name);
+                return 1;
+            }
             MessageBox.Show(
                 error.Message,
                 ProductName,
@@ -79,6 +96,53 @@ internal static class QuickHackServerSetup
                 MessageBoxIcon.Error
             );
             return 1;
+        }
+    }
+
+    private static int RunNativeTestStdio(QuickHackSetupDefinition definition, string[] args)
+    {
+        if (!IsAdministrator())
+        {
+            throw new InvalidOperationException("QuickHack Server Setup native test requires administrator elevation.");
+        }
+        if (!String.Equals(
+            Environment.GetEnvironmentVariable(NativeTestGateName),
+            NativeTestGateValue,
+            StringComparison.Ordinal
+        ))
+        {
+            throw new InvalidOperationException("QuickHack Server Setup native test gate is missing.");
+        }
+
+        QuickHackSetupHandoff handoff = null;
+        try
+        {
+            if (args.Length == 2 && String.Equals(args[1], "PROVISION", StringComparison.OrdinalIgnoreCase))
+            {
+                handoff = definition.Provision();
+            }
+            else if (
+                args.Length == 4 &&
+                String.Equals(args[1], "ACKNOWLEDGE", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                int generation;
+                if (!Int32.TryParse(args[3], NumberStyles.None, CultureInfo.InvariantCulture, out generation))
+                {
+                    throw new InvalidDataException("QuickHack Server Setup native test generation is invalid.");
+                }
+                handoff = definition.Acknowledge(args[2], generation);
+            }
+            else
+            {
+                throw new ArgumentException("QuickHack Server Setup native test action is invalid.");
+            }
+            handoff.WriteToStandardOutput();
+            return 0;
+        }
+        finally
+        {
+            if (handoff != null) handoff.ClearSecret();
         }
     }
 
@@ -349,6 +413,22 @@ internal sealed class QuickHackSetupHandoff
     internal void ClearSecret()
     {
         TemporaryPassword = null;
+    }
+
+    internal void WriteToStandardOutput()
+    {
+        Validate();
+        Console.WriteLine(QuickHackServerSetup.HandoffProtocol);
+        Console.WriteLine("status=" + Status);
+        Console.WriteLine("transactionId=" + TransactionId);
+        if (Status == "INITIAL_LEADER_PENDING_ACK")
+        {
+            Console.WriteLine("userId=" + UserId.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("generation=" + Generation.ToString(CultureInfo.InvariantCulture));
+            Console.WriteLine("username=" + Username);
+            Console.WriteLine("temporaryPassword=" + TemporaryPassword);
+        }
+        Console.Out.Flush();
     }
 }
 
