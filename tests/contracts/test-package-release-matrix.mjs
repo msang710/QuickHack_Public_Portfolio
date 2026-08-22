@@ -61,8 +61,9 @@ for (const target of ["demo-server", "demo-client", "operational-server", "opera
   assert.match(integrationWorkflowSource, new RegExp(`name: linux-${target}`));
 }
 assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*QUICKHACK_TEST_MIGRATOR_DATABASE_URL="\$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"[\s\S]*npm ci/);
-assert.equal([...integrationWorkflowSource.matchAll(/sudo -u builder npm run build/g)].length, 1);
+assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*QUICKHACK_TEST_MIGRATOR_DATABASE_URL="\$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"[\s\S]*npm run build/);
 assert.equal([...integrationWorkflowSource.matchAll(/release:linux:/g)].length, 1);
+assert.match(integrationWorkflowSource, /npm run release:linux:demo-server/);
 assert.doesNotMatch(integrationWorkflowSource, /innosetup|build-installer/iu);
 assert.doesNotMatch(
   integrationWorkflowSource,

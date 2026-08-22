@@ -166,13 +166,19 @@ jobs:
           QUICKHACK_TEST_DATABASE_URL="$QUICKHACK_TEST_DATABASE_URL"
           QUICKHACK_TEST_MIGRATOR_DATABASE_URL="$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"
           npm ci
-      - run: sudo -u builder npm run build
+      - run: >-
+          sudo -u builder env
+          NODE_ENV="$NODE_ENV"
+          QUICKHACK_TEST_DATABASE_URL="$QUICKHACK_TEST_DATABASE_URL"
+          QUICKHACK_TEST_MIGRATOR_DATABASE_URL="$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"
+          npm run build
       - name: Build and verify exact four Linux packages once
         env:
           QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
         run: |
+          sudo -u builder env NODE_ENV="$NODE_ENV" \
+            npm run release:linux:demo-server -- --version="$QUICKHACK_RELEASE_VERSION"
           for target in demo-server demo-client operational-server operational-client; do
-            sudo -u builder npm run "release:linux:$target" -- --version="$QUICKHACK_RELEASE_VERSION"
             sudo -u builder node tools/verify-package-release-artifact.mjs \
               --artifact-dir="release/distribution/linux/$target" \
               --platform=linux \
