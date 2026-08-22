@@ -451,9 +451,15 @@ async function ensureServiceStarted(serviceName) {
     async () => {
       const source = await runPowerShellScript(
         "$ErrorActionPreference='Stop'; " +
+          "$deadline=[DateTime]::UtcNow.AddSeconds(60); " +
+          "do{ " +
           `$service=Get-CimInstance Win32_Service -Filter "Name='${serviceName}'" -ErrorAction Stop; ` +
-          "[pscustomobject]@{state=[string]$service.State;processId=[int]$service.ProcessId;exitCode=[int]$service.ExitCode}|ConvertTo-Json -Compress",
-        { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+          "if($service.State -eq 'Running' -and [int]$service.ProcessId -gt 0 -and [int]$service.ExitCode -eq 0){ " +
+          "[pscustomobject]@{state=[string]$service.State;processId=[int]$service.ProcessId;exitCode=[int]$service.ExitCode}|ConvertTo-Json -Compress; exit 0 }; " +
+          "Start-Sleep -Milliseconds 250 " +
+          "}while([DateTime]::UtcNow -lt $deadline); " +
+          "throw 'SERVICE_POSTCONDITION_TIMEOUT'",
+        { timeoutMs: 70_000, maxOutputBytes: 64 * 1024 }
       );
       const observed = JSON.parse(source);
       if (

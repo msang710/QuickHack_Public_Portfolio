@@ -168,6 +168,13 @@ assert.match(
 );
 assert.match(startServiceSource, /Start-Service -Name '\$\{serviceName\}'/u);
 assert.match(startServiceSource, /Get-CimInstance Win32_Service/u);
+assert.match(startServiceSource, /AddSeconds\(60\)/u);
+assert.match(startServiceSource, /Start-Sleep -Milliseconds 250/u);
+assert.match(startServiceSource, /SERVICE_POSTCONDITION_TIMEOUT/u);
+assert.match(startServiceSource, /timeoutMs: 70_000/u);
+assert.match(startServiceSource, /\$service\.State -eq 'Running'/u);
+assert.match(startServiceSource, /\[int\]\$service\.ProcessId -gt 0/u);
+assert.match(startServiceSource, /\[int\]\$service\.ExitCode -eq 0/u);
 assert.match(startServiceSource, /observed\?\.state !== "Running"/u);
 assert.match(startServiceSource, /observed\.processId < 1/u);
 assert.match(startServiceSource, /observed\?\.exitCode !== 0/u);
