@@ -194,7 +194,7 @@ internal static class LegacyUninstallerFixture {
     string copy = Path.Combine(Path.GetTempPath(), "QuickHackLegacyUninstaller-" + Guid.NewGuid().ToString("N") + ".exe");
     File.Copy(Process.GetCurrentProcess().MainModule.FileName, copy, true);
     string key = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5E9CD754-EEDF-47EE-A1EB-8FBCC94AFD82}_is1";
-    Process.Start(new ProcessStartInfo(copy, "--cleanup " + Process.GetCurrentProcess().Id + " \"" + key + "\" \"" + AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\') + "\"") { CreateNoWindow = true, UseShellExecute = false });
+    Process.Start(new ProcessStartInfo(copy, "--cleanup " + Process.GetCurrentProcess().Id + " \"" + key + "\" \"" + AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\') + "\"") { CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Path.GetTempPath() });
     return 0;
   }
 }
