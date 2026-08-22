@@ -181,14 +181,47 @@ async function securePostgresqlClusterDirectory(clusterDirectory) {
   });
 }
 
+function initializationFailure(code, cause) {
+  const error = new Error("QuickHack PostgreSQL initialization substep did not complete.", {
+    cause,
+  });
+  error.code = code;
+  return error;
+}
+
+async function initializationStep(code, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    throw initializationFailure(code, error);
+  }
+}
+
+function initdbFailureCode(error) {
+  const source = String(error?.message ?? "");
+  if (/File exists/iu.test(source)) {
+    return "POSTGRESQL_INITIALIZE_INITDB_TARGET_EXISTS_FAILED";
+  }
+  if (/(?:Access is denied|Permission denied)/iu.test(source)) {
+    return "POSTGRESQL_INITIALIZE_INITDB_ACCESS_FAILED";
+  }
+  return "POSTGRESQL_INITIALIZE_INITDB_PROCESS_FAILED";
+}
+
 async function initializeCluster({ binDirectory, clusterDirectory, operatorPassword }) {
-  await securePostgresqlClusterDirectory(path.dirname(clusterDirectory));
+  await initializationStep(
+    "POSTGRESQL_INITIALIZE_PARENT_ACL_FAILED",
+    () => securePostgresqlClusterDirectory(path.dirname(clusterDirectory))
+  );
   const stagingDirectory = await fs.lstat(clusterDirectory).catch((error) => {
     if (error?.code === "ENOENT") return null;
     throw error;
   });
   if (stagingDirectory) {
-    throw new Error("The PostgreSQL initialization staging directory already exists.");
+    throw initializationFailure(
+      "POSTGRESQL_INITIALIZE_STAGING_EXISTS_FAILED",
+      new Error("The PostgreSQL initialization staging directory already exists.")
+    );
   }
   const pipeName = `\\\\.\\pipe\\quickhack-initdb-${process.pid}-${randomUUID()}`;
   let delivered = false;
@@ -209,17 +242,24 @@ async function initializeCluster({ binDirectory, clusterDirectory, operatorPassw
     });
   });
   try {
-    await runExecutable(executable(binDirectory, "initdb"), [
-      "--pgdata", clusterDirectory,
-      "--username", "quickhack_operator",
-      "--pwfile", pipeName,
-      "--auth-host", "scram-sha-256",
-      "--auth-local", "scram-sha-256",
-      "--encoding", "UTF8",
-      "--locale", "C",
-    ]);
+    try {
+      await runExecutable(executable(binDirectory, "initdb"), [
+        "--pgdata", clusterDirectory,
+        "--username", "quickhack_operator",
+        "--pwfile", pipeName,
+        "--auth-host", "scram-sha-256",
+        "--auth-local", "scram-sha-256",
+        "--encoding", "UTF8",
+        "--locale", "C",
+      ]);
+    } catch (error) {
+      throw initializationFailure(initdbFailureCode(error), error);
+    }
     if (!delivered) throw new Error("PostgreSQL initdb did not consume its protected bootstrap input.");
-    await securePostgresqlClusterDirectory(clusterDirectory);
+    await initializationStep(
+      "POSTGRESQL_INITIALIZE_TARGET_ACL_FAILED",
+      () => securePostgresqlClusterDirectory(clusterDirectory)
+    );
   } finally {
     await new Promise((resolve) => passwordPipe.close(resolve));
   }
@@ -588,7 +628,10 @@ export async function installPostgresqlService(input) {
           clusterDirectory: stagingCluster,
           operatorPassword: credentialToken.passwords.operator,
         });
-        await fs.rename(stagingCluster, observed.clusterDirectory);
+        await initializationStep(
+          "POSTGRESQL_INITIALIZE_ATOMIC_RENAME_FAILED",
+          () => fs.rename(stagingCluster, observed.clusterDirectory)
+        );
       } finally {
         await fs.rm(stagingCluster, { recursive: true, force: true }).catch(() => undefined);
       }

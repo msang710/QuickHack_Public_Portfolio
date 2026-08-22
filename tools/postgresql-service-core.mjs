@@ -14,8 +14,23 @@ const POSTGRESQL_SETUP_STEPS = new Set([
   "COMMIT_CREDENTIALS",
   "ACTIVATE_CREDENTIALS",
 ]);
+const POSTGRESQL_SETUP_DETAIL_CODES = new Set([
+  "POSTGRESQL_INITIALIZE_PARENT_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_STAGING_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_TARGET_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_ACCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_PROCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_TARGET_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_ATOMIC_RENAME_FAILED",
+]);
 
-function postgresqlSetupFailureCode(step) {
+function postgresqlSetupFailureCode(step, error) {
+  if (
+    step === "INITIALIZE_CLUSTER" &&
+    POSTGRESQL_SETUP_DETAIL_CODES.has(error?.code)
+  ) {
+    return error.code;
+  }
   if (!POSTGRESQL_SETUP_STEPS.has(step)) return POSTGRESQL_SETUP_CATEGORY_CODE;
   return `POSTGRESQL_${step}_FAILED`;
 }
@@ -138,7 +153,7 @@ export function createPostgresqlServiceCore(adapter) {
         }
       }
       throw new PostgresqlServiceCoreError(
-        postgresqlSetupFailureCode(activeStep),
+        postgresqlSetupFailureCode(activeStep, error),
         "QuickHack PostgreSQL setup did not complete. Existing data was not deleted.",
         {
           cause: error,

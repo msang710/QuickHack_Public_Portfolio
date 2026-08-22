@@ -12,11 +12,15 @@ const runtimeConfig = {
   },
 };
 
-function fixture({ fresh = true, failAt = "" } = {}) {
+function fixture({ fresh = true, failAt = "", failureCode = "" } = {}) {
   const order = [];
   const call = (name, result) => async () => {
     order.push(name);
-    if (failAt === name) throw new Error("fixture failure");
+    if (failAt === name) {
+      const error = new Error("fixture failure");
+      if (failureCode) error.code = failureCode;
+      throw error;
+    }
     return result;
   };
   return {
@@ -78,6 +82,35 @@ for (const [failAt, failedStep] of failureSteps) {
       !JSON.stringify(error).includes("must-not-leak")
   );
 }
+
+const initializationDetailCodes = [
+  "POSTGRESQL_INITIALIZE_PARENT_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_STAGING_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_TARGET_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_ACCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_PROCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_TARGET_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_ATOMIC_RENAME_FAILED",
+];
+for (const failureCode of initializationDetailCodes) {
+  const detailFailure = fixture({ failAt: "initializeCluster", failureCode });
+  await assert.rejects(
+    () => createPostgresqlServiceCore(detailFailure.adapter).installOrRepair({ runtimeConfig }),
+    (error) =>
+      error.code === failureCode &&
+      error.categoryCode === "POSTGRESQL_SERVICE_SETUP_FAILED" &&
+      error.failedStep === "INITIALIZE_CLUSTER" &&
+      !JSON.stringify(error).includes("must-not-leak")
+  );
+}
+const unlistedDetail = fixture({
+  failAt: "initializeCluster",
+  failureCode: "POSTGRESQL_INITIALIZE_MUST_NOT_LEAK_FAILED",
+});
+await assert.rejects(
+  () => createPostgresqlServiceCore(unlistedDetail.adapter).installOrRepair({ runtimeConfig }),
+  (error) => error.code === "POSTGRESQL_INITIALIZE_CLUSTER_FAILED"
+);
 
 const failed = fixture({ failAt: "activateCredentials" });
 await assert.rejects(

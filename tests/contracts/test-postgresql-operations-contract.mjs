@@ -7,6 +7,7 @@ const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8
 const consoleSource = read("tools/server-console-core.mjs");
 const operatorSource = read("tools/operator-direct-one-shot.mjs");
 const serviceSource = read("tools/platform/windows/postgresql-service-install.mjs");
+const serviceCoreSource = read("tools/postgresql-service-core.mjs");
 const restoreSource = read("tools/postgresql-restore.mjs");
 const backupSource = read("tools/postgresql-backup.mjs");
 const initializeSource = read("packaging/initialize-install.ps1");
@@ -114,13 +115,13 @@ assert.match(serviceSource, /quickhack-initdb-/);
 assert.match(serviceSource, /net\.createServer/);
 assert.doesNotMatch(serviceSource, /bootstrap-password|operator-password/);
 const parentAclIndex = initializeClusterSource.indexOf(
-  "await securePostgresqlClusterDirectory(path.dirname(clusterDirectory));"
+  "securePostgresqlClusterDirectory(path.dirname(clusterDirectory))"
 );
 const initdbIndex = initializeClusterSource.indexOf(
   'await runExecutable(executable(binDirectory, "initdb")'
 );
 const clusterAclIndex = initializeClusterSource.indexOf(
-  "await securePostgresqlClusterDirectory(clusterDirectory);"
+  "securePostgresqlClusterDirectory(clusterDirectory)"
 );
 assert.ok(parentAclIndex >= 0 && parentAclIndex < initdbIndex);
 assert.ok(initdbIndex < clusterAclIndex);
@@ -129,6 +130,18 @@ assert.doesNotMatch(
   /securePostgresqlClusterDirectory\(clusterDirectory\)/,
   "Windows initdb must create its own staging target inside the protected parent."
 );
+for (const code of [
+  "POSTGRESQL_INITIALIZE_PARENT_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_STAGING_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_TARGET_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_ACCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_PROCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_TARGET_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_ATOMIC_RENAME_FAILED",
+]) {
+  assert.ok(serviceSource.includes(code), `Windows PostgreSQL adapter is missing ${code}.`);
+  assert.ok(serviceCoreSource.includes(code), `PostgreSQL core allowlist is missing ${code}.`);
+}
 assert.match(restoreSource, /DELETE FROM user_sessions/);
 assert.match(restoreSource, /DELETE FROM mobile_registered_devices/);
 assert.match(restoreSource, /DELETE FROM user_totp_credentials/);
