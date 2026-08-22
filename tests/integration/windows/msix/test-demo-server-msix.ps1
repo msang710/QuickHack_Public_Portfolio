@@ -475,6 +475,7 @@ function Invoke-TestOwnedPurge {
   & (Join-Path $repositoryRoot "packaging\windows\purge-installation.ps1") `
     -ArtifactKind DEMONSTRATION_SERVER `
     -ConfirmArtifactKind DEMONSTRATION_SERVER `
+    -ConfirmPackageIdentity "QuickHack.Demonstration.Server" `
     -VerifiedBackup $false `
     -AcknowledgeNoRecovery $true `
     -MutableRoot $mutableRoot | Out-Null

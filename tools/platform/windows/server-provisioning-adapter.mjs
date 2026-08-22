@@ -18,6 +18,12 @@ import {
   provisionInitialLeaderHandoff,
 } from "../../provision-initial-leader.mjs";
 import { installPostgresqlService } from "./postgresql-service-install.mjs";
+import { classifyLegacyWindowsInstall } from "../../../packaging/windows/msix/legacy-install-detector.mjs";
+import { observeLegacyWindowsInstall } from "./legacy-install-observer.mjs";
+import {
+  matchingBootstrapLeader,
+  planExistingBootstrapLeader,
+} from "./server-provisioning-leader-policy.mjs";
 
 const { Pool } = pg;
 const EXPECTED_ARTIFACT = "DEMONSTRATION_SERVER";
@@ -169,6 +175,7 @@ export function createWindowsServerProvisioningAdapter(input) {
   const servicesMarker = path.join(provisioningRoot, "SERVICES_READY");
   const readyMarker = path.join(provisioningRoot, "READY");
   const journal = input?.journal;
+  const allowExistingLeaderAdoption = input?.allowExistingLeaderAdoption === true;
 
   async function assertPreflight() {
     const build = Number(os.release().split(".")[2] ?? 0);
@@ -190,6 +197,26 @@ export function createWindowsServerProvisioningAdapter(input) {
       }
     }
     await assertNoOppositeServer();
+    const legacy = classifyLegacyWindowsInstall({
+      target: "demo-server",
+      observation: await observeLegacyWindowsInstall({
+        target: "demo-server",
+        packageRoot,
+        programData,
+      }),
+    });
+    if (legacy.classification === "OPPOSITE") {
+      throw failure("OPPOSITE_SERVER_FLAVOR_PRESENT", "The opposite QuickHack server flavor is present.");
+    }
+    if (legacy.classification === "AMBIGUOUS") {
+      throw failure("LEGACY_INSTALL_AMBIGUOUS", "Legacy QuickHack state requires manual diagnosis before provisioning.");
+    }
+    if (legacy.classification === "INCOMPATIBLE") {
+      throw failure(legacy.reasonCode, "Legacy QuickHack state is incompatible with this package.");
+    }
+    if (legacy.classification === "COMPATIBLE" && legacy.mode === "INSTALLED_INNO") {
+      throw failure("LEGACY_INSTALL_MIGRATION_REQUIRED", "Run the explicit legacy migration action before provisioning.");
+    }
     return true;
   }
 
@@ -296,16 +323,6 @@ export function createWindowsServerProvisioningAdapter(input) {
     }
   }
 
-  function matchingBootstrapLeader(row, { requireTemporary = false } = {}) {
-    return Boolean(
-      row &&
-      row.username === "admin" &&
-      row.role === "LEADER" &&
-      Number(row.is_active) === 1 &&
-      (!requireTemporary || Number(row.must_change_password) === 1)
-    );
-  }
-
   async function leaderState() {
     const record = await journal.read();
     if (!record?.initialLeader?.acknowledgedAt) return { ready: false };
@@ -330,12 +347,25 @@ export function createWindowsServerProvisioningAdapter(input) {
       : null;
     if (!pending) {
       const rows = await bootstrapUsers();
-      if (rows.length === 1 && matchingBootstrapLeader(rows[0], { requireTemporary: true })) {
+      const plan = planExistingBootstrapLeader(rows, { allowExistingLeaderAdoption });
+      if (plan.action === "ADOPT") {
+        await journal.setInitialLeaderPending({
+          transactionId: record.transactionId,
+          userId: plan.userId,
+          generation: plan.generation,
+        });
+        await journal.acknowledgeInitialLeader({
+          transactionId: record.transactionId,
+          generation: plan.generation,
+        });
+        return { changed: false, adoptedExistingLeader: true };
+      }
+      if (plan.action === "REISSUE") {
         pending = {
-          userId: Number(rows[0].user_id),
-          generation: Number(rows[0].credential_revision) + 1,
+          userId: plan.userId,
+          generation: plan.generation,
         };
-      } else if (rows.length !== 0) {
+      } else if (plan.action === "CONFLICT") {
         throw failure(
           "INITIAL_LEADER_STATE_CONFLICT",
           "Existing users cannot be adopted as the protected initial LEADER handoff."
