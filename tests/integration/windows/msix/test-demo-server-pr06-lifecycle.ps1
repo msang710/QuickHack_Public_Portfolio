@@ -256,6 +256,18 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "QuickHack development certificate trust failed." }
   Add-AppxPackage -Path $PackagePath -ForceApplicationShutdown -ErrorAction Stop
   $installed = Get-AppxPackage -Name $identityName -ErrorAction Stop
+  $packageBuildEvidence = Get-Content `
+    -LiteralPath (Join-Path $installed.InstallLocation "quickhack-msix-build.json") `
+    -Raw `
+    -Encoding utf8 | ConvertFrom-Json
+  if (
+    $packageBuildEvidence.sourceDirty -ne $false -or
+    [string]$packageBuildEvidence.sourceCommit -notmatch '^[a-f0-9]{40}$'
+  ) {
+    throw "QuickHack package source provenance is invalid."
+  }
+  $packageSourceCommit = [string]$packageBuildEvidence.sourceCommit
+  $harnessSourceCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
 
   $initial = Invoke-SetupAction -Action PROVISION -InstallLocation $installed.InstallLocation
   if ($initial.status -ne "INITIAL_LEADER_PENDING_ACK") { throw "QuickHack initial provisioning did not request acknowledgement." }
@@ -332,7 +344,8 @@ try {
   [ordered]@{
     schemaVersion = 1
     status = "PASS"
-    sourceCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim().ToLowerInvariant()
+    sourceCommit = $packageSourceCommit
+    harnessSourceCommit = $harnessSourceCommit
     osBuild = [Environment]::OSVersion.Version.Build
     packageIdentity = $identityName
     packageVersion = $installed.Version.ToString()
