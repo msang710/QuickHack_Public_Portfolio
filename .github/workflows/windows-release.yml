@@ -41,6 +41,7 @@ jobs:
       tag: ${{ steps.request.outputs.tag }}
       source_commit: ${{ steps.request.outputs.source_commit }}
       publisher: ${{ steps.request.outputs.publisher }}
+      integration_run_id: ${{ steps.integration.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,6 +62,16 @@ jobs:
           [[ "$QUICKHACK_CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]]
           [[ "$QUICKHACK_WINDOWS_10_RUN_ID" =~ ^[0-9]+$ ]]
           [[ "$QUICKHACK_WINDOWS_11_RUN_ID" =~ ^[0-9]+$ ]]
+      - name: Resolve successful same-revision Final Integration run
+        id: integration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUICKHACK_SOURCE_COMMIT: ${{ steps.request.outputs.source_commit }}
+        shell: bash
+        run: |
+          run_id="$(gh run list --workflow pull-request-checks.yml --commit "$QUICKHACK_SOURCE_COMMIT" --status success --json databaseId,headSha --limit 20 --jq ".[] | select(.headSha == \"$QUICKHACK_SOURCE_COMMIT\") | .databaseId" | head -n 1)"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          echo "run_id=$run_id" >>"$GITHUB_OUTPUT"
 
   verify-candidate:
     needs: prepare
@@ -72,6 +83,18 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
+      - name: Require full-integration release marker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: final-integration-complete
+          path: release/final-integration
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.prepare.outputs.integration_run_id }}
+      - name: Verify full-integration source revision
+        env:
+          QUICKHACK_SOURCE_COMMIT: ${{ needs.prepare.outputs.source_commit }}
+        shell: bash
+        run: test "$(tr -d '\r\n' < release/final-integration/source-commit.txt)" = "$QUICKHACK_SOURCE_COMMIT"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-msix-production-candidate-${{ needs.prepare.outputs.version }}
@@ -97,6 +120,13 @@ jobs:
           QUICKHACK_MSIX_PUBLISHER: ${{ needs.prepare.outputs.publisher }}
         shell: bash
         run: |
+          for target in demo-server demo-client operational-server operational-client; do
+            node tools/verify-package-release-artifact.mjs \
+              --artifact-dir="release/distribution/windows/msix/exact-four/$target" \
+              --platform=windows \
+              --target="$target" \
+              --release-version="$QUICKHACK_RELEASE_VERSION"
+          done
           mapfile -t windows10 < <(find release/windows/msix/release-native/windows-10 -maxdepth 1 -type f -name '*.json')
           mapfile -t windows11 < <(find release/windows/msix/release-native/windows-11 -maxdepth 1 -type f -name '*.json')
           [[ "${#windows10[@]}" -eq 1 && "${#windows11[@]}" -eq 1 ]]

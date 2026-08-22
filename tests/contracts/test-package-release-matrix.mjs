@@ -60,7 +60,7 @@ assert.match(integrationWorkflowSource, /name: final-integration-complete/);
 for (const target of ["demo-server", "demo-client", "operational-server", "operational-client"]) {
   assert.match(integrationWorkflowSource, new RegExp(`name: linux-${target}`));
 }
-assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*npm ci/);
+assert.match(integrationWorkflowSource, /sudo -u builder env[\s\S]*NODE_ENV="\$NODE_ENV"[\s\S]*QUICKHACK_TEST_DATABASE_URL="\$QUICKHACK_TEST_DATABASE_URL"[\s\S]*QUICKHACK_TEST_MIGRATOR_DATABASE_URL="\$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"[\s\S]*npm ci/);
 assert.equal([...integrationWorkflowSource.matchAll(/sudo -u builder npm run build/g)].length, 1);
 assert.equal([...integrationWorkflowSource.matchAll(/release:linux:/g)].length, 1);
 assert.doesNotMatch(integrationWorkflowSource, /innosetup|build-installer/iu);
@@ -86,6 +86,9 @@ assert.match(windowsNativeWorkflowSource, /\[self-hosted, windows, x64, quickhac
 assert.match(windowsNativeWorkflowSource, /run-release-candidate-matrix\.ps1/);
 assert.match(windowsWorkflowSource, /^\s*workflow_dispatch:/mu);
 assert.match(windowsWorkflowSource, /release-candidate\.mjs/);
+assert.match(windowsWorkflowSource, /Resolve successful same-revision Final Integration run/);
+assert.match(windowsWorkflowSource, /name: final-integration-complete/);
+assert.match(windowsWorkflowSource, /verify-package-release-artifact\.mjs/);
 assert.match(windowsWorkflowSource, /windows_10_evidence_run_id/);
 assert.match(windowsWorkflowSource, /windows_11_evidence_run_id/);
 assert.match(windowsWorkflowSource, /inputs\.publish == true/);

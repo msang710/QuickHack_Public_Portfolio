@@ -150,6 +150,7 @@ jobs:
     env:
       NODE_ENV: test
       QUICKHACK_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      QUICKHACK_TEST_MIGRATOR_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - name: Install Arch build toolchain
         run: |
@@ -163,6 +164,7 @@ jobs:
           sudo -u builder env
           NODE_ENV="$NODE_ENV"
           QUICKHACK_TEST_DATABASE_URL="$QUICKHACK_TEST_DATABASE_URL"
+          QUICKHACK_TEST_MIGRATOR_DATABASE_URL="$QUICKHACK_TEST_MIGRATOR_DATABASE_URL"
           npm ci
       - run: sudo -u builder npm run build
       - name: Build and verify exact four Linux packages once
