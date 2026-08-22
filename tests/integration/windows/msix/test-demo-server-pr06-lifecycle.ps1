@@ -309,7 +309,8 @@ function Get-RepairAdapterDiagnostic {
   if (-not $installed -or -not (Test-Path -LiteralPath $installed.InstallLocation -PathType Container)) {
     return $null
   }
-  $nodePath = Join-Path $installed.InstallLocation "runtime\node\node.exe"
+  $nodePath = Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1
+  if (-not $nodePath) { return [ordered]@{ status = "DIAGNOSTIC_NODE_MISSING" } }
   $scriptPath = Join-Path $PSScriptRoot "diagnose-demo-server-repair.mjs"
   try {
     $output = & $nodePath `
