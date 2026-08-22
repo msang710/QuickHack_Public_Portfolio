@@ -20,6 +20,10 @@ assert.match(host, /POSTGRES_CLUSTER_READY/u);
 assert.match(host, /SERVICES_READY/u);
 assert.match(host, /packaged-service-host\.log/u);
 assert.match(host, /code=" \+ code/u);
+assert.match(
+  host,
+  /EventLog\.WriteEntry\(message, entryType\);[\s\S]*if \(!definition\.IsProvisioned\) return;[\s\S]*Directory\.CreateDirectory\(logDirectory\)/u
+);
 assert.match(host, /quickhack-msix-service-preview\.txt/u);
 assert.match(host, /runtime", "node", "node\.exe/u);
 assert.match(host, /runtime", "postgresql", "bin", "postgres\.exe/u);

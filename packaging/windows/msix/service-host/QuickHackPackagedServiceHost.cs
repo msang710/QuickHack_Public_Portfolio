@@ -362,6 +362,7 @@ internal sealed class QuickHackWindowsService : ServiceBase
     {
         string message = "code=" + code + " service=" + ServiceName;
         try { EventLog.WriteEntry(message, entryType); } catch { }
+        if (!definition.IsProvisioned) return;
         try
         {
             string logDirectory = Path.Combine(definition.MutableRoot, "logs");

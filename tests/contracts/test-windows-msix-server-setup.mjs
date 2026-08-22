@@ -94,6 +94,8 @@ for (const contract of [
   /\$startInfo\.FileName = \$setup/u,
   /\[string\]\$TestNodePath/u,
   /\$startInfo\.FileName = \$TestNodePath/u,
+  /\$phaseFailure/u,
+  /\$cleanupFailure/u,
 ]) {
   assert.match(nativeTest, contract);
 }

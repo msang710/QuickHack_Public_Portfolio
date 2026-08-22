@@ -520,6 +520,8 @@ function Invoke-PreparePhase {
   Assert-CleanInitialState
   $thumbprints = @()
   $preserveForReboot = $false
+  $phaseFailure = $null
+  $cleanupFailure = $null
   try {
     $thumbprints = Add-TestCertificateTrust -CertificatePaths @($CertificateV1, $CertificateV2)
     Add-AppxPackage -Path $PackageV1 -ForceApplicationShutdown -ErrorAction Stop
@@ -639,11 +641,22 @@ function Invoke-PreparePhase {
       Set-Content -LiteralPath $EvidencePath -Encoding utf8
     $preserveForReboot = $true
     Write-Host "QuickHack demo-server Prepare gate passed; reboot and run Resume."
+  } catch {
+    $phaseFailure = $_
   } finally {
     if (-not $preserveForReboot) {
-      Remove-ExactTestState -Thumbprints $thumbprints
+      try {
+        Remove-ExactTestState -Thumbprints $thumbprints
+      } catch {
+        $cleanupFailure = $_
+      }
     }
   }
+  if ($phaseFailure -and $cleanupFailure) {
+    throw "QuickHack demo-server Prepare failed: $($phaseFailure.Exception.Message) Cleanup also failed: $($cleanupFailure.Exception.Message)"
+  }
+  if ($phaseFailure) { throw $phaseFailure }
+  if ($cleanupFailure) { throw $cleanupFailure }
 }
 
 function Invoke-ResumePhase {
