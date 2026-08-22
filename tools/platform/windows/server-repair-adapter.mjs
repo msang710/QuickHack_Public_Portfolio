@@ -14,6 +14,16 @@ Set-StrictMode -Version Latest
 $request = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine())) | ConvertFrom-Json
 $root = [string]$request.root
 $firewallName = [string]$request.firewallName
+$serviceStates = [ordered]@{}
+foreach ($name in @($request.serviceNames)) {
+  $serviceName = [string]$name
+  $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+  $serviceStates[$serviceName] = if ($null -eq $service) {
+    'MISSING'
+  } else {
+    $service.Status.ToString().ToUpperInvariant()
+  }
+}
 $aclReady = $false
 if (Test-Path -LiteralPath $root -PathType Container) {
   $acl = Get-Acl -LiteralPath $root
@@ -27,7 +37,11 @@ if (Test-Path -LiteralPath $root -PathType Container) {
   $aclReady = $acl.AreAccessRulesProtected -and @($expected | Where-Object { $observed -notcontains $_ }).Count -eq 0
 }
 $rules = @(Get-NetFirewallRule -DisplayName $firewallName -ErrorAction SilentlyContinue)
-[ordered]@{ aclReady = $aclReady; firewallReady = $rules.Count -eq 1 } | ConvertTo-Json -Compress
+[ordered]@{
+  aclReady = $aclReady
+  firewallReady = $rules.Count -eq 1
+  serviceStates = $serviceStates
+} | ConvertTo-Json -Compress
 `;
 
 function failure(code, message) {
@@ -105,9 +119,11 @@ export function createWindowsServerRepairAdapter(input) {
     const observation = await observer({ target: config.packageTarget, packageRoot, programData });
     const legacy = classifyLegacyWindowsInstall({ target: config.packageTarget, observation });
     const stateExists = observation.state?.exists === true;
+    const expectedServices = new Set(config.services.map((service) => service.name));
     const securityRequest = Buffer.from(JSON.stringify({
       root: mutableRoot,
       firewallName: "QuickHack HTTPS Server (Local Subnet)",
+      serviceNames: [...expectedServices],
     }), "utf8").toString("base64");
     const security = stateExists
       ? JSON.parse(await runPowerShell(STATE_SECURITY_SCRIPT, {
@@ -115,10 +131,9 @@ export function createWindowsServerRepairAdapter(input) {
           timeoutMs: 60_000,
           maxOutputBytes: 64 * 1024,
         }))
-      : { aclReady: false, firewallReady: false };
-    const expectedServices = new Set(config.services.map((service) => service.name));
+      : { aclReady: false, firewallReady: false, serviceStates: {} };
     const servicesReady = [...expectedServices].every((name) =>
-      (observation.services ?? []).some((service) => service.name === name && service.status === "RUNNING")
+      String(security.serviceStates?.[name] ?? "").toUpperCase() === "RUNNING"
     );
     let secretScopes = [];
     if (stateExists) {

@@ -22,6 +22,8 @@ for (const contract of [
 assert.match(SERVER_REPAIR_STATE_SECURITY_SCRIPT, /AreAccessRulesProtected/u);
 assert.match(SERVER_REPAIR_STATE_SECURITY_SCRIPT, /S-1-5-20/u);
 assert.match(SERVER_REPAIR_STATE_SECURITY_SCRIPT, /Get-NetFirewallRule/u);
+assert.match(SERVER_REPAIR_STATE_SECURITY_SCRIPT, /Get-Service -Name/u);
+assert.match(source, /security\.serviceStates/u);
 assert.doesNotMatch(SERVER_REPAIR_STATE_SECURITY_SCRIPT, /Remove-|Set-Acl|Stop-Service|Start-Service/u);
 const artifactInput = createWindowsServerRepairAdapter({
   artifactKind: "DEMONSTRATION_SERVER",
