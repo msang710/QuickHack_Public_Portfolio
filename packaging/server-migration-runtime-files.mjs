@@ -95,6 +95,7 @@ export const SERVER_MIGRATION_RUNTIME_FILES = [
   "tools/trust-bundle.mjs",
   "tools/postgresql-service-core.mjs",
   "tools/platform/windows/postgresql-service-install.mjs",
+  "tools/platform/windows/postgresql-service-ownership.mjs",
   "tools/platform/windows/windows-service-process.mjs",
   "tools/platform/linux/postgresql-service-install.mjs",
   "tools/platform/linux/postgresql-credential-transaction.mjs",

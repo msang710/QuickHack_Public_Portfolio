@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { msixArtifactConfig } from "../../packaging/windows/msix/msix-artifact-config.mjs";
+import { renderAppxManifest } from "../../packaging/windows/msix/render-appx-manifest.mjs";
+
+const setupSource = readFileSync(
+  new URL("../../packaging/windows/msix/server-setup/QuickHackServerSetup.cs", import.meta.url),
+  "utf8"
+);
+const processSource = readFileSync(
+  new URL("../../packaging/windows/msix/server-setup/QuickHackDesktopAppProcess.cs", import.meta.url),
+  "utf8"
+);
+const executableManifest = readFileSync(
+  new URL("../../packaging/windows/msix/server-setup/QuickHackServerSetup.exe.manifest", import.meta.url),
+  "utf8"
+);
+const buildScript = readFileSync(
+  new URL("../../packaging/build-msix-server-setup.ps1", import.meta.url),
+  "utf8"
+);
+const buildMsix = readFileSync(
+  new URL("../../packaging/build-msix.ps1", import.meta.url),
+  "utf8"
+);
+const nativeTest = readFileSync(
+  new URL("../integration/windows/msix/test-demo-server-msix.ps1", import.meta.url),
+  "utf8"
+);
+
+const demoServer = msixArtifactConfig("demo-server");
+assert.equal(demoServer.setup.applicationId, "QuickHackDemoServerSetup");
+assert.equal(demoServer.setup.executable, "QuickHack-Demo-Server-Setup.exe");
+assert.equal(msixArtifactConfig("demo-client").setup, null);
+
+const serverManifest = renderAppxManifest({
+  target: "demo-server",
+  version: "1.0.0",
+  includeServerSetup: true,
+});
+assert.match(serverManifest, /Id="QuickHackDemoServerSetup"/u);
+assert.match(serverManifest, /Executable="QuickHack-Demo-Server-Setup\.exe"/u);
+assert.match(serverManifest, /Name="allowElevation"/u);
+assert.equal((serverManifest.match(/<Application\b/gu) ?? []).length, 2);
+assert.throws(
+  () => renderAppxManifest({
+    target: "demo-client",
+    version: "1.0.0",
+    includeServerSetup: true,
+  }),
+  (error) => error.code === "MSIX_SETUP_TARGET_INVALID"
+);
+const clientManifest = renderAppxManifest({ target: "demo-client", version: "1.0.0" });
+assert.doesNotMatch(clientManifest, /allowElevation|ServerSetup/u);
+
+assert.match(executableManifest, /requestedExecutionLevel level="requireAdministrator"/u);
+assert.match(buildScript, /\/win32manifest:\$manifestPath/u);
+assert.match(buildScript, /\/platform:x64/u);
+assert.match(buildScript, /\/target:winexe/u);
+assert.match(buildScript, /QuickHackDesktopAppProcess\.cs/u);
+assert.match(buildMsix, /IncludeServerSetup/u);
+assert.match(buildMsix, /--include-server-setup/u);
+
+for (const contract of [
+  /runtime", "node", "node\.exe/u,
+  /server-provisioning-cli\.mjs/u,
+  /QuickHackDesktopAppProcess\.InheritCurrentEnvironment/u,
+  /QuickHackDesktopAppProcess\.Run/u,
+  /QUICKHACK_SERVER_SETUP_HANDOFF_V1/u,
+  /--acknowledge/u,
+  /--generation/u,
+  /AppendAuditEvent/u,
+  /passwordBox\.Clear\(\)/u,
+  /environment\["QUICKHACK_WINDOWS_SECRET_SCOPE"\] = "LOCAL_MACHINE"/u,
+  /QUICKHACK_SERVER_SETUP_NATIVE_TEST_GATE/u,
+  /--native-test-stdio/u,
+  /RunNativeTestStdio/u,
+  /handoff = definition\.Provision\(\)/u,
+  /handoff = definition\.Acknowledge\(args\[2\], generation\)/u,
+  /WriteToStandardOutput/u,
+  /ResolveNativeTestErrorCode/u,
+  /\\b\[A-Z\]\[A-Z0-9_\]\{2,95\}\\b/u,
+  /match\.Success \? match\.Value : "SERVER_SETUP_NATIVE_TEST_FAILED"/u,
+]) {
+  assert.match(setupSource, contract);
+}
+for (const contract of [
+  /CreateProcessW/u,
+  /StartupInfoEx/u,
+  /ProcThreadAttributeHandleList = 0x00020002/u,
+  /ProcThreadAttributeDesktopAppPolicy = 0x00020012/u,
+  /ProcessCreationDesktopAppBreakawayDisableProcessTree = 0x00000002/u,
+  /CreateUnicodeEnvironment \| CreateNoWindow \| ExtendedStartupInfoPresent/u,
+  /SetHandleInformation\(parentRead, HandleFlagInherit, 0\)/u,
+  /SetHandleInformation\(parentWrite, HandleFlagInherit, 0\)/u,
+  /SERVER_SETUP_PACKAGE_CONTEXT_INITIALIZE_FAILED/u,
+  /SERVER_SETUP_PACKAGE_CONTEXT_CREATE_FAILED/u,
+  /TerminateProcess/u,
+]) {
+  assert.match(processSource, contract);
+}
+assert.doesNotMatch(setupSource, /Process\.Start|ProcessStartInfo/u);
+assert.doesNotMatch(processSource, /Process\.Start|ProcessStartInfo/u);
+assert.doesNotMatch(setupSource, /File\.(?:WriteAllText|AppendAllText)\([^\n]*(?:Password|TemporaryPassword)/u);
+assert.doesNotMatch(setupSource, /arguments\.Add\([^\n]*(?:Password|TemporaryPassword)/u);
+assert.doesNotMatch(setupSource, /AppendAuditEvent\([^\n]*\.Message/u);
+assert.doesNotMatch(processSource, /WriteAllText|AppendAllText|temporaryPassword|TemporaryPassword/u);
+
+for (const contract of [
+  /INITIAL_LEADER_PENDING_ACK/u,
+  /Invoke-LeaderProof/u,
+  /oldPasswordInvalidated/u,
+  /DPAPI_LOCAL_MACHINE/u,
+  /Add-AppxPackage/u,
+  /REBOOT_REQUIRED/u,
+  /Remove-AppxPackage/u,
+  /normalUninstallPreservedState/u,
+  /Invoke-TestOwnedPurge/u,
+  /QUICKHACK_SERVER_SETUP_NATIVE_TEST_GATE/u,
+  /\$startInfo\.FileName = \$setup/u,
+  /\[string\]\$TestNodePath/u,
+  /\$startInfo\.FileName = \$TestNodePath/u,
+  /\$phaseFailure/u,
+  /\$cleanupFailure/u,
+]) {
+  assert.match(nativeTest, contract);
+}
+assert.doesNotMatch(nativeTest, /temporaryPassword\s*=\s*[^\r\n]*Set-Content/u);
+const invokeProvisioner = nativeTest.slice(
+  nativeTest.indexOf("function Invoke-Provisioner"),
+  nativeTest.indexOf("function Invoke-LeaderProof")
+);
+assert.doesNotMatch(invokeProvisioner, /runtime\\node\\node\.exe/u);
+assert.doesNotMatch(invokeProvisioner, /server-provisioning-cli\.mjs/u);
+
+console.log("QuickHack elevated MSIX Server Setup manifest, build, and pipe handoff contract verified.");

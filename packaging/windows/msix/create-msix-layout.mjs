@@ -62,7 +62,7 @@ function assertRegularTree(rootDirectory) {
   }
 }
 
-export function assertMsixStagingContent(config, paths) {
+export function assertMsixStagingContent(config, paths, options = {}) {
   const normalized = new Set(paths.map((value) => String(value).replaceAll("\\", "/")));
   const required = [
     config.launcherFileName,
@@ -80,6 +80,18 @@ export function assertMsixStagingContent(config, paths) {
     }
   } else if ([...normalized].some((value) => value.startsWith("runtime/postgresql/"))) {
     throw invalid("MSIX_ROLE_CONTENT_FORBIDDEN", "Client MSIX staging must not contain PostgreSQL.");
+  }
+  if (options.includeServices === true) {
+    if (config.role !== "server") {
+      throw invalid("MSIX_SERVICE_TARGET_INVALID", "Packaged services require a server staging tree.");
+    }
+    for (const service of config.services) required.push(service.executable.replaceAll("\\", "/"));
+  }
+  if (options.includeServerSetup === true) {
+    if (config.role !== "server" || !config.setup) {
+      throw invalid("MSIX_SETUP_TARGET_INVALID", "Server Setup requires a server staging tree.");
+    }
+    required.push(config.setup.executable.replaceAll("\\", "/"));
   }
   for (const requiredPath of required) {
     if (!normalized.has(requiredPath)) {
@@ -113,7 +125,10 @@ export function createMsixLayout(input) {
   assertRegularTree(sourceDirectory);
   assertRegularTree(visualAssetsDirectory);
   const sourceInventory = createPackageInventory(sourceDirectory, { exclude: [] });
-  assertMsixStagingContent(config, sourceInventory.entries.map((entry) => entry.path));
+  assertMsixStagingContent(config, sourceInventory.entries.map((entry) => entry.path), {
+    includeServices,
+    includeServerSetup: input?.includeServerSetup === true,
+  });
 
   const visualManifestPath = path.join(visualAssetsDirectory, "visual-assets.manifest.json");
   if (!existsSync(visualManifestPath)) {
@@ -140,6 +155,7 @@ export function createMsixLayout(input) {
       version: semanticVersion,
       msixVersion,
       includeServices,
+      includeServerSetup: input?.includeServerSetup === true,
       allowPreviewServices: input?.allowPreviewServices === true,
       preview: config.preview,
     }),
@@ -163,6 +179,7 @@ export function createMsixLayout(input) {
     visualAssetManifestSha256: createHash("sha256").update(visualManifestBytes).digest("hex"),
     runtime: config.runtime,
     serviceExtensions: includeServices,
+    serverSetup: input?.includeServerSetup === true,
     preview: config.preview,
   });
   writeFileSync(
@@ -179,6 +196,7 @@ function parseArguments(argv) {
     if (argument === "--source-dirty") result.sourceDirty = true;
     else if (argument === "--preview") result.preview = true;
     else if (argument === "--include-services") result.includeServices = true;
+    else if (argument === "--include-server-setup") result.includeServerSetup = true;
     else if (argument === "--allow-preview-services") result.allowPreviewServices = true;
     else if (argument.startsWith("--") && argument.includes("=")) {
       const [name, ...valueParts] = argument.slice(2).split("=");
@@ -196,6 +214,7 @@ function parseArguments(argv) {
     sourceCommit: result.sourceCommit,
     sourceDirty: result.sourceDirty === true,
     includeServices: result.includeServices === true,
+    includeServerSetup: result.includeServerSetup === true,
     allowPreviewServices: result.allowPreviewServices === true,
     preview: result.preview === true,
   };

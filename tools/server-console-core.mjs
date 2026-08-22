@@ -26,12 +26,30 @@ const DEFAULT_PORTS = Object.freeze({ console: 2999, backend: 3000, gateway: 344
 const RESTORE_BARRIER_PROTOCOL = "QUICKHACK_POSTGRESQL_RESTORE_BARRIER_V1";
 const RESTORE_BARRIER_FILE_NAME = "postgresql-restore-barrier.json";
 
-function parseArguments(argv) {
-  const result = { runtimeConfigPath: "", noOpen: false, systemService: false };
+function requiredPathArgument(argv, index, name) {
+  const value = String(argv[index + 1] ?? "").trim();
+  if (!value || value.startsWith("--")) {
+    throw new TypeError(`${name} requires a file path.`);
+  }
+  return path.resolve(value);
+}
+
+export function parseServerConsoleArguments(argv) {
+  const result = {
+    runtimeConfigPath: "",
+    packageManifestPath: "",
+    noOpen: false,
+    systemService: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--runtime-config") result.runtimeConfigPath = path.resolve(argv[++index] || "");
-    else if (argument === "--no-open") result.noOpen = true;
+    if (argument === "--runtime-config") {
+      result.runtimeConfigPath = requiredPathArgument(argv, index, argument);
+      index += 1;
+    } else if (argument === "--package-manifest") {
+      result.packageManifestPath = requiredPathArgument(argv, index, argument);
+      index += 1;
+    } else if (argument === "--no-open") result.noOpen = true;
     else if (argument === "--system-service") result.systemService = true;
     else throw new TypeError(`Unsupported server console argument: ${argument}`);
   }
@@ -288,7 +306,7 @@ export function createServerConsole(input) {
   const integration = input.integration;
   if (!integration || integration.flavor !== flavor) throw new TypeError("The console integration composition does not match its package flavor.");
   const root = path.resolve(input.root ?? path.dirname(fileURLToPath(new URL("../package.json", import.meta.url))));
-  const args = input.arguments ?? parseArguments(process.argv.slice(2));
+  const args = input.arguments ?? parseServerConsoleArguments(process.argv.slice(2));
   const runtimeConfigPath = args.runtimeConfigPath || sourceServerRuntimeConfigPath(root);
   const runtime = (input.operatorPlatform ?? composeOperatorPlatform()).serverConsoleRuntime;
   const serverPlatform = input.serverPlatform ?? composeServerPlatform();

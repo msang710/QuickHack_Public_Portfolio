@@ -30,6 +30,7 @@ internal static class QuickHackPackagedServiceHost
     internal const string MutableRootName = "demonstration-server";
 #endif
     internal const string PackageFlavor = "DEMONSTRATION";
+    internal const string PostgresqlMajorVersion = "18";
 #if QUICKHACK_POSTGRESQL
 #if QUICKHACK_PREVIEW
     internal const string ServiceName = "QuickHackPreviewDemoPostgreSQL";
@@ -47,6 +48,7 @@ internal static class QuickHackPackagedServiceHost
 #else
     internal const string MutableRootName = "operational-server";
     internal const string PackageFlavor = "OPERATIONAL";
+    internal const string PostgresqlMajorVersion = "18";
 #if QUICKHACK_POSTGRESQL
     internal const string ServiceName = "QuickHackOperationalPostgreSQL";
 #else
@@ -71,6 +73,9 @@ internal static class QuickHackPackagedServiceHost
         {
             QuickHackServiceDefinition definition = QuickHackServiceDefinition.Create(packageRoot);
             definition.ValidatePackageFiles();
+#if QUICKHACK_POSTGRESQL
+            QuickHackPostgresqlChildDiagnosticClassifier.RunSelfTest();
+#endif
             Console.WriteLine(
                 "QUICKHACK_PACKAGED_SERVICE_HOST_V1 service={0} state={1} child={2}",
                 ServiceName,
@@ -114,8 +119,30 @@ internal sealed class QuickHackServiceDefinition
     {
         get
         {
-            return preview || File.Exists(Path.Combine(mutableRoot, "provisioning", "READY"));
+            if (preview) return true;
+#if QUICKHACK_POSTGRESQL
+            return File.Exists(Path.Combine(mutableRoot, "provisioning", "POSTGRES_CLUSTER_READY"));
+#else
+            return File.Exists(Path.Combine(mutableRoot, "provisioning", "SERVICES_READY"));
+#endif
         }
+    }
+
+    internal string ReadinessMarkerName
+    {
+        get
+        {
+#if QUICKHACK_POSTGRESQL
+            return "POSTGRES_CLUSTER_READY";
+#else
+            return "SERVICES_READY";
+#endif
+        }
+    }
+
+    internal string MutableRoot
+    {
+        get { return mutableRoot; }
     }
 
     internal string ChildExecutable
@@ -136,7 +163,13 @@ internal sealed class QuickHackServiceDefinition
         {
 #if QUICKHACK_POSTGRESQL
             if (preview) return "--quickhack-msix-preview";
-            return "-D " + Quote(Path.Combine(mutableRoot, "data", "postgresql"));
+            return "-D " + Quote(Path.Combine(
+                mutableRoot,
+                "data",
+                "postgresql",
+                QuickHackPackagedServiceHost.PostgresqlMajorVersion,
+                "data"
+            ));
 #else
             if (preview)
             {
@@ -153,6 +186,30 @@ internal sealed class QuickHackServiceDefinition
     internal string WorkingDirectory
     {
         get { return packageRoot; }
+    }
+
+    internal bool CaptureChildDiagnostics
+    {
+        get
+        {
+#if QUICKHACK_POSTGRESQL
+            return true;
+#else
+            return false;
+#endif
+        }
+    }
+
+    internal bool RedirectChildStandardInput
+    {
+        get
+        {
+#if QUICKHACK_POSTGRESQL
+            return true;
+#else
+            return false;
+#endif
+        }
     }
 
     internal void ValidatePackageFiles()
@@ -181,9 +238,9 @@ internal sealed class QuickHackServiceDefinition
         startInfo.UseShellExecute = false;
         startInfo.CreateNoWindow = true;
         startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-        startInfo.RedirectStandardInput = false;
-        startInfo.RedirectStandardOutput = false;
-        startInfo.RedirectStandardError = false;
+        startInfo.RedirectStandardInput = RedirectChildStandardInput;
+        startInfo.RedirectStandardOutput = CaptureChildDiagnostics;
+        startInfo.RedirectStandardError = CaptureChildDiagnostics;
         ReplaceEnvironment(startInfo.EnvironmentVariables, Path.GetDirectoryName(ChildExecutable));
         return startInfo;
     }
@@ -191,13 +248,17 @@ internal sealed class QuickHackServiceDefinition
     private static void ReplaceEnvironment(StringDictionary environment, string executableDirectory)
     {
         string systemRoot = Environment.GetEnvironmentVariable("SystemRoot") ?? "C:\\Windows";
+        string commandProcessor = Path.Combine(systemRoot, "System32", "cmd.exe");
         string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        RequiredFile(commandProcessor);
         environment.Clear();
         environment["PATH"] = executableDirectory;
+        environment["COMSPEC"] = commandProcessor;
         environment["SystemRoot"] = systemRoot;
         environment["WINDIR"] = systemRoot;
         environment["ProgramData"] = programData;
         environment["QUICKHACK_PACKAGE_FLAVOR"] = QuickHackPackagedServiceHost.PackageFlavor;
+        environment["QUICKHACK_WINDOWS_SECRET_SCOPE"] = "LOCAL_MACHINE";
     }
 
     private static void RequiredFile(string filename)
@@ -211,6 +272,123 @@ internal sealed class QuickHackServiceDefinition
     private static string Quote(string value)
     {
         return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+}
+
+internal sealed class QuickHackPostgresqlChildDiagnosticClassifier
+{
+    private readonly object synchronization = new object();
+    private string selectedCode;
+    private int selectedPriority;
+
+    internal void Observe(object sender, DataReceivedEventArgs args)
+    {
+        ObserveLine(args.Data);
+    }
+
+    internal string CodeForExit(int exitCode)
+    {
+        lock (synchronization)
+        {
+            if (!String.IsNullOrEmpty(selectedCode)) return selectedCode;
+        }
+        return exitCode == 0
+            ? "POSTGRESQL_CHILD_EXIT_ZERO"
+            : "POSTGRESQL_CHILD_EXIT_NONZERO";
+    }
+
+    internal static void RunSelfTest()
+    {
+        QuickHackPostgresqlChildDiagnosticClassifier classified =
+            new QuickHackPostgresqlChildDiagnosticClassifier();
+        classified.ObserveLine("configuration file contains errors");
+        classified.ObserveLine("could not bind address already in use");
+        classified.ObserveLine("permission denied");
+        if (!String.Equals(
+            classified.CodeForExit(1),
+            "POSTGRESQL_CHILD_ACCESS_DENIED",
+            StringComparison.Ordinal
+        ))
+        {
+            throw new InvalidOperationException("PostgreSQL child diagnostic priority self-test failed.");
+        }
+        QuickHackPostgresqlChildDiagnosticClassifier fallback =
+            new QuickHackPostgresqlChildDiagnosticClassifier();
+        if (!String.Equals(
+            fallback.CodeForExit(1),
+            "POSTGRESQL_CHILD_EXIT_NONZERO",
+            StringComparison.Ordinal
+        ))
+        {
+            throw new InvalidOperationException("PostgreSQL child diagnostic fallback self-test failed.");
+        }
+    }
+
+    private void ObserveLine(string line)
+    {
+        if (String.IsNullOrEmpty(line)) return;
+        if (
+            Contains(line, "permission denied") ||
+            Contains(line, "access is denied") ||
+            Contains(line, "access denied")
+        )
+        {
+            Select("POSTGRESQL_CHILD_ACCESS_DENIED", 500);
+            return;
+        }
+        if (
+            Contains(line, "address already in use") ||
+            Contains(line, "could not bind") ||
+            Contains(line, "could not create any tcp/ip sockets") ||
+            Contains(line, "could not create any unix-domain sockets")
+        )
+        {
+            Select("POSTGRESQL_CHILD_ADDRESS_IN_USE", 400);
+            return;
+        }
+        if (
+            Contains(line, "postmaster.pid") ||
+            Contains(line, "lock file") ||
+            Contains(line, "another postmaster")
+        )
+        {
+            Select("POSTGRESQL_CHILD_LOCK_FILE_ERROR", 300);
+            return;
+        }
+        if (
+            Contains(line, "database files are incompatible") ||
+            Contains(line, "data directory was initialized by postgresql version") ||
+            Contains(line, "catalog version") ||
+            Contains(line, "invalid data directory")
+        )
+        {
+            Select("POSTGRESQL_CHILD_DATA_VERSION_ERROR", 200);
+            return;
+        }
+        if (
+            Contains(line, "configuration file") ||
+            Contains(line, "unrecognized configuration parameter") ||
+            Contains(line, "invalid value for parameter") ||
+            Contains(line, "syntax error in file")
+        )
+        {
+            Select("POSTGRESQL_CHILD_CONFIGURATION_ERROR", 100);
+        }
+    }
+
+    private void Select(string code, int priority)
+    {
+        lock (synchronization)
+        {
+            if (priority <= selectedPriority) return;
+            selectedCode = code;
+            selectedPriority = priority;
+        }
+    }
+
+    private static bool Contains(string source, string expected)
+    {
+        return source.IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 }
 
@@ -235,13 +413,35 @@ internal sealed class QuickHackWindowsService : ServiceBase
     {
         if (!definition.IsProvisioned)
         {
-            TryLog("PROVISIONING_REQUIRED: packaged child process was not started.", EventLogEntryType.Information);
+            TryLogCode("PROVISIONING_REQUIRED", EventLogEntryType.Information);
             return;
         }
         Process started = Process.Start(definition.CreateStartInfo());
         if (started == null)
         {
             throw new InvalidOperationException("QuickHack packaged service child did not start.");
+        }
+        if (definition.RedirectChildStandardInput)
+        {
+            try
+            {
+                started.StandardInput.Close();
+            }
+            catch
+            {
+                try { started.Kill(); } catch { }
+                started.Dispose();
+                throw;
+            }
+        }
+        QuickHackPostgresqlChildDiagnosticClassifier diagnostics = null;
+        if (definition.CaptureChildDiagnostics)
+        {
+            diagnostics = new QuickHackPostgresqlChildDiagnosticClassifier();
+            started.OutputDataReceived += diagnostics.Observe;
+            started.ErrorDataReceived += diagnostics.Observe;
+            started.BeginOutputReadLine();
+            started.BeginErrorReadLine();
         }
         QuickHackProcessJob job = new QuickHackProcessJob();
         try
@@ -261,7 +461,8 @@ internal sealed class QuickHackWindowsService : ServiceBase
             processJob = job;
             stopping = false;
         }
-        ThreadPool.QueueUserWorkItem(delegate { MonitorChild(started); });
+        TryLogCode("CHILD_STARTED", EventLogEntryType.Information);
+        ThreadPool.QueueUserWorkItem(delegate { MonitorChild(started, diagnostics); });
     }
 
     protected override void OnStop()
@@ -275,7 +476,10 @@ internal sealed class QuickHackWindowsService : ServiceBase
         base.OnShutdown();
     }
 
-    private void MonitorChild(Process observedChild)
+    private void MonitorChild(
+        Process observedChild,
+        QuickHackPostgresqlChildDiagnosticClassifier diagnostics
+    )
     {
         try
         {
@@ -287,14 +491,19 @@ internal sealed class QuickHackWindowsService : ServiceBase
             }
             if (unexpected)
             {
-                ExitCode = observedChild.ExitCode == 0 ? 1 : observedChild.ExitCode;
-                TryLog("Packaged child process exited unexpectedly.", EventLogEntryType.Error);
+                int childExitCode = observedChild.ExitCode;
+                ExitCode = childExitCode == 0 ? 1 : childExitCode;
+                if (diagnostics != null)
+                {
+                    TryLogCode(diagnostics.CodeForExit(childExitCode), EventLogEntryType.Error);
+                }
+                TryLogCode("CHILD_EXIT_UNEXPECTED", EventLogEntryType.Error);
                 Stop();
             }
         }
-        catch (Exception error)
+        catch (Exception)
         {
-            TryLog("Packaged child monitor failed: " + error.GetType().Name, EventLogEntryType.Error);
+            TryLogCode("CHILD_MONITOR_FAILED", EventLogEntryType.Error);
         }
     }
 
@@ -322,12 +531,26 @@ internal sealed class QuickHackWindowsService : ServiceBase
         {
             if (stoppedChild != null) stoppedChild.Dispose();
             if (stoppedJob != null) stoppedJob.Dispose();
+            TryLogCode("CHILD_STOPPED", EventLogEntryType.Information);
         }
     }
 
-    private void TryLog(string message, EventLogEntryType entryType)
+    private void TryLogCode(string code, EventLogEntryType entryType)
     {
+        string message = "code=" + code + " service=" + ServiceName;
         try { EventLog.WriteEntry(message, entryType); } catch { }
+        if (!definition.IsProvisioned) return;
+        try
+        {
+            string logDirectory = Path.Combine(definition.MutableRoot, "logs");
+            Directory.CreateDirectory(logDirectory);
+            File.AppendAllText(
+                Path.Combine(logDirectory, "packaged-service-host.log"),
+                DateTimeOffset.UtcNow.ToString("O") + " " + message + Environment.NewLine,
+                new System.Text.UTF8Encoding(false)
+            );
+        }
+        catch { }
     }
 }
 

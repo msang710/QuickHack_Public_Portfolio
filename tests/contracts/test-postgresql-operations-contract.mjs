@@ -7,6 +7,7 @@ const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8
 const consoleSource = read("tools/server-console-core.mjs");
 const operatorSource = read("tools/operator-direct-one-shot.mjs");
 const serviceSource = read("tools/platform/windows/postgresql-service-install.mjs");
+const serviceCoreSource = read("tools/postgresql-service-core.mjs");
 const restoreSource = read("tools/postgresql-restore.mjs");
 const backupSource = read("tools/postgresql-backup.mjs");
 const initializeSource = read("packaging/initialize-install.ps1");
@@ -22,6 +23,14 @@ const asyncPowerShellSource = read("quickhack_server/platform/windows/security-p
 const protectedSecretSource = read("quickhack_server/platform/windows/server-secret-protector.mjs");
 const postgresqlCredentialSource = read("quickhack_server/core/database/postgresql-credential.mjs");
 const packageFlavorSource = read("quickhack_shared/core/package-flavor-contract.mjs");
+const initializeClusterSource = serviceSource.slice(
+  serviceSource.indexOf("async function initializeCluster"),
+  serviceSource.indexOf("async function writeTextFileAtomic")
+);
+const startServiceSource = serviceSource.slice(
+  serviceSource.indexOf("async function ensureServiceStarted"),
+  serviceSource.indexOf("async function roleExists")
+);
 
 assert.doesNotMatch(consoleSource, /POSTGRESQL_OPERATIONS_NOT_READY/);
 assert.doesNotMatch(consoleSource, /postgresql-restore\.mjs|deploy-postgresql-migrations\.mjs/);
@@ -109,6 +118,66 @@ assert.doesNotMatch(serviceSource, /--password/);
 assert.match(serviceSource, /quickhack-initdb-/);
 assert.match(serviceSource, /net\.createServer/);
 assert.doesNotMatch(serviceSource, /bootstrap-password|operator-password/);
+const parentAclIndex = initializeClusterSource.indexOf(
+  "securePostgresqlClusterDirectory(path.dirname(clusterDirectory))"
+);
+const initdbIndex = initializeClusterSource.indexOf(
+  'await runExecutable(executable(binDirectory, "initdb")'
+);
+const clusterAclIndex = initializeClusterSource.indexOf(
+  "securePostgresqlClusterDirectory(clusterDirectory)"
+);
+assert.ok(parentAclIndex >= 0 && parentAclIndex < initdbIndex);
+assert.ok(initdbIndex < clusterAclIndex);
+assert.doesNotMatch(
+  initializeClusterSource.slice(0, initdbIndex),
+  /securePostgresqlClusterDirectory\(clusterDirectory\)/,
+  "Windows initdb must create its own staging target inside the protected parent."
+);
+for (const code of [
+  "POSTGRESQL_INITIALIZE_PARENT_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_STAGING_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_TARGET_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_ACCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_PROCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_TARGET_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_ATOMIC_RENAME_FAILED",
+]) {
+  assert.ok(serviceSource.includes(code), `Windows PostgreSQL adapter is missing ${code}.`);
+  assert.ok(serviceCoreSource.includes(code), `PostgreSQL core allowlist is missing ${code}.`);
+}
+const serviceStartDetailCodes = [
+  "POSTGRESQL_START_SERVICE_QUERY_FAILED",
+  "POSTGRESQL_START_SERVICE_STOP_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_STOPPED_FAILED",
+  "POSTGRESQL_START_SERVICE_START_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_RUNNING_FAILED",
+  "POSTGRESQL_START_SERVICE_POSTCONDITION_FAILED",
+];
+let previousServiceStartStep = -1;
+for (const code of serviceStartDetailCodes) {
+  const index = startServiceSource.indexOf(code);
+  assert.ok(index > previousServiceStartStep, `Windows PostgreSQL service step is out of order: ${code}.`);
+  assert.ok(serviceCoreSource.includes(code), `PostgreSQL core allowlist is missing ${code}.`);
+  previousServiceStartStep = index;
+}
+assert.match(startServiceSource, /Get-Service -Name '\$\{serviceName\}'/u);
+assert.match(
+  startServiceSource,
+  /Stop-Service -Name '\$\{serviceName\}' -Force -ErrorAction Stop/u
+);
+assert.match(startServiceSource, /Start-Service -Name '\$\{serviceName\}'/u);
+assert.match(startServiceSource, /Get-CimInstance Win32_Service/u);
+assert.match(startServiceSource, /AddSeconds\(60\)/u);
+assert.match(startServiceSource, /Start-Sleep -Milliseconds 250/u);
+assert.match(startServiceSource, /SERVICE_POSTCONDITION_TIMEOUT/u);
+assert.match(startServiceSource, /timeoutMs: 70_000/u);
+assert.match(startServiceSource, /\$service\.State -eq 'Running'/u);
+assert.match(startServiceSource, /\[int\]\$service\.ProcessId -gt 0/u);
+assert.match(startServiceSource, /\[int\]\$service\.ExitCode -eq 0/u);
+assert.match(startServiceSource, /observed\?\.state !== "Running"/u);
+assert.match(startServiceSource, /observed\.processId < 1/u);
+assert.match(startServiceSource, /observed\?\.exitCode !== 0/u);
 assert.match(restoreSource, /DELETE FROM user_sessions/);
 assert.match(restoreSource, /DELETE FROM mobile_registered_devices/);
 assert.match(restoreSource, /DELETE FROM user_totp_credentials/);

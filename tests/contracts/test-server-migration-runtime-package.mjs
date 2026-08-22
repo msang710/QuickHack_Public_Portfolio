@@ -141,13 +141,18 @@ assert.match(
 );
 assert.match(
   stagingSource,
-  /copyDir\(path\.join\(rootDir,\s*["']prisma["']\),\s*path\.join\(serverTargetDir,\s*["']prisma["']\)\)/,
-  "Staging package must copy the Prisma migration directory."
+  /for \(const targetDirectory of \[serverTargetDir, outputDir\]\) \{[\s\S]*?copyDir\(path\.join\(rootDir, ["']prisma["']\), path\.join\(targetDirectory, ["']prisma["']\)\);[\s\S]*?path\.join\(rootDir, ["']prisma\.config\.ts["']\),[\s\S]*?path\.join\(targetDirectory, ["']prisma\.config\.ts["']\)/,
+  "Staging package must copy the Prisma migration directory and config to both runtime roots."
 );
 assert.match(
   stagingSource,
-  /copyInstalledPackageClosure\(["']prisma["']\)/,
-  "Staging package must copy the installed Prisma CLI dependency closure."
+  /copyInstalledPackageClosure\(["']prisma["'], serverTargetDir\);\s*copyInstalledPackageClosure\(["']prisma["'], outputDir\);/,
+  "Staging package must copy the installed Prisma CLI dependency closure to both runtime roots."
+);
+assert.match(
+  stagingSource,
+  /function copyInstalledPackageClosure\([\s\S]*?targetDirectory,[\s\S]*?copyDir\(source, path\.join\(targetDirectory, relativeSource\)\);[\s\S]*?copyInstalledPackageClosure\(\s*dependencyName,\s*targetDirectory,\s*source,\s*copiedDirectories,\s*false\s*\);[\s\S]*?copyInstalledPackageClosure\(\s*dependencyName,\s*targetDirectory,\s*source,\s*copiedDirectories,\s*true\s*\);/,
+  "The Prisma dependency closure must preserve its selected runtime root recursively."
 );
 assert.match(
   stagingSource,

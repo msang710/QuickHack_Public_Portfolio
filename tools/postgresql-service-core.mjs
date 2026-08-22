@@ -1,10 +1,61 @@
 import { createPostgresqlPackageManifest } from "../quickhack_shared/core/package-flavor-contract.mjs";
 
+const POSTGRESQL_SETUP_CATEGORY_CODE = "POSTGRESQL_SERVICE_SETUP_FAILED";
+const POSTGRESQL_SETUP_STEPS = new Set([
+  "INSPECT",
+  "VALIDATE_TOOLCHAIN",
+  "VALIDATE_PORT",
+  "PREPARE_CREDENTIALS",
+  "INITIALIZE_CLUSTER",
+  "CONFIGURE_CLUSTER",
+  "REGISTER_SERVICE",
+  "START_SERVICE",
+  "PROVISION_CATALOG",
+  "COMMIT_CREDENTIALS",
+  "ACTIVATE_CREDENTIALS",
+]);
+const POSTGRESQL_SETUP_DETAIL_CODES = new Set([
+  "POSTGRESQL_INITIALIZE_PARENT_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_STAGING_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_TARGET_EXISTS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_ACCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_INITDB_PROCESS_FAILED",
+  "POSTGRESQL_INITIALIZE_TARGET_ACL_FAILED",
+  "POSTGRESQL_INITIALIZE_ATOMIC_RENAME_FAILED",
+]);
+const POSTGRESQL_START_SERVICE_DETAIL_CODES = new Set([
+  "POSTGRESQL_START_SERVICE_QUERY_FAILED",
+  "POSTGRESQL_START_SERVICE_STOP_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_STOPPED_FAILED",
+  "POSTGRESQL_START_SERVICE_START_COMMAND_FAILED",
+  "POSTGRESQL_START_SERVICE_WAIT_RUNNING_FAILED",
+  "POSTGRESQL_START_SERVICE_POSTCONDITION_FAILED",
+]);
+
+function postgresqlSetupFailureCode(step, error) {
+  if (
+    step === "INITIALIZE_CLUSTER" &&
+    POSTGRESQL_SETUP_DETAIL_CODES.has(error?.code)
+  ) {
+    return error.code;
+  }
+  if (
+    step === "START_SERVICE" &&
+    POSTGRESQL_START_SERVICE_DETAIL_CODES.has(error?.code)
+  ) {
+    return error.code;
+  }
+  if (!POSTGRESQL_SETUP_STEPS.has(step)) return POSTGRESQL_SETUP_CATEGORY_CODE;
+  return `POSTGRESQL_${step}_FAILED`;
+}
+
 export class PostgresqlServiceCoreError extends Error {
   constructor(code, message, options = {}) {
     super(message, options);
     this.name = "PostgresqlServiceCoreError";
     this.code = code;
+    this.categoryCode = options.categoryCode ?? code;
+    this.failedStep = options.failedStep ?? null;
     this.journal = options.journal ?? [];
   }
 }
@@ -41,32 +92,44 @@ export function createPostgresqlServiceCore(adapter) {
     let credentialToken;
     let committedToken;
     let observed;
+    let activeStep = "INSPECT";
     try {
+      activeStep = "INSPECT";
       observed = await adapter.inspect({ ...input, manifest });
       journal.push(journalEntry("INSPECT", "COMPLETE"));
+      activeStep = "VALIDATE_TOOLCHAIN";
       await adapter.validateToolchain({ ...input, manifest, observed });
       journal.push(journalEntry("VALIDATE_TOOLCHAIN", "COMPLETE"));
       if (observed.fresh && typeof adapter.assertPortAvailable === "function") {
+        activeStep = "VALIDATE_PORT";
         await adapter.assertPortAvailable({ ...input, manifest, observed });
         journal.push(journalEntry("VALIDATE_PORT", "COMPLETE"));
       }
+      activeStep = "PREPARE_CREDENTIALS";
       credentialToken = await adapter.prepareCredentials({ ...input, manifest, observed });
       journal.push(journalEntry("PREPARE_CREDENTIALS", "COMPLETE"));
       if (observed.fresh) {
+        activeStep = "INITIALIZE_CLUSTER";
         await adapter.initializeCluster({ ...input, manifest, observed, credentialToken });
         journal.push(journalEntry("INITIALIZE_CLUSTER", "COMPLETE"));
       }
+      activeStep = "CONFIGURE_CLUSTER";
       await adapter.configureCluster({ ...input, manifest, observed, credentialToken });
       journal.push(journalEntry("CONFIGURE_CLUSTER", "COMPLETE"));
+      activeStep = "REGISTER_SERVICE";
       await adapter.registerService({ ...input, manifest, observed, credentialToken });
       journal.push(journalEntry("REGISTER_SERVICE", "COMPLETE"));
+      activeStep = "START_SERVICE";
       await adapter.startService({ ...input, manifest, observed, credentialToken });
       journal.push(journalEntry("START_SERVICE", "COMPLETE"));
+      activeStep = "PROVISION_CATALOG";
       await adapter.provisionCatalog({ ...input, manifest, observed, credentialToken });
       journal.push(journalEntry("PROVISION_CATALOG", "COMPLETE"));
+      activeStep = "COMMIT_CREDENTIALS";
       committedToken = await adapter.commitCredentials({ ...input, manifest, observed, credentialToken });
       journal.push(journalEntry("COMMIT_CREDENTIALS", "COMPLETE"));
       if (typeof adapter.activateCredentials === "function") {
+        activeStep = "ACTIVATE_CREDENTIALS";
         await adapter.activateCredentials({ ...input, manifest, observed, committedToken });
         journal.push(journalEntry("ACTIVATE_CREDENTIALS", "COMPLETE"));
       }
@@ -104,9 +167,14 @@ export function createPostgresqlServiceCore(adapter) {
         }
       }
       throw new PostgresqlServiceCoreError(
-        "POSTGRESQL_SERVICE_SETUP_FAILED",
+        postgresqlSetupFailureCode(activeStep, error),
         "QuickHack PostgreSQL setup did not complete. Existing data was not deleted.",
-        { cause: error, journal: Object.freeze(journal) }
+        {
+          cause: error,
+          categoryCode: POSTGRESQL_SETUP_CATEGORY_CODE,
+          failedStep: activeStep,
+          journal: Object.freeze(journal),
+        }
       );
     } finally {
       if (credentialToken && typeof adapter.disposeCredentials === "function") {

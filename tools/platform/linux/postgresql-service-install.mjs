@@ -197,8 +197,10 @@ async function provisionCatalog({ runtimeConfig, manifest, passwords }) {
     const allRoles = manifest.roles.map((role) => identifier(role.user)).join(", ");
     for (const database of manifest.databases) await client.query(`REVOKE CONNECT, TEMPORARY, CREATE ON DATABASE ${identifier(database.name)} FROM PUBLIC, ${allRoles}`);
     const main = manifest.databases.find((database) => database.kind === "main");
+    const migrator = manifest.roles.find((role) => role.kind === "migrator");
     const runtime = manifest.roles.find((role) => role.kind === "runtime");
     const backup = manifest.roles.find((role) => role.kind === "backup");
+    await client.query(`GRANT CONNECT, CREATE ON DATABASE ${identifier(main.name)} TO ${identifier(migrator.user)}`);
     await client.query(`GRANT CONNECT ON DATABASE ${identifier(main.name)} TO ${identifier(runtime.user)}, ${identifier(backup.user)}`);
     for (const database of manifest.databases.filter((item) => item.kind !== "main")) {
       const owner = manifest.roles.find((role) => role.kind === database.ownerRole);

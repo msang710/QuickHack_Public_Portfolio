@@ -27,6 +27,10 @@ import {
   assertPostgresqlToolVersions,
 } from "../../../quickhack_shared/platform/native-runtime-contract.mjs";
 import { createPostgresqlServiceCore } from "../../postgresql-service-core.mjs";
+import {
+  assertPostgresqlServiceOwnership,
+  postgresqlServiceRegistrationPlan,
+} from "./postgresql-service-ownership.mjs";
 
 const { Pool } = pg;
 export const QUICKHACK_POSTGRESQL_SERVICE_NAME = "QuickHackPostgreSQL";
@@ -39,13 +43,20 @@ const POSTGRESQL_MAJOR = String(POSTGRESQL_MAJOR_VERSION);
 const WINDOWS_SERVICE_QUERY_TIMEOUT_MS = 60_000;
 
 function parseArguments(argv) {
-  const values = { installDir: "", dataDir: "", runtimeConfig: "", serviceName: QUICKHACK_POSTGRESQL_SERVICE_NAME };
+  const values = {
+    installDir: "",
+    dataDir: "",
+    runtimeConfig: "",
+    serviceName: QUICKHACK_POSTGRESQL_SERVICE_NAME,
+    serviceOwnership: "COMPATIBILITY",
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--install-dir") values.installDir = argv[++index] || "";
     else if (argument === "--data-dir") values.dataDir = argv[++index] || "";
     else if (argument === "--runtime-config") values.runtimeConfig = argv[++index] || "";
     else if (argument === "--service-name") values.serviceName = argv[++index] || "";
+    else if (argument === "--service-ownership") values.serviceOwnership = argv[++index] || "";
     else throw new Error(`Unsupported argument: ${argument}`);
   }
   for (const [key, value] of Object.entries(values)) {
@@ -56,6 +67,7 @@ function parseArguments(argv) {
     dataDir: path.resolve(values.dataDir),
     runtimeConfig: path.resolve(values.runtimeConfig),
     serviceName: values.serviceName,
+    serviceOwnership: assertPostgresqlServiceOwnership(values.serviceOwnership),
   };
 }
 
@@ -169,9 +181,48 @@ async function securePostgresqlClusterDirectory(clusterDirectory) {
   });
 }
 
+function initializationFailure(code, cause) {
+  const error = new Error("QuickHack PostgreSQL initialization substep did not complete.", {
+    cause,
+  });
+  error.code = code;
+  return error;
+}
+
+async function initializationStep(code, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    throw initializationFailure(code, error);
+  }
+}
+
+function initdbFailureCode(error) {
+  const source = String(error?.message ?? "");
+  if (/File exists/iu.test(source)) {
+    return "POSTGRESQL_INITIALIZE_INITDB_TARGET_EXISTS_FAILED";
+  }
+  if (/(?:Access is denied|Permission denied)/iu.test(source)) {
+    return "POSTGRESQL_INITIALIZE_INITDB_ACCESS_FAILED";
+  }
+  return "POSTGRESQL_INITIALIZE_INITDB_PROCESS_FAILED";
+}
+
 async function initializeCluster({ binDirectory, clusterDirectory, operatorPassword }) {
-  await fs.mkdir(path.dirname(clusterDirectory), { recursive: true, mode: 0o700 });
-  await securePostgresqlClusterDirectory(clusterDirectory);
+  await initializationStep(
+    "POSTGRESQL_INITIALIZE_PARENT_ACL_FAILED",
+    () => securePostgresqlClusterDirectory(path.dirname(clusterDirectory))
+  );
+  const stagingDirectory = await fs.lstat(clusterDirectory).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  if (stagingDirectory) {
+    throw initializationFailure(
+      "POSTGRESQL_INITIALIZE_STAGING_EXISTS_FAILED",
+      new Error("The PostgreSQL initialization staging directory already exists.")
+    );
+  }
   const pipeName = `\\\\.\\pipe\\quickhack-initdb-${process.pid}-${randomUUID()}`;
   let delivered = false;
   const passwordPipe = net.createServer((socket) => {
@@ -191,16 +242,24 @@ async function initializeCluster({ binDirectory, clusterDirectory, operatorPassw
     });
   });
   try {
-    await runExecutable(executable(binDirectory, "initdb"), [
-      "--pgdata", clusterDirectory,
-      "--username", "quickhack_operator",
-      "--pwfile", pipeName,
-      "--auth-host", "scram-sha-256",
-      "--auth-local", "scram-sha-256",
-      "--encoding", "UTF8",
-      "--locale", "C",
-    ]);
+    try {
+      await runExecutable(executable(binDirectory, "initdb"), [
+        "--pgdata", clusterDirectory,
+        "--username", "quickhack_operator",
+        "--pwfile", pipeName,
+        "--auth-host", "scram-sha-256",
+        "--auth-local", "scram-sha-256",
+        "--encoding", "UTF8",
+        "--locale", "C",
+      ]);
+    } catch (error) {
+      throw initializationFailure(initdbFailureCode(error), error);
+    }
     if (!delivered) throw new Error("PostgreSQL initdb did not consume its protected bootstrap input.");
+    await initializationStep(
+      "POSTGRESQL_INITIALIZE_TARGET_ACL_FAILED",
+      () => securePostgresqlClusterDirectory(clusterDirectory)
+    );
   } finally {
     await new Promise((resolve) => passwordPipe.close(resolve));
   }
@@ -284,14 +343,134 @@ async function ensureServiceRegistered(binDirectory, clusterDirectory, serviceNa
   ]);
 }
 
-async function ensureServiceStarted(serviceName) {
-  await runPowerShellScript(
+async function ensurePackagedServiceRegistered(plan) {
+  const encodedPath = Buffer.from(plan.expectedHostPath, "utf8").toString("base64");
+  const state = await runPowerShellScript(
     "$ErrorActionPreference='Stop'; " +
-      `$service=Get-Service -Name '${serviceName}' -ErrorAction Stop; ` +
-      "if($service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running){Stop-Service -InputObject $service; $service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(60))}; " +
-      "Start-Service -InputObject $service; " +
-      "$service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(60)); 'RUNNING'",
-    { timeoutMs: 130_000, maxOutputBytes: 64 * 1024 }
+      "$path=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine())); " +
+      `$service=Get-CimInstance Win32_Service -Filter \"Name='${plan.serviceName}'\" -ErrorAction SilentlyContinue; ` +
+      "if($null -eq $service){'MISSING'}elseif($service.PathName.IndexOf($path,[StringComparison]::OrdinalIgnoreCase) -ge 0){'MATCH'}else{'MISMATCH'}",
+    {
+      inputLine: encodedPath,
+      timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS,
+      timeoutAttempts: 2,
+      maxOutputBytes: 64 * 1024,
+    }
+  );
+  if (state === "MISSING") {
+    const error = new Error("The package-owned QuickHack PostgreSQL service is missing.");
+    error.code = "PACKAGED_POSTGRESQL_SERVICE_MISSING";
+    throw error;
+  }
+  if (state !== "MATCH") {
+    const error = new Error("The QuickHack PostgreSQL service is not owned by the current package.");
+    error.code = "PACKAGED_POSTGRESQL_SERVICE_MISMATCH";
+    throw error;
+  }
+}
+
+async function publishPostgresqlReadinessMarker(markerPath) {
+  const directory = path.dirname(markerPath);
+  const temporaryPath = `${markerPath}.${process.pid}.${randomUUID()}.tmp`;
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  try {
+    const handle = await fs.open(temporaryPath, "wx", 0o600);
+    try {
+      await handle.writeFile("QUICKHACK_POSTGRES_CLUSTER_READY_V1\n", "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(temporaryPath, markerPath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
+}
+
+async function postgresqlServiceControlStep(code, operation) {
+  try {
+    return await operation();
+  } catch {
+    const error = new Error("QuickHack PostgreSQL service control did not complete.");
+    error.code = code;
+    throw error;
+  }
+}
+
+async function ensureServiceStarted(serviceName) {
+  const initialStatus = await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_QUERY_FAILED",
+    () => runPowerShellScript(
+      "$ErrorActionPreference='Stop'; " +
+        `(Get-Service -Name '${serviceName}' -ErrorAction Stop).Status.ToString()`,
+      { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+    )
+  );
+  if (initialStatus === "Running") {
+    await postgresqlServiceControlStep(
+      "POSTGRESQL_START_SERVICE_STOP_COMMAND_FAILED",
+      () => runPowerShellScript(
+        "$ErrorActionPreference='Stop'; " +
+          `Stop-Service -Name '${serviceName}' -Force -ErrorAction Stop; 'STOP_REQUESTED'`,
+        { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+      )
+    );
+    await postgresqlServiceControlStep(
+      "POSTGRESQL_START_SERVICE_WAIT_STOPPED_FAILED",
+      () => runPowerShellScript(
+        "$ErrorActionPreference='Stop'; " +
+          `$service=Get-Service -Name '${serviceName}' -ErrorAction Stop; ` +
+          "$service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(60)); " +
+          "$service.Refresh(); " +
+          "if($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped){throw 'STOP_POSTCONDITION_FAILED'}; 'STOPPED'",
+        { timeoutMs: 70_000, maxOutputBytes: 64 * 1024 }
+      )
+    );
+  }
+  await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_START_COMMAND_FAILED",
+    () => runPowerShellScript(
+      "$ErrorActionPreference='Stop'; " +
+        `Start-Service -Name '${serviceName}' -ErrorAction Stop; 'START_REQUESTED'`,
+      { timeoutMs: WINDOWS_SERVICE_QUERY_TIMEOUT_MS, maxOutputBytes: 64 * 1024 }
+    )
+  );
+  await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_WAIT_RUNNING_FAILED",
+    () => runPowerShellScript(
+      "$ErrorActionPreference='Stop'; " +
+        `$service=Get-Service -Name '${serviceName}' -ErrorAction Stop; ` +
+        "$service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(60)); " +
+        "$service.Refresh(); " +
+        "if($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running){throw 'RUNNING_POSTCONDITION_FAILED'}; 'RUNNING'",
+      { timeoutMs: 70_000, maxOutputBytes: 64 * 1024 }
+    )
+  );
+  await postgresqlServiceControlStep(
+    "POSTGRESQL_START_SERVICE_POSTCONDITION_FAILED",
+    async () => {
+      const source = await runPowerShellScript(
+        "$ErrorActionPreference='Stop'; " +
+          "$deadline=[DateTime]::UtcNow.AddSeconds(60); " +
+          "do{ " +
+          `$service=Get-CimInstance Win32_Service -Filter "Name='${serviceName}'" -ErrorAction Stop; ` +
+          "if($service.State -eq 'Running' -and [int]$service.ProcessId -gt 0 -and [int]$service.ExitCode -eq 0){ " +
+          "[pscustomobject]@{state=[string]$service.State;processId=[int]$service.ProcessId;exitCode=[int]$service.ExitCode}|ConvertTo-Json -Compress; exit 0 }; " +
+          "Start-Sleep -Milliseconds 250 " +
+          "}while([DateTime]::UtcNow -lt $deadline); " +
+          "throw 'SERVICE_POSTCONDITION_TIMEOUT'",
+        { timeoutMs: 70_000, maxOutputBytes: 64 * 1024 }
+      );
+      const observed = JSON.parse(source);
+      if (
+        observed?.state !== "Running" ||
+        !Number.isSafeInteger(observed?.processId) ||
+        observed.processId < 1 ||
+        observed?.exitCode !== 0
+      ) {
+        throw new Error("QuickHack PostgreSQL service start postcondition failed.");
+      }
+    }
   );
 }
 
@@ -394,8 +573,12 @@ async function provisionRolesAndDatabases({ connectionString, config, passwords 
       );
     }
     const mainDatabase = manifest.databases.find((database) => database.kind === "main");
+    const migratorRole = manifest.roles.find((role) => role.kind === "migrator");
     const runtimeRole = manifest.roles.find((role) => role.kind === "runtime");
     const backupRole = manifest.roles.find((role) => role.kind === "backup");
+    await client.query(
+      `GRANT CONNECT, CREATE ON DATABASE ${quoteIdentifier(mainDatabase.name)} TO ${quoteIdentifier(migratorRole.user)}`
+    );
     await client.query(
       `GRANT CONNECT ON DATABASE ${quoteIdentifier(mainDatabase.name)} TO ${quoteIdentifier(runtimeRole.user)}, ${quoteIdentifier(backupRole.user)}`
     );
@@ -461,6 +644,7 @@ export async function installPostgresqlService(input) {
     kind: "operational",
   }).config;
   const serviceName = assertServiceName(input.serviceName);
+  const serviceOwnership = assertPostgresqlServiceOwnership(input.serviceOwnership);
   const adapter = {
     async inspect(context) {
       const binDirectory = path.join(context.installDir, "runtime", "postgresql", "bin");
@@ -483,6 +667,7 @@ export async function installPostgresqlService(input) {
         clusterDirectory,
         clusterParent: path.dirname(clusterDirectory),
         serviceName,
+        serviceOwnership,
       };
     },
     async validateToolchain({ observed }) {
@@ -523,7 +708,10 @@ export async function installPostgresqlService(input) {
           clusterDirectory: stagingCluster,
           operatorPassword: credentialToken.passwords.operator,
         });
-        await fs.rename(stagingCluster, observed.clusterDirectory);
+        await initializationStep(
+          "POSTGRESQL_INITIALIZE_ATOMIC_RENAME_FAILED",
+          () => fs.rename(stagingCluster, observed.clusterDirectory)
+        );
       } finally {
         await fs.rm(stagingCluster, { recursive: true, force: true }).catch(() => undefined);
       }
@@ -535,8 +723,23 @@ export async function installPostgresqlService(input) {
         runtimeConfig.database.port
       );
     },
-    async registerService({ observed }) {
-      await ensureServiceRegistered(observed.binDirectory, observed.clusterDirectory, observed.serviceName);
+    async registerService(context) {
+      const plan = postgresqlServiceRegistrationPlan({
+        serviceOwnership: context.observed.serviceOwnership,
+        serviceName: context.observed.serviceName,
+        installDir: context.installDir,
+        dataDir: context.dataDir,
+      });
+      if (plan.ownership === "PACKAGED") {
+        await ensurePackagedServiceRegistered(plan);
+        await publishPostgresqlReadinessMarker(plan.readinessMarkerPath);
+      } else {
+        await ensureServiceRegistered(
+          context.observed.binDirectory,
+          context.observed.clusterDirectory,
+          context.observed.serviceName
+        );
+      }
     },
     async startService({ observed }) {
       await ensureServiceStarted(observed.serviceName);

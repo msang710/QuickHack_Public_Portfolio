@@ -49,18 +49,42 @@ function applicationExtensions(config, includeServices) {
   return ["      <Extensions>", ...extensions, "      </Extensions>"].join("\n");
 }
 
+function additionalApplications(config, includeServerSetup) {
+  if (!includeServerSetup) return "";
+  return [
+    "    <Application",
+    `      Id="${xml(config.setup.applicationId)}"`,
+    `      Executable="${xml(config.setup.executable)}"`,
+    "      EntryPoint=\"Windows.FullTrustApplication\">",
+    "      <uap:VisualElements",
+    "        AppListEntry=\"default\"",
+    `        DisplayName="${xml(config.setup.displayName)}"`,
+    `        Description="${xml(config.description)}"`,
+    "        BackgroundColor=\"transparent\"",
+    "        Square44x44Logo=\"Assets\\Square44x44Logo.png\"",
+    "        Square150x150Logo=\"Assets\\Square150x150Logo.png\" />",
+    "    </Application>",
+  ].join("\n");
+}
+
 export function renderAppxManifest(input) {
   const config = msixArtifactConfig(input?.target, {
     publisher: input?.publisher,
     preview: input?.preview === true,
   });
   const includeServices = input?.includeServices === true;
+  const includeServerSetup = input?.includeServerSetup === true;
   if (includeServices && config.role !== "server") {
     throw new Error("MSIX service extensions are only valid for server artifacts.");
   }
   if (includeServices && config.serviceHostsReady !== true && input?.allowPreviewServices !== true) {
     const error = new Error("Packaged service hosts have not passed the Windows-native feasibility gate.");
     error.code = "MSIX_SERVICE_GATE_CLOSED";
+    throw error;
+  }
+  if (includeServerSetup && config.role !== "server") {
+    const error = new Error("MSIX Server Setup is only valid for server artifacts.");
+    error.code = "MSIX_SETUP_TARGET_INVALID";
     throw error;
   }
   const msixVersion = input?.msixVersion ?? msixVersionFromSemver(input?.version);
@@ -76,15 +100,23 @@ export function renderAppxManifest(input) {
     APPLICATION_ID: config.applicationId,
     EXECUTABLE: config.launcherFileName,
     APPLICATION_EXTENSIONS: applicationExtensions(config, includeServices),
+    ADDITIONAL_APPLICATIONS: additionalApplications(config, includeServerSetup),
     CAPABILITIES: [
       "    <rescap:Capability Name=\"runFullTrust\" />",
+      ...(includeServerSetup
+        ? ["    <rescap:Capability Name=\"allowElevation\" />"]
+        : []),
       ...(includeServices
         ? ["    <rescap:Capability Name=\"packagedServices\" />"]
         : []),
     ].join("\n"),
   };
   let template = readFileSync(TEMPLATE_PATH, "utf8");
-  const rawPlaceholders = new Set(["APPLICATION_EXTENSIONS", "CAPABILITIES"]);
+  const rawPlaceholders = new Set([
+    "APPLICATION_EXTENSIONS",
+    "ADDITIONAL_APPLICATIONS",
+    "CAPABILITIES",
+  ]);
   for (const [name, value] of Object.entries(replacements)) {
     template = template.replaceAll(
       `{{${name}}}`,
@@ -101,6 +133,7 @@ function parseArguments(argv) {
   const result = {};
   for (const argument of argv) {
     if (argument === "--include-services") result.includeServices = true;
+    else if (argument === "--include-server-setup") result.includeServerSetup = true;
     else if (argument === "--preview") result.preview = true;
     else if (argument === "--allow-preview-services") result.allowPreviewServices = true;
     else if (argument.startsWith("--") && argument.includes("=")) {

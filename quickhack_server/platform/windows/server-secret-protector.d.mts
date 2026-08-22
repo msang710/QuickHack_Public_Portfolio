@@ -4,8 +4,13 @@ import type {
 } from "../contracts.ts";
 
 export const windowsServerSecretProtectionMetadata: ServerSecretProtectionMetadata;
+export const windowsMachineServerSecretProtectionMetadata: ServerSecretProtectionMetadata;
+export const WINDOWS_SERVER_SECRET_SCOPE_ENV: "QUICKHACK_WINDOWS_SECRET_SCOPE";
+export const WINDOWS_SERVER_SECRET_SCOPES: readonly ["CURRENT_USER", "LOCAL_MACHINE"];
+export function resolveWindowsServerSecretScope(value?: unknown): "CURRENT_USER" | "LOCAL_MACHINE";
 export function createWindowsServerSecretProtector(options?: {
   platform?: string;
+  scope?: "CURRENT_USER" | "LOCAL_MACHINE";
   runCommand?: (
     executableKey: string,
     args: readonly string[],

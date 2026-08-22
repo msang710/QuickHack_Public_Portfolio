@@ -66,6 +66,59 @@ assert.throws(
   (error) => error.code === "MSIX_ROLE_CONTENT_FORBIDDEN"
 );
 const server = msixArtifactConfig("demo-server");
+assert.equal(server.serviceHostsReady, true);
+assert.equal(msixArtifactConfig("operational-server").serviceHostsReady, false);
+const productionDemoServerManifest = renderAppxManifest({
+  target: "demo-server",
+  version: "1.0.0",
+  includeServices: true,
+});
+assert.match(productionDemoServerManifest, /Name="QuickHackDemoPostgreSQL"/u);
+assert.match(productionDemoServerManifest, /Name="QuickHackDemoServerConsole"/u);
+assert.throws(
+  () => renderAppxManifest({
+    target: "operational-server",
+    version: "1.0.0",
+    includeServices: true,
+  }),
+  (error) => error.code === "MSIX_SERVICE_GATE_CLOSED"
+);
+const serverSetupManifest = renderAppxManifest({
+  target: "demo-server",
+  version: "1.0.0",
+  includeServerSetup: true,
+});
+assert.match(serverSetupManifest, /Id="QuickHackDemoServerSetup"/u);
+assert.match(serverSetupManifest, /Name="allowElevation"/u);
+assert.equal((serverSetupManifest.match(/<Application\b/gu) ?? []).length, 2);
+const completeDemoServerPaths = [
+  server.launcherFileName,
+  "runtime/node/node.exe",
+  "runtime/node/LICENSE",
+  "runtime/node/quickhack-node-runtime.json",
+  "runtime/postgresql/bin/postgres.exe",
+  "runtime/postgresql/lib/runtime.dll",
+  "runtime/postgresql/share/runtime.txt",
+  "Services/QuickHackPostgresqlServiceHost.exe",
+  "Services/QuickHackServerServiceHost.exe",
+  "QuickHack-Demo-Server-Setup.exe",
+];
+assert.equal(assertMsixStagingContent(server, completeDemoServerPaths, {
+  includeServices: true,
+  includeServerSetup: true,
+}), true);
+assert.throws(
+  () => assertMsixStagingContent(server, completeDemoServerPaths.filter(
+    (entry) => entry !== "Services/QuickHackServerServiceHost.exe"
+  ), { includeServices: true }),
+  (error) => error.code === "MSIX_RUNTIME_MISSING"
+);
+assert.throws(
+  () => assertMsixStagingContent(server, completeDemoServerPaths.filter(
+    (entry) => entry !== "QuickHack-Demo-Server-Setup.exe"
+  ), { includeServerSetup: true }),
+  (error) => error.code === "MSIX_RUNTIME_MISSING"
+);
 assert.throws(
   () => assertMsixStagingContent(server, [
     server.launcherFileName,
@@ -85,10 +138,6 @@ assert.throws(
   ]),
   (error) => error.code === "MSIX_STAGING_STALE"
 );
-assert.throws(
-  () => renderAppxManifest({ target: "demo-server", version: "1.0.0", includeServices: true }),
-  (error) => error.code === "MSIX_SERVICE_GATE_CLOSED"
-);
 const previewManifest = renderAppxManifest({
   target: "demo-server",
   version: "1.0.0-preview.1",
@@ -106,6 +155,9 @@ assert.match(buildScript, /MakeAppx pack \/o \/h SHA256/u);
 assert.match(buildScript, /MakeAppx unpack \/o/u);
 assert.match(buildScript, /TestCertificate/u);
 assert.match(buildScript, /SignTool verify \/pa \/v/u);
+assert.match(buildScript, /StoreLocation\]::LocalMachine/u);
+assert.match(buildScript, /trustedCertificateStoreName = "Root"/u);
+assert.match(buildScript, /Remove-QuickHackCertificate/u);
 assert.match(buildScript, /sourceDirty/u);
 assert.match(
   buildScript,

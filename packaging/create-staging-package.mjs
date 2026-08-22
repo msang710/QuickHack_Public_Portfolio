@@ -65,6 +65,23 @@ const roleQualifier = isClientPackage ? "Client" : "Server";
 const launcherFileName = `QuickHack-${productQualifier}-${roleQualifier}.exe`;
 const outputDir = path.resolve(rootDir, "release", "windows", packageTarget);
 const launcherSourceDir = path.resolve(rootDir, "release", "windows", "launchers");
+const msixServiceHostSourceDir = path.resolve(
+  rootDir,
+  "release",
+  "windows",
+  "msix",
+  "service-hosts",
+  packageTarget,
+  "Services"
+);
+const msixServerSetupSourceDir = path.resolve(
+  rootDir,
+  "release",
+  "windows",
+  "msix",
+  "server-setup",
+  packageTarget
+);
 const serverSourceDir = path.join(rootDir, ".next", "standalone");
 const staticSourceDir = path.join(rootDir, ".next", "static");
 const configuredNodeRuntimeDir = String(
@@ -118,6 +135,7 @@ function installedPackageDirectory(packageName, fromDirectory) {
 
 function copyInstalledPackageClosure(
   packageName,
+  targetDirectory,
   fromDirectory = rootDir,
   copiedDirectories = new Set(),
   optional = false
@@ -141,7 +159,7 @@ function copyInstalledPackageClosure(
   ) {
     throw new Error(`Runtime package escaped the repository node_modules: ${source}`);
   }
-  copyDir(source, path.join(serverTargetDir, relativeSource));
+  copyDir(source, path.join(targetDirectory, relativeSource));
 
   const packageJson = JSON.parse(
     readFileSync(path.join(source, "package.json"), "utf8")
@@ -149,6 +167,7 @@ function copyInstalledPackageClosure(
   for (const dependencyName of Object.keys(packageJson.dependencies ?? {})) {
     copyInstalledPackageClosure(
       dependencyName,
+      targetDirectory,
       source,
       copiedDirectories,
       false
@@ -159,6 +178,7 @@ function copyInstalledPackageClosure(
   )) {
     copyInstalledPackageClosure(
       dependencyName,
+      targetDirectory,
       source,
       copiedDirectories,
       true
@@ -559,7 +579,17 @@ if (existsSync(path.join(nodeSourceDir, "LICENSE"))) {
     path.join(runtimeTargetDir, "node", "LICENSE")
   );
 }
-copyDir(path.join(rootDir, "prisma"), path.join(serverTargetDir, "prisma"));
+copyFile(
+  path.join(nodeSourceDir, "quickhack-node-runtime.json"),
+  path.join(runtimeTargetDir, "node", "quickhack-node-runtime.json")
+);
+for (const targetDirectory of [serverTargetDir, outputDir]) {
+  copyDir(path.join(rootDir, "prisma"), path.join(targetDirectory, "prisma"));
+  copyFile(
+    path.join(rootDir, "prisma.config.ts"),
+    path.join(targetDirectory, "prisma.config.ts")
+  );
+}
 const serverRuntimeFiles = collectServerRuntimeClosure({
   rootDirectory: rootDir,
   entrypoints: [artifact.entrypoint],
@@ -572,6 +602,7 @@ const serverRuntimeFiles = collectServerRuntimeClosure({
     "tools/provision-initial-leader.mjs",
     "tools/postgresql-backup.mjs",
     "tools/postgresql-restore.mjs",
+    ...(packageTarget === "demo-server" ? ["tools/server-provisioning-cli.mjs"] : []),
   ],
 });
 for (const relativePath of serverRuntimeFiles) {
@@ -586,7 +617,8 @@ copyDir(
   path.join(rootDir, "tools", "platform"),
   path.join(serverTargetDir, "tools", "platform")
 );
-copyInstalledPackageClosure("prisma");
+copyInstalledPackageClosure("prisma", serverTargetDir);
+copyInstalledPackageClosure("prisma", outputDir);
 copyFile(
   path.join(rootDir, "tools", "password.mjs"),
   path.join(serverTargetDir, "tools", "password.mjs")
@@ -672,6 +704,20 @@ copyFile(
   path.join(launcherSourceDir, launcherFileName),
   path.join(outputDir, launcherFileName)
 );
+if (packageTarget === "demo-server") {
+  copyFile(
+    path.join(msixServiceHostSourceDir, "QuickHackPostgresqlServiceHost.exe"),
+    path.join(outputDir, "Services", "QuickHackPostgresqlServiceHost.exe")
+  );
+  copyFile(
+    path.join(msixServiceHostSourceDir, "QuickHackServerServiceHost.exe"),
+    path.join(outputDir, "Services", "QuickHackServerServiceHost.exe")
+  );
+  copyFile(
+    path.join(msixServerSetupSourceDir, "QuickHack-Demo-Server-Setup.exe"),
+    path.join(outputDir, "QuickHack-Demo-Server-Setup.exe")
+  );
+}
 copyFile(
   path.join(rootDir, ...artifact.entrypoint.split("/")),
   path.join(outputDir, ...artifact.entrypoint.split("/"))

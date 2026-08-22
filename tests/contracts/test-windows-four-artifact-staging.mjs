@@ -34,6 +34,11 @@ const clientRuntimeBootstrap = readFileSync(new URL("../../tools/client-runtime-
 assert.match(stagingSource, /createPackageManifest/);
 assert.match(stagingSource, /collectServerRuntimeClosure/);
 assert.match(stagingSource, /isDemonstrationPackage/);
+assert.match(stagingSource, /tools\/server-provisioning-cli\.mjs/u);
+assert.match(stagingSource, /QuickHackPostgresqlServiceHost\.exe/u);
+assert.match(stagingSource, /QuickHackServerServiceHost\.exe/u);
+assert.match(stagingSource, /QuickHack-Demo-Server-Setup\.exe/u);
+assert.match(stagingSource, /runtimeTargetDir, "node", "quickhack-node-runtime\.json"/u);
 assert.doesNotMatch(installerBuild, /Compress-Archive|Portable-/);
 assert.match(installerBuild, /ConvertTo-InnoEscapedAppId/);
 assert.match(installerBuild, /\/DArtifactAppId=\$\(ConvertTo-InnoEscapedAppId/);
@@ -43,6 +48,10 @@ assert.match(clientRuntimeLauncher, /composeProcessExecution/);
 assert.doesNotMatch(clientRuntimeLauncher, /composeOperatorPlatform/);
 assert.match(clientRuntimeBootstrap, /composeProcessExecution/);
 assert.doesNotMatch(clientRuntimeBootstrap, /composeOperatorPlatform/);
+assert.match(launcherSource, /GetCurrentPackageFullName/u);
+assert.match(launcherSource, /StartPackagedDemoServer/u);
+assert.match(launcherSource, /provisioning",[\s\S]*"READY"/u);
+assert.match(launcherSource, /QuickHack-Demo-Server-Setup\.exe/u);
 for (const config of configs) {
   assert.ok(launcherBuild.includes(config.launcherFileName));
   assert.ok(installerBuild.includes(config.installedIdentity));

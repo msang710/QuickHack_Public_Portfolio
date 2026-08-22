@@ -120,7 +120,16 @@ export function msixArtifactConfig(target, options = {}) {
       postgresql: artifact.role === "server",
     }),
     services,
-    serviceHostsReady: preview,
+    setup: artifact.role === "server"
+      ? Object.freeze({
+          applicationId: `${identity.applicationId}Setup`,
+          executable: artifact.packageTarget === "demo-server"
+            ? "QuickHack-Demo-Server-Setup.exe"
+            : "QuickHack-Operational-Server-Setup.exe",
+          displayName: `${artifact.applicationName} Setup`,
+        })
+      : null,
+    serviceHostsReady: preview || artifact.packageTarget === "demo-server",
     msixDistributionRoot: preview
       ? "release/distribution/windows/msix/preview-demo-server"
       : `release/distribution/windows/msix/${artifact.packageTarget}`,

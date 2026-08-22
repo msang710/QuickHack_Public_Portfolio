@@ -6,7 +6,14 @@ import {
   assertServerSecretKind,
   createServerSecretProtectionMetadata,
 } from "../../quickhack_server/platform/server-secret-contract.mjs";
-import { createWindowsServerSecretProtector } from "../../quickhack_server/platform/windows/server-secret-protector.mjs";
+import {
+  WINDOWS_SERVER_SECRET_SCOPE_ENV,
+  WINDOWS_SERVER_SECRET_SCOPES,
+  createWindowsServerSecretProtector,
+  resolveWindowsServerSecretScope,
+  windowsMachineServerSecretProtectionMetadata,
+  windowsServerSecretProtectionMetadata,
+} from "../../quickhack_server/platform/windows/server-secret-protector.mjs";
 
 const fixture = JSON.parse(
   readFileSync(
@@ -51,6 +58,37 @@ assert.equal(
 assert.equal(assertServerSecretKind("QHKEY_MASTER_KEY"), "QHKEY_MASTER_KEY");
 assert.throws(() => assertServerSecretBuffer(Buffer.alloc(0), "secret"), /non-empty/);
 assert.equal(assertServerSecretBuffer(Buffer.from([1]), "secret").length, 1);
+assert.equal(WINDOWS_SERVER_SECRET_SCOPE_ENV, "QUICKHACK_WINDOWS_SECRET_SCOPE");
+assert.equal(Object.isFrozen(WINDOWS_SERVER_SECRET_SCOPES), true);
+assert.deepEqual(WINDOWS_SERVER_SECRET_SCOPES, [
+  "CURRENT_USER",
+  "LOCAL_MACHINE",
+]);
+assert.equal(resolveWindowsServerSecretScope(), "CURRENT_USER");
+assert.equal(resolveWindowsServerSecretScope(" current_user "), "CURRENT_USER");
+assert.equal(resolveWindowsServerSecretScope("local_machine"), "LOCAL_MACHINE");
+assert.throws(
+  () => resolveWindowsServerSecretScope(""),
+  /Unsupported Windows server secret identity scope/u
+);
+assert.throws(
+  () => resolveWindowsServerSecretScope("CURRENT_MACHINE"),
+  /Unsupported Windows server secret identity scope/u
+);
+assert.deepEqual(windowsServerSecretProtectionMetadata, {
+  protection: "WINDOWS_DPAPI_CURRENT_USER",
+  identityScope: "CURRENT_WINDOWS_USER",
+  portable: false,
+  formatVersion: 1,
+  lifecycle: "OPAQUE_PAYLOAD",
+});
+assert.deepEqual(windowsMachineServerSecretProtectionMetadata, {
+  protection: "WINDOWS_DPAPI_LOCAL_MACHINE",
+  identityScope: "LOCAL_WINDOWS_MACHINE",
+  portable: false,
+  formatVersion: 1,
+  lifecycle: "OPAQUE_PAYLOAD",
+});
 
 const observedScripts = [];
 const windows = createWindowsServerSecretProtector({
@@ -86,11 +124,66 @@ assert.equal(windows.protector.metadata.portable, false);
 assert.equal(windows.protector.descriptor.state, "READY");
 assert.equal(observedScripts.length, 3);
 assert.equal(
+  observedScripts.every((script) =>
+    script.includes("DataProtectionScope]::CurrentUser")
+  ),
+  true
+);
+assert.equal(
   windows.protector
     .unprotectSync("QHKEY_MASTER_KEY", protectedPayload)
     .equals(secret),
   true
 );
+
+const observedMachineScripts = [];
+const windowsMachine = createWindowsServerSecretProtector({
+  platform: "win32",
+  scope: "LOCAL_MACHINE",
+  async runScript(script, options) {
+    observedMachineScripts.push(script);
+    return options.inputLine;
+  },
+  runScriptSync(script, options) {
+    observedMachineScripts.push(script);
+    return options.inputLine;
+  },
+});
+const machinePayload = await windowsMachine.protector.protect(
+  "POSTGRESQL_CREDENTIAL",
+  secret
+);
+let openedMachinePayload;
+try {
+  openedMachinePayload = await windowsMachine.protector.unprotect(
+    "POSTGRESQL_CREDENTIAL",
+    machinePayload
+  );
+  assert.equal(
+    openedMachinePayload.equals(secret),
+    true
+  );
+  assert.deepEqual(
+    windowsMachine.protector.metadata,
+    windowsMachineServerSecretProtectionMetadata
+  );
+  assert.equal(
+    observedMachineScripts.every((script) =>
+      script.includes("DataProtectionScope]::LocalMachine")
+    ),
+    true
+  );
+  assert.equal(
+    observedMachineScripts.some((script) =>
+      script.includes("DataProtectionScope]::CurrentUser")
+    ),
+    false
+  );
+} finally {
+  machinePayload.fill(0);
+  openedMachinePayload?.fill(0);
+}
+
 const failingWindows = createWindowsServerSecretProtector({
   platform: "win32",
   async runScript() {
