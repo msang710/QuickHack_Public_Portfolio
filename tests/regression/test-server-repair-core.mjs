@@ -64,6 +64,34 @@ const repaired = await createServerRepairCore({
 assert.equal(repaired.disposition, "READY");
 assert.equal(repairs, 1);
 
+let transientDiagnostics = 0;
+const transientRepair = await createServerRepairCore({
+  async diagnose() {
+    transientDiagnostics += 1;
+    return transientDiagnostics < 3
+      ? healthy({ state: { ...healthy().state, firewall: "DRIFTED" } })
+      : healthy();
+  },
+  async repair() {},
+  postconditionAttempts: 3,
+  async waitForPostcondition() {},
+}).run();
+assert.equal(transientRepair.disposition, "READY");
+assert.equal(transientDiagnostics, 3);
+
+let exhaustedWaits = 0;
+const exhaustedRepair = await createServerRepairCore({
+  async diagnose() {
+    return healthy({ state: { ...healthy().state, firewall: "DRIFTED" } });
+  },
+  async repair() {},
+  postconditionAttempts: 2,
+  async waitForPostcondition() { exhaustedWaits += 1; },
+}).run();
+assert.equal(exhaustedRepair.disposition, "PRODUCT_REPAIR_AVAILABLE");
+assert.equal(exhaustedRepair.code, "PRODUCT_REPAIR_POSTCONDITION_FAILED");
+assert.equal(exhaustedWaits, 1);
+
 let unsafeRepairCalled = false;
 const packageFailure = await createServerRepairCore({
   async diagnose() {

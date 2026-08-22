@@ -74,6 +74,8 @@
     "test:server-provisioning-core": "node tests/regression/test-server-provisioning-core.mjs",
     "test:server-provisioning-cli": "node tests/contracts/test-server-provisioning-cli.mjs",
     "test:windows-server-provisioning-adapter": "node tests/regression/test-windows-server-provisioning-adapter.mjs",
+    "test:server-repair-core": "node tests/regression/test-server-repair-core.mjs",
+    "test:windows-server-repair-adapter": "node tests/contracts/test-windows-server-repair-adapter.mjs",
     "test:package-runtime-closure": "node tests/contracts/test-package-runtime-closure.mjs",
     "test:package-content-inventory": "node tests/contracts/test-package-content-inventory.mjs",
     "test:package-runtime-identity": "node tests/contracts/test-package-runtime-identity.mjs",

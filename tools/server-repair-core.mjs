@@ -6,6 +6,9 @@ export const SERVER_REPAIR_DISPOSITIONS = Object.freeze([
   "STATE_SCHEMA_INCOMPATIBLE",
 ]);
 
+const DEFAULT_REPAIR_POSTCONDITION_ATTEMPTS = 21;
+const DEFAULT_REPAIR_POSTCONDITION_DELAY_MS = 250;
+
 function result(disposition, code, mutableStateMutationAllowed, logDirectory) {
   return Object.freeze({ disposition, code, mutableStateMutationAllowed, logDirectory });
 }
@@ -76,6 +79,16 @@ export function createServerRepairCore(input) {
   if (typeof input?.diagnose !== "function" || typeof input?.repair !== "function") {
     throw new TypeError("Server repair core requires diagnose() and repair().");
   }
+  const postconditionAttempts = input?.postconditionAttempts ?? DEFAULT_REPAIR_POSTCONDITION_ATTEMPTS;
+  if (!Number.isSafeInteger(postconditionAttempts) || postconditionAttempts < 1 || postconditionAttempts > 100) {
+    throw new TypeError("Server repair postcondition attempts must be a bounded positive integer.");
+  }
+  const waitForPostcondition = input?.waitForPostcondition ?? (
+    () => new Promise((resolve) => setTimeout(resolve, DEFAULT_REPAIR_POSTCONDITION_DELAY_MS))
+  );
+  if (typeof waitForPostcondition !== "function") {
+    throw new TypeError("Server repair postcondition wait must be a function.");
+  }
 
   async function diagnose() {
     return classifyServerRepair(await input.diagnose());
@@ -89,10 +102,14 @@ export function createServerRepairCore(input) {
     } catch (error) {
       return failedRepairDisposition(error, before.logDirectory);
     }
-    const after = await diagnose();
-    return after.disposition === "READY"
-      ? after
-      : result(after.disposition, "PRODUCT_REPAIR_POSTCONDITION_FAILED", false, after.logDirectory);
+    let after;
+    for (let attempt = 1; attempt <= postconditionAttempts; attempt += 1) {
+      after = await diagnose();
+      if (after.disposition === "READY") return after;
+      if (after.disposition !== "PRODUCT_REPAIR_AVAILABLE") break;
+      if (attempt < postconditionAttempts) await waitForPostcondition();
+    }
+    return result(after.disposition, "PRODUCT_REPAIR_POSTCONDITION_FAILED", false, after.logDirectory);
   }
 
   return Object.freeze({ diagnose, run });

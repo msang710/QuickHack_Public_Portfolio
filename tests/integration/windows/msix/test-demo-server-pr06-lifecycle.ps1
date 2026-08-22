@@ -451,7 +451,7 @@ try {
     schemaVersion = 1
     status = "FAIL_DIAGNOSTIC"
     phase = $phase
-    stableCode = if ($_.Exception.Message -cmatch '\b([A-Z][A-Z0-9_]{2,95})\b') { $Matches[1] } else { "PR06_NATIVE_LIFECYCLE_FAILED" }
+    stableCode = if ($_.Exception.Message -cmatch '\b([A-Z][A-Z0-9]*_[A-Z0-9_]{2,94})\b') { $Matches[1] } else { "PR06_NATIVE_LIFECYCLE_FAILED" }
     migration = $migrationDiagnostic
     provisioning = $provisioningDiagnostic
     repairEnvironment = Get-RepairEnvironmentDiagnostic
