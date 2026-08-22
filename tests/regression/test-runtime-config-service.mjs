@@ -81,7 +81,10 @@ assert.equal(development.production, false);
 assert.equal(development.role, "server");
 assert.equal(development.policies.coupangWriteApiEnabled, true);
 assert.equal(development.policies.logenWriteApiEnabled, false);
-assert.equal(development.paths.dataDir, developmentConfig.dataDirectory);
+assert.equal(
+  development.paths.dataDir,
+  path.win32.normalize(developmentConfig.dataDirectory)
+);
 assert.equal(development.database.provider, "postgresql");
 assert.equal(development.database.postgresql.host, "127.0.0.1");
 assert.equal(development.endpoints.coupang.mode, "mock");

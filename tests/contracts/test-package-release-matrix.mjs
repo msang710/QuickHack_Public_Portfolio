@@ -55,7 +55,7 @@ assert.equal(
 );
 assert.match(integrationWorkflowSource, /four-artifact-distribution\.mjs/);
 assert.match(integrationWorkflowSource, /windows-msix-exact-four-unsigned/);
-assert.match(integrationWorkflowSource, /options: \[all, source-linux\]/);
+assert.match(integrationWorkflowSource, /options: \[all, source-linux, source\]/);
 assert.match(integrationWorkflowSource, /name: final-integration-complete/);
 for (const target of ["demo-server", "demo-client", "operational-server", "operational-client"]) {
   assert.match(integrationWorkflowSource, new RegExp(`name: linux-${target}`));

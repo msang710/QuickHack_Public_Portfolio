@@ -15,11 +15,11 @@ on:
         default: "CN=QuickHack Integration, O=QuickHack"
         type: string
       scope:
-        description: Full gate or focused recovery of the failed source and Linux lanes
+        description: Full gate or focused recovery of selected failed lanes
         required: true
         default: all
         type: choice
-        options: [all, source-linux]
+        options: [all, source-linux, source]
 
 permissions:
   contents: read
@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   source-and-postgresql:
-    if: inputs.scope == 'all' || inputs.scope == 'source-linux'
+    if: inputs.scope == 'all' || inputs.scope == 'source-linux' || inputs.scope == 'source'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
@@ -237,14 +237,19 @@ jobs:
           ANDROID_RESULT: ${{ needs.android-build.result }}
         run: |
           [[ "$SOURCE_RESULT" == "success" ]]
-          [[ "$LINUX_RESULT" == "success" ]]
           if [[ "$INTEGRATION_SCOPE" == "all" ]]; then
+            [[ "$LINUX_RESULT" == "success" ]]
             [[ "$WINDOWS_RESULT" == "success" ]]
             [[ "$ANDROID_RESULT" == "success" ]]
           else
-            [[ "$INTEGRATION_SCOPE" == "source-linux" ]]
             [[ "$WINDOWS_RESULT" == "skipped" ]]
             [[ "$ANDROID_RESULT" == "skipped" ]]
+            if [[ "$INTEGRATION_SCOPE" == "source-linux" ]]; then
+              [[ "$LINUX_RESULT" == "success" ]]
+            else
+              [[ "$INTEGRATION_SCOPE" == "source" ]]
+              [[ "$LINUX_RESULT" == "skipped" ]]
+            fi
           fi
       - name: Record full-integration release eligibility
         if: inputs.scope == 'all'

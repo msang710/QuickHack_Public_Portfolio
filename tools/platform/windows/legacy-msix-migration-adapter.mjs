@@ -12,6 +12,7 @@ import {
   inspectWindowsServerSecretScopes,
   migrateWindowsServerSecretScope,
 } from "./server-secret-scope-migration.mjs";
+import { createWindowsOperatorProcessExecution } from "./process-execution.mjs";
 
 const execFileAsync = promisify(execFile);
 const STOP_SERVICES_SCRIPT = String.raw`
@@ -93,6 +94,7 @@ export function createWindowsLegacyMsixMigrationAdapter(input) {
   const observer = input?.observe ?? observeLegacyWindowsInstall;
   const runPowerShell = input?.runPowerShellScript ?? runPowerShellScript;
   const runExecutable = input?.execFile ?? execFileAsync;
+  const processExecution = input?.processExecution ?? createWindowsOperatorProcessExecution();
   const provision = input?.provision;
   if (typeof provision !== "function") throw new TypeError("Legacy migration adapter requires provision().");
   let currentDiscovery = null;
@@ -219,7 +221,15 @@ export function createWindowsLegacyMsixMigrationAdapter(input) {
         await runExecutable(
           uninstaller,
           ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-          { cwd: path.win32.dirname(uninstaller), windowsHide: true, timeout: 10 * 60_000, shell: false }
+          {
+            cwd: path.win32.dirname(uninstaller),
+            windowsHide: true,
+            timeout: 10 * 60_000,
+            shell: false,
+            env: processExecution.childEnvironment({
+              executableDirectories: [path.win32.dirname(uninstaller)],
+            }),
+          }
         );
       }
       return {};
