@@ -29,6 +29,35 @@ assert.match(host, /runtime", "node", "node\.exe/u);
 assert.match(host, /runtime", "postgresql", "bin", "postgres\.exe/u);
 assert.match(host, /PostgresqlMajorVersion = "18"/u);
 assert.match(host, /PostgresqlMajorVersion,[\s\S]*"data"/u);
+assert.match(
+  host,
+  /#if QUICKHACK_POSTGRESQL[\s\S]*return true;[\s\S]*#else[\s\S]*return false;[\s\S]*#endif/u
+);
+assert.match(host, /RedirectStandardOutput = CaptureChildDiagnostics/u);
+assert.match(host, /RedirectStandardError = CaptureChildDiagnostics/u);
+assert.match(host, /started\.OutputDataReceived \+= diagnostics\.Observe/u);
+assert.match(host, /started\.ErrorDataReceived \+= diagnostics\.Observe/u);
+assert.match(host, /started\.BeginOutputReadLine\(\)/u);
+assert.match(host, /started\.BeginErrorReadLine\(\)/u);
+assert.match(host, /class QuickHackPostgresqlChildDiagnosticClassifier/u);
+for (const code of [
+  "POSTGRESQL_CHILD_ACCESS_DENIED",
+  "POSTGRESQL_CHILD_ADDRESS_IN_USE",
+  "POSTGRESQL_CHILD_CONFIGURATION_ERROR",
+  "POSTGRESQL_CHILD_LOCK_FILE_ERROR",
+  "POSTGRESQL_CHILD_DATA_VERSION_ERROR",
+  "POSTGRESQL_CHILD_EXIT_NONZERO",
+  "POSTGRESQL_CHILD_EXIT_ZERO"
+]) {
+  assert.match(host, new RegExp(`"${code}"`, "u"));
+}
+assert.match(
+  host,
+  /TryLogCode\(diagnostics\.CodeForExit\(childExitCode\)[\s\S]*TryLogCode\("CHILD_EXIT_UNEXPECTED"/u
+);
+assert.doesNotMatch(host, /StringBuilder/u);
+assert.doesNotMatch(host, /TryLogCode\([^\n]*args\.Data/u);
+assert.doesNotMatch(host, /AppendAllText\([^;]*args\.Data/u);
 assert.match(host, /environment\.Clear\(\)/u);
 assert.match(host, /environment\["PATH"\] = executableDirectory/u);
 assert.match(
