@@ -54,13 +54,35 @@ await createPostgresqlServiceCore(repair.adapter).installOrRepair({ runtimeConfi
 assert.equal(repair.order.includes("assertPortAvailable"), false);
 assert.equal(repair.order.includes("initializeCluster"), false);
 
+const failureSteps = new Map([
+  ["inspect", "INSPECT"],
+  ["validateToolchain", "VALIDATE_TOOLCHAIN"],
+  ["assertPortAvailable", "VALIDATE_PORT"],
+  ["prepareCredentials", "PREPARE_CREDENTIALS"],
+  ["initializeCluster", "INITIALIZE_CLUSTER"],
+  ["configureCluster", "CONFIGURE_CLUSTER"],
+  ["registerService", "REGISTER_SERVICE"],
+  ["startService", "START_SERVICE"],
+  ["provisionCatalog", "PROVISION_CATALOG"],
+  ["commitCredentials", "COMMIT_CREDENTIALS"],
+  ["activateCredentials", "ACTIVATE_CREDENTIALS"],
+]);
+for (const [failAt, failedStep] of failureSteps) {
+  const stageFailure = fixture({ failAt });
+  await assert.rejects(
+    () => createPostgresqlServiceCore(stageFailure.adapter).installOrRepair({ runtimeConfig }),
+    (error) =>
+      error.code === `POSTGRESQL_${failedStep}_FAILED` &&
+      error.categoryCode === "POSTGRESQL_SERVICE_SETUP_FAILED" &&
+      error.failedStep === failedStep &&
+      !JSON.stringify(error).includes("must-not-leak")
+  );
+}
+
 const failed = fixture({ failAt: "activateCredentials" });
 await assert.rejects(
   () => createPostgresqlServiceCore(failed.adapter).installOrRepair({ runtimeConfig }),
-  (error) =>
-    error.code === "POSTGRESQL_SERVICE_SETUP_FAILED" &&
-    error.journal.some((entry) => entry.step === "ROLLBACK_CREDENTIALS") &&
-    !JSON.stringify(error).includes("must-not-leak")
+  (error) => error.journal.some((entry) => entry.step === "ROLLBACK_CREDENTIALS")
 );
 assert.ok(failed.order.indexOf("rollbackCredentials") > failed.order.indexOf("activateCredentials"));
 
