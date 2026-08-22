@@ -135,6 +135,7 @@ function installedPackageDirectory(packageName, fromDirectory) {
 
 function copyInstalledPackageClosure(
   packageName,
+  targetDirectory,
   fromDirectory = rootDir,
   copiedDirectories = new Set(),
   optional = false
@@ -158,7 +159,7 @@ function copyInstalledPackageClosure(
   ) {
     throw new Error(`Runtime package escaped the repository node_modules: ${source}`);
   }
-  copyDir(source, path.join(serverTargetDir, relativeSource));
+  copyDir(source, path.join(targetDirectory, relativeSource));
 
   const packageJson = JSON.parse(
     readFileSync(path.join(source, "package.json"), "utf8")
@@ -166,6 +167,7 @@ function copyInstalledPackageClosure(
   for (const dependencyName of Object.keys(packageJson.dependencies ?? {})) {
     copyInstalledPackageClosure(
       dependencyName,
+      targetDirectory,
       source,
       copiedDirectories,
       false
@@ -176,6 +178,7 @@ function copyInstalledPackageClosure(
   )) {
     copyInstalledPackageClosure(
       dependencyName,
+      targetDirectory,
       source,
       copiedDirectories,
       true
@@ -580,7 +583,13 @@ copyFile(
   path.join(nodeSourceDir, "quickhack-node-runtime.json"),
   path.join(runtimeTargetDir, "node", "quickhack-node-runtime.json")
 );
-copyDir(path.join(rootDir, "prisma"), path.join(serverTargetDir, "prisma"));
+for (const targetDirectory of [serverTargetDir, outputDir]) {
+  copyDir(path.join(rootDir, "prisma"), path.join(targetDirectory, "prisma"));
+  copyFile(
+    path.join(rootDir, "prisma.config.ts"),
+    path.join(targetDirectory, "prisma.config.ts")
+  );
+}
 const serverRuntimeFiles = collectServerRuntimeClosure({
   rootDirectory: rootDir,
   entrypoints: [artifact.entrypoint],
@@ -608,7 +617,8 @@ copyDir(
   path.join(rootDir, "tools", "platform"),
   path.join(serverTargetDir, "tools", "platform")
 );
-copyInstalledPackageClosure("prisma");
+copyInstalledPackageClosure("prisma", serverTargetDir);
+copyInstalledPackageClosure("prisma", outputDir);
 copyFile(
   path.join(rootDir, "tools", "password.mjs"),
   path.join(serverTargetDir, "tools", "password.mjs")
