@@ -4,10 +4,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { packageReleaseVariant } from "../../packaging/package-release-matrix.mjs";
-import {
-  canonicalPackageManifestJson,
-  createPackageManifest,
-} from "../../packaging/common/package-manifest.mjs";
 import { verifyPackageReleaseArtifact } from "../../tools/verify-package-release-artifact.mjs";
 
 function digest(value) {
@@ -22,14 +18,24 @@ try {
   const release = packageReleaseVariant(platform, target, version);
   const artifactBytes = Buffer.from("synthetic installer bytes", "utf8");
   const manifestBytes = Buffer.from(
-    canonicalPackageManifestJson(
-      createPackageManifest({
-        packageTarget: target,
-        platform: "win32",
-        version,
-        contentInventorySha256: "0".repeat(64),
-      })
-    ),
+    `${JSON.stringify({
+      schemaVersion: 2,
+      packageTarget: target,
+      artifactKind: "DEMONSTRATION_SERVER",
+      semanticVersion: version,
+      publisher: "CN=QuickHack, O=QuickHack",
+      signingMode: "PRODUCTION",
+      signingProvider: "AZURE_ARTIFACT_SIGNING",
+      sourceCommit: "a".repeat(40),
+      sourceDirty: false,
+      packageFile: release.artifactFileName,
+      packageSha256: digest(artifactBytes),
+      signature: {
+        status: "VALID",
+        subject: "CN=QuickHack, O=QuickHack",
+        timestampVerified: true,
+      },
+    }, null, 2)}\n`,
     "utf8"
   );
   fs.writeFileSync(path.join(temporaryRoot, release.artifactFileName), artifactBytes);

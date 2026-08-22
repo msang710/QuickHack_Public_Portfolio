@@ -13,6 +13,8 @@ const approvedActions = new Map([
   ["actions/setup-java", Object.freeze({ sha: "b6effb05e454b25005698d916606bdc6ffcbf961", version: "v5.7.0" })],
   ["actions/upload-artifact", Object.freeze({ sha: "ea165f8d65b6e75b540449e92b4886f43607fa02", version: "v4.6.2" })],
   ["actions/download-artifact", Object.freeze({ sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093", version: "v4.3.0" })],
+  ["azure/login", Object.freeze({ sha: "f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca", version: "v3" })],
+  ["azure/artifact-signing-action", Object.freeze({ sha: "c7ab2a863ab5f9a846ddb8265964877ef296ee82", version: "v2.0.0" })],
 ]);
 
 async function listWorkflowPaths(directory = path.join(projectRoot, ".github", "workflows")) {

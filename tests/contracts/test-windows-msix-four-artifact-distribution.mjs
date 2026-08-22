@@ -46,6 +46,27 @@ function writeTarget(target, overrides = {}) {
   );
 }
 
+function writeProductionTarget(target, overrides = {}) {
+  writeTarget(target, {
+    schemaVersion: 2,
+    publisher: "CN=QuickHack, O=QuickHack",
+    signingMode: "PRODUCTION",
+    signingProvider: "AZURE_ARTIFACT_SIGNING",
+    stagingInventorySha256: "1".repeat(64),
+    packageContentInventorySha256: "2".repeat(64),
+    brandingRevision: "windows-icon-2026-08-21",
+    canonicalIconSha256: "3".repeat(64),
+    compiledIcon: { pixelSha256: "4".repeat(64) },
+    signature: {
+      status: "VALID",
+      subject: "CN=QuickHack, O=QuickHack",
+      thumbprint: "5".repeat(40),
+      timestampVerified: true,
+    },
+    ...overrides,
+  });
+}
+
 try {
   for (const target of QUICKHACK_MSIX_TARGETS) writeTarget(target);
   assert.deepEqual(verifyFourMsixDistribution({ directory: root, version }), {
@@ -84,6 +105,37 @@ try {
     "utf8"
   );
   assert.match(checksum, new RegExp(`QuickHack-Demo-Client-${version}\\.msix`, "u"));
+
+  for (const target of QUICKHACK_MSIX_TARGETS) writeProductionTarget(target);
+  assert.deepEqual(
+    verifyFourMsixDistribution({
+      directory: root,
+      version,
+      publisher: "CN=QuickHack, O=QuickHack",
+      requireProduction: true,
+    }),
+    {
+      schemaVersion: 1,
+      packageCount: 4,
+      sidecarCount: 8,
+      sourceCommit: "a".repeat(40),
+      publisher: "CN=QuickHack, O=QuickHack",
+      signingMode: "PRODUCTION",
+      signingProvider: "AZURE_ARTIFACT_SIGNING",
+    }
+  );
+  writeProductionTarget("demo-client", {
+    signature: {
+      status: "VALID",
+      subject: "CN=Wrong Publisher",
+      thumbprint: "5".repeat(40),
+      timestampVerified: true,
+    },
+  });
+  assert.throws(
+    () => verifyFourMsixDistribution({ directory: root, version, requireProduction: true }),
+    (error) => error?.code === "MSIX_PRODUCTION_EVIDENCE_INVALID"
+  );
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

@@ -1,32 +1,46 @@
-name: Windows four-artifact release
+name: Windows MSIX release gate
 
 on:
-  push:
-    tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:
-      version:
-        description: Version of the successful Final Integration artifact to verify
+      request_path:
+        description: Reviewed release-requests/windows-msix JSON path
         required: true
         type: string
+      candidate_run_id:
+        description: Production candidate workflow run id
+        required: true
+        type: string
+      windows_10_evidence_run_id:
+        description: Windows 10 workstation native evidence run id
+        required: true
+        type: string
+      windows_11_evidence_run_id:
+        description: Windows 11 workstation native evidence run id
+        required: true
+        type: string
+      publish:
+        description: Create the immutable tag and public GitHub Release
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: quickhack-windows-msix-release
+  cancel-in-progress: false
+
 jobs:
-  windows-release-matrix:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    permissions:
-      actions: read
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [demo-server, demo-client, operational-server, operational-client]
-    env:
-      GH_TOKEN: ${{ github.token }}
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.request.outputs.version }}
+      tag: ${{ steps.request.outputs.tag }}
+      source_commit: ${{ steps.request.outputs.source_commit }}
+      publisher: ${{ steps.request.outputs.publisher }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,47 +48,116 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
-      - name: Resolve successful same-revision Final Integration run
-        id: integration
-        shell: pwsh
+      - name: Validate immutable Windows release request
+        id: request
+        env:
+          QUICKHACK_REQUEST_PATH: ${{ inputs.request_path }}
+          QUICKHACK_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          QUICKHACK_WINDOWS_10_RUN_ID: ${{ inputs.windows_10_evidence_run_id }}
+          QUICKHACK_WINDOWS_11_RUN_ID: ${{ inputs.windows_11_evidence_run_id }}
+        shell: bash
         run: |
-          $runs = gh run list --workflow pull-request-checks.yml --commit "$env:GITHUB_SHA" --status success --json databaseId,headSha --limit 20 | ConvertFrom-Json
-          $run = $runs | Where-Object { $_.headSha -eq $env:GITHUB_SHA } | Select-Object -First 1
-          if (-not $run) { throw "No successful Final Integration run exists for $env:GITHUB_SHA." }
-          "run_id=$($run.databaseId)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-      - name: Download exact verified Windows package
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+          node packaging/windows/msix/windows-release-request.mjs --request-path="$QUICKHACK_REQUEST_PATH"
+          [[ "$QUICKHACK_CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$QUICKHACK_WINDOWS_10_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$QUICKHACK_WINDOWS_11_RUN_ID" =~ ^[0-9]+$ ]]
+
+  verify-candidate:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: windows-${{ matrix.target }}
-          path: release/distribution/windows/${{ matrix.target }}
+          ref: ${{ needs.prepare.outputs.source_commit }}
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-msix-production-candidate-${{ needs.prepare.outputs.version }}
+          path: release/distribution/windows/msix/exact-four
           github-token: ${{ github.token }}
-          run-id: ${{ steps.integration.outputs.run_id }}
-      - name: Verify package manifest, version, target, and hashes
-        shell: pwsh
+          run-id: ${{ inputs.candidate_run_id }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-msix-native-evidence-windows-10-${{ needs.prepare.outputs.version }}
+          path: release/windows/msix/release-native/windows-10
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.windows_10_evidence_run_id }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-msix-native-evidence-windows-11-${{ needs.prepare.outputs.version }}
+          path: release/windows/msix/release-native/windows-11
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.windows_11_evidence_run_id }}
+      - name: Verify exact signed packages and dual-workstation evidence
         env:
-          RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
-          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
-        run: >-
-          node tools/verify-package-release-artifact.mjs
-          --release-version="$env:RELEASE_VERSION"
-          --artifact-dir="release/distribution/windows/$env:QUICKHACK_PACKAGE_TARGET"
-          --platform=windows
-          --target="$env:QUICKHACK_PACKAGE_TARGET"
-      - name: Publish tag artifacts
-        if: github.ref_type == 'tag'
-        shell: pwsh
-        env:
-          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
-          QUICKHACK_RELEASE_TAG: ${{ github.ref_name }}
+          QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          QUICKHACK_SOURCE_COMMIT: ${{ needs.prepare.outputs.source_commit }}
+          QUICKHACK_MSIX_PUBLISHER: ${{ needs.prepare.outputs.publisher }}
+        shell: bash
         run: |
-          $tag = $env:QUICKHACK_RELEASE_TAG
-          $artifacts = Get-ChildItem -LiteralPath "release\distribution\windows\$env:QUICKHACK_PACKAGE_TARGET" -File
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --verify-tag --title $tag --generate-notes
-            if ($LASTEXITCODE -ne 0) {
-              gh release view $tag *> $null
-              if ($LASTEXITCODE -ne 0) { throw "Unable to create or observe release $tag." }
-            }
-          }
-          gh release upload $tag $artifacts.FullName --clobber
+          mapfile -t windows10 < <(find release/windows/msix/release-native/windows-10 -maxdepth 1 -type f -name '*.json')
+          mapfile -t windows11 < <(find release/windows/msix/release-native/windows-11 -maxdepth 1 -type f -name '*.json')
+          [[ "${#windows10[@]}" -eq 1 && "${#windows11[@]}" -eq 1 ]]
+          node packaging/windows/msix/release-candidate.mjs \
+            --repository-root="$GITHUB_WORKSPACE" \
+            --distribution-directory=release/distribution/windows/msix/exact-four \
+            --output-directory=release/distribution/windows/msix/release-metadata \
+            --version="$QUICKHACK_RELEASE_VERSION" \
+            --publisher="$QUICKHACK_MSIX_PUBLISHER" \
+            --source-commit="$QUICKHACK_SOURCE_COMMIT" \
+            --native-evidence="${windows10[0]}" \
+            --native-evidence="${windows11[0]}"
+          [[ "$(find release/distribution/windows/msix/exact-four -type f | wc -l)" -eq 12 ]]
+          [[ "$(find release/distribution/windows/msix/release-metadata -type f | wc -l)" -eq 4 ]]
+          ! find release/distribution/windows/msix -type f \( -iname '*.exe' -o -iname '*.appinstaller' \) | grep -q .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-msix-release-ready-${{ needs.prepare.outputs.version }}
+          path: |
+            release/distribution/windows/msix/exact-four/
+            release/distribution/windows/msix/release-metadata/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: inputs.publish == true
+    needs: [prepare, verify-candidate]
+    runs-on: ubuntu-latest
+    environment: quickhack-production-release
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-msix-release-ready-${{ needs.prepare.outputs.version }}
+          path: release-assets
+      - name: Create immutable Windows MSIX tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUICKHACK_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          QUICKHACK_SOURCE_COMMIT: ${{ needs.prepare.outputs.source_commit }}
+        shell: bash
+        run: |
+          ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$QUICKHACK_RELEASE_TAG" >/dev/null 2>&1
+          ! gh release view "$QUICKHACK_RELEASE_TAG" >/dev/null 2>&1
+          mapfile -t assets < <(find release-assets -type f | sort)
+          [[ "${#assets[@]}" -eq 16 ]]
+          ! printf '%s\n' "${assets[@]}" | grep -Eiq '\.(exe|appinstaller)$'
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" --method POST \
+            -f "ref=refs/tags/$QUICKHACK_RELEASE_TAG" \
+            -f "sha=$QUICKHACK_SOURCE_COMMIT"
+          gh release create "$QUICKHACK_RELEASE_TAG" "${assets[@]}" \
+            --verify-tag \
+            --title "$QUICKHACK_RELEASE_TAG" \
+            --generate-notes
+      - name: Verify exact public asset count
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUICKHACK_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          count="$(gh release view "$QUICKHACK_RELEASE_TAG" --json assets --jq '.assets | length')"
+          [[ "$count" -eq 16 ]]

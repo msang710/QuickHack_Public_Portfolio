@@ -18,6 +18,9 @@
     "prisma.config.ts",
     "packaging/windows-launcher/QuickHackLauncher.cs",
     "packaging/build-windows-launchers.ps1",
+    "packaging/build-msix.ps1",
+    "packaging/build-msix-four-artifacts.ps1",
+    "packaging/stage-windows-four-artifacts.ps1",
     "packaging/create-staging-package.mjs",
     "packaging/package-artifact-contract.mjs",
     "packaging/package-artifact-contract.d.mts",
@@ -34,6 +37,8 @@
     "packaging/README-RELEASE.md",
     "packaging/sanitize-standalone.mjs",
     ".github/workflows/windows-release.yml",
+    ".github/workflows/windows-demo-release.yml",
+    ".github/workflows/windows-msix-native-evidence.yml",
     ".github/workflows/linux-release.yml",
     "tools/deploy-postgresql-migrations.mjs",
     "tools/audit-postgresql-schema.mjs",
@@ -148,7 +153,7 @@
     "linuxPackageScript": "packaging/linux/create-staging-package.mjs"
   },
   "notes": [
-    "Tag workflows publish four Windows installers and four CachyOS/Arch packages after the final integration gate.",
+    "Protected workflows publish four production-signed Windows MSIX packages and four CachyOS/Arch packages after the final integration gate.",
     "Windows server packages include PostgreSQL 18; Arch server packages use the exact system PostgreSQL 18 executable set.",
     "The demo client contains a loopback-only Next.js client runtime, portable Node.js, Android platform-tools, the native QuickHack-Demo-Client.exe launcher, icon, and central server URL configuration.",
     "ADB runs only in the client runtime on the staff PC; central server routes continue to reject ADB execution.",

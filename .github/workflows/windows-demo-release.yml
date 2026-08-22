@@ -1,16 +1,20 @@
-name: Windows demo prerelease
+name: Windows MSIX production candidate
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "release-requests/windows-demo/*.json"
+  workflow_dispatch:
+    inputs:
+      request_path:
+        description: Reviewed release-requests/windows-msix JSON path
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
+  id-token: write
 
 concurrency:
-  group: quickhack-windows-demo-release
+  group: quickhack-windows-msix-production-candidate
   cancel-in-progress: false
 
 jobs:
@@ -19,201 +23,113 @@ jobs:
     outputs:
       version: ${{ steps.request.outputs.version }}
       tag: ${{ steps.request.outputs.tag }}
+      source_commit: ${{ steps.request.outputs.source_commit }}
+      publisher: ${{ steps.request.outputs.publisher }}
+      signing_provider: ${{ steps.request.outputs.signing_provider }}
+      integration_run_id: ${{ steps.integration.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
-      - name: Validate the single release request in this commit
-        id: request
-        shell: bash
-        run: |
-          mapfile -t requests < <(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- 'release-requests/windows-demo/*.json')
-          [[ "${#requests[@]}" -eq 1 ]]
-          REQUEST_FILE="${requests[0]}" node --input-type=module <<'NODE'
-          import fs from "node:fs";
-          const request = JSON.parse(fs.readFileSync(process.env.REQUEST_FILE, "utf8"));
-          if (request.schemaVersion !== 1) throw new Error("Unsupported release request schema.");
-          if (!Number.isSafeInteger(request.attempt) || request.attempt < 1) {
-            throw new Error("A demo release request requires a positive attempt number.");
-          }
-          if (!/^\d+\.\d+\.\d+$/u.test(request.version)) throw new Error("Invalid demo release version.");
-          if (request.tag !== `demo-windows-v${request.version}`) throw new Error("Demo release tag does not match the version.");
-          if (JSON.stringify(request.targets) !== JSON.stringify(["demo-server", "demo-client"])) {
-            throw new Error("A Windows demo release must contain exactly the demo server and demo client.");
-          }
-          if (request.prerelease !== true) throw new Error("A demo release must be a prerelease.");
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${request.version}\ntag=${request.tag}\n`);
-          NODE
-
-  build:
-    needs: prepare
-    runs-on: windows-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [demo-server, demo-client]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          fetch-depth: 0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
-          cache: npm
-      - name: Verify Inno Setup compiler
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $candidates = @(
-            (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
-            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
-            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-          if (-not ($candidates | Select-Object -First 1)) {
-            throw "The GitHub-hosted Windows runner does not provide Inno Setup 6."
-          }
-      - name: Acquire pinned PostgreSQL 18 runtime
-        if: matrix.target == 'demo-server'
-        shell: pwsh
+      - name: Validate immutable Windows release request
+        id: request
         env:
-          POSTGRESQL_ARCHIVE_URL: https://get.enterprisedb.com/postgresql/postgresql-18.4-1-windows-x64-binaries.zip
-          POSTGRESQL_ARCHIVE_SHA256: 7EFFE34C0BF89027B3F171447D351CBC460F4566C8D0F643DAEC67F140787858
-        run: |
-          $ErrorActionPreference = "Stop"
-          $archive = Join-Path $env:RUNNER_TEMP "postgresql-18.4-1-windows-x64-binaries.zip"
-          $extractRoot = Join-Path $env:RUNNER_TEMP "postgresql-18.4-runtime"
-          curl.exe -L --fail --silent --show-error --output $archive $env:POSTGRESQL_ARCHIVE_URL
-          if ($LASTEXITCODE -ne 0) {
-            throw "The official PostgreSQL 18 archive download failed with exit code $LASTEXITCODE."
-          }
-          $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-          if ($actualHash -ne $env:POSTGRESQL_ARCHIVE_SHA256) {
-            throw "The PostgreSQL 18 archive SHA-256 does not match the pinned digest."
-          }
-          Expand-Archive -LiteralPath $archive -DestinationPath $extractRoot -Force
-          $postgresqlRoot = Join-Path $extractRoot "pgsql"
-          $postgres = Join-Path $postgresqlRoot "bin\postgres.exe"
-          if (-not (Test-Path -LiteralPath $postgres -PathType Leaf)) {
-            throw "The PostgreSQL 18 archive does not contain bin\postgres.exe."
-          }
-          $postgresVersion = & $postgres --version
-          if ($LASTEXITCODE -ne 0 -or $postgresVersion -notmatch '^postgres \(PostgreSQL\) 18\.4(?:\s|$)') {
-            throw "Unexpected PostgreSQL runtime version: $postgresVersion"
-          }
-          "QUICKHACK_RELEASE_POSTGRESQL_ROOT=$postgresqlRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Pin npm toolchain
-        shell: pwsh
-        run: |
-          npm install --global npm@12.0.2
-          if ((npm --version) -ne "12.0.2") { throw "Expected npm 12.0.2." }
-      - run: npm ci
-      - name: Verify Windows packaging boundaries
-        shell: pwsh
-        run: |
-          npm run test:process-execution-boundary
-          npm run test:platform-composition-roots
-          npm run test:windows-four-artifact-staging
-          npm run test:package-role-boundary
-          npm run typecheck
-      - name: Build selected Windows demo package
-        shell: pwsh
+          QUICKHACK_REQUEST_PATH: ${{ inputs.request_path }}
+        shell: bash
+        run: node packaging/windows/msix/windows-release-request.mjs --request-path="$QUICKHACK_REQUEST_PATH"
+      - name: Require Azure provider in the GitHub-hosted candidate lane
         env:
-          HOME: ${{ runner.temp }}\home
-          LOCALAPPDATA: ${{ runner.temp }}\local-app-data
-          USERPROFILE: ${{ runner.temp }}\user-profile
-          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
+          QUICKHACK_SIGNING_PROVIDER: ${{ steps.request.outputs.signing_provider }}
+          QUICKHACK_SOURCE_COMMIT: ${{ steps.request.outputs.source_commit }}
+        shell: bash
+        run: |
+          [[ "$QUICKHACK_SIGNING_PROVIDER" == "AZURE_ARTIFACT_SIGNING" ]]
+          git cat-file -e "$QUICKHACK_SOURCE_COMMIT^{commit}"
+      - name: Resolve successful same-revision Final Integration run
+        id: integration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUICKHACK_SOURCE_COMMIT: ${{ steps.request.outputs.source_commit }}
+        shell: bash
+        run: |
+          run_id="$(gh run list --workflow pull-request-checks.yml --commit "$QUICKHACK_SOURCE_COMMIT" --status success --json databaseId,headSha --limit 20 --jq ".[] | select(.headSha == \"$QUICKHACK_SOURCE_COMMIT\") | .databaseId" | head -n 1)"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          echo "run_id=$run_id" >>"$GITHUB_OUTPUT"
+
+  sign:
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 45
+    environment: quickhack-production-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_commit }}
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-msix-exact-four-unsigned
+          path: release/distribution/windows/msix/exact-four
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.prepare.outputs.integration_run_id }}
+      - name: Verify exact unsigned production input
+        env:
           QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          npm run build
-          $env:QUICKHACK_NODE_RUNTIME_DIR = Split-Path -Parent (Get-Command node).Source
-          if ($env:QUICKHACK_PACKAGE_TARGET -eq "demo-server") {
-            npm run stage:windows:demo-server -- "--postgresql-runtime-dir=$env:QUICKHACK_RELEASE_POSTGRESQL_ROOT"
-          } else {
-            $env:QUICKHACK_PLATFORM_TOOLS_DIR = Join-Path $env:ANDROID_SDK_ROOT "platform-tools"
-            if (-not (Test-Path -LiteralPath (Join-Path $env:QUICKHACK_PLATFORM_TOOLS_DIR "adb.exe") -PathType Leaf)) {
-              throw "Android platform-tools is unavailable on the Windows runner."
-            }
-            npm run stage:windows:demo-client -- --require-platform-tools
-          }
-          npm run "release:windows:$env:QUICKHACK_PACKAGE_TARGET" -- -Version "$env:QUICKHACK_RELEASE_VERSION"
-      - name: Verify package manifest, target, file set, and hashes
+          QUICKHACK_MSIX_PUBLISHER: ${{ needs.prepare.outputs.publisher }}
         shell: pwsh
-        env:
-          QUICKHACK_PACKAGE_TARGET: ${{ matrix.target }}
-          QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: >-
-          node tools/verify-package-release-artifact.mjs
-          --artifact-dir="release/distribution/windows/$env:QUICKHACK_PACKAGE_TARGET"
-          --platform=windows
-          --target="$env:QUICKHACK_PACKAGE_TARGET"
-          --release-version="$env:QUICKHACK_RELEASE_VERSION"
+          node packaging/windows/msix/four-artifact-distribution.mjs
+          --directory=release/distribution/windows/msix/exact-four
+          --version="$env:QUICKHACK_RELEASE_VERSION"
+          --publisher="$env:QUICKHACK_MSIX_PUBLISHER"
+          --require-unsigned
+      - name: Azure login with OIDC
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply public-trust Artifact Signing signature and RFC 3161 timestamp
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\release\distribution\windows\msix\exact-four
+          files-folder-filter: msix
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+          trace: false
+      - name: Finalize production signature, provenance, and compiled icon evidence
+        env:
+          QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          QUICKHACK_MSIX_PUBLISHER: ${{ needs.prepare.outputs.publisher }}
+        shell: pwsh
+        run: >-
+          ./packaging/windows/msix/sign-msix.ps1
+          -Provider AzureArtifactSigning
+          -Version "$env:QUICKHACK_RELEASE_VERSION"
+          -Publisher "$env:QUICKHACK_MSIX_PUBLISHER"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: windows-demo-${{ matrix.target }}
-          path: release/distribution/windows/${{ matrix.target }}/
+          name: windows-msix-production-candidate-${{ needs.prepare.outputs.version }}
+          path: release/distribution/windows/msix/exact-four/
           if-no-files-found: error
-
-  publish:
-    needs: [prepare, build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      QUICKHACK_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-      QUICKHACK_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: "24"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: windows-demo-demo-server
-          path: release-assets/demo-server
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: windows-demo-demo-client
-          path: release-assets/demo-client
-      - name: Reverify downloaded release assets
-        shell: bash
-        run: |
-          node tools/verify-package-release-artifact.mjs --artifact-dir=release-assets/demo-server --platform=windows --target=demo-server --release-version="$QUICKHACK_RELEASE_VERSION"
-          node tools/verify-package-release-artifact.mjs --artifact-dir=release-assets/demo-client --platform=windows --target=demo-client --release-version="$QUICKHACK_RELEASE_VERSION"
-      - name: Create immutable demo tag and prerelease
-        shell: bash
-        run: |
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$QUICKHACK_RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Tag already exists: $QUICKHACK_RELEASE_TAG" >&2
-            exit 1
-          fi
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" --method POST -f "ref=refs/tags/$QUICKHACK_RELEASE_TAG" -f "sha=$GITHUB_SHA"
-          cat >release-notes.md <<EOF
-          Windows 시연용 QuickHack 1.0.0 프리릴리스입니다.
-
-          포함 항목:
-          - QuickHack Demo Server installer (PostgreSQL 18 runtime 포함)
-          - QuickHack Demo Client installer (Android platform-tools 및 RAW printer bridge 포함)
-          - 각 installer의 immutable package manifest와 SHA-256 checksum
-
-          이 빌드는 시연 전용이며 코드 서명, SmartScreen 평판, 실제 설치·업데이트·삭제, 물리 USB/ADB/프린터 acceptance 검증은 완료되지 않았습니다. 운영 환경에는 사용하지 마세요.
-          EOF
-          gh release create "$QUICKHACK_RELEASE_TAG" \
-            release-assets/demo-server/* \
-            release-assets/demo-client/* \
-            --verify-tag \
-            --title "QuickHack Windows Demo 1.0.0" \
-            --prerelease \
-            --notes-file release-notes.md
-      - name: Verify published release identity and six assets
-        shell: bash
-        run: |
-          gh release view "$QUICKHACK_RELEASE_TAG" --json tagName,isPrerelease,assets >published-release.json
-          node --input-type=module <<'NODE'
-          import fs from "node:fs";
-          const release = JSON.parse(fs.readFileSync("published-release.json", "utf8"));
-          if (release.tagName !== process.env.QUICKHACK_RELEASE_TAG || release.isPrerelease !== true) {
-            throw new Error("Published release identity is invalid.");
-          }
-          if (release.assets.length !== 6) throw new Error(`Expected 6 release assets, received ${release.assets.length}.`);
-          NODE
+          retention-days: 30

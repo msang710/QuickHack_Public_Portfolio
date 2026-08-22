@@ -1,24 +1,24 @@
 # QuickHack package and release contract
 
-QuickHack publishes four logical products. Each logical product has a Windows x64 installer and a CachyOS/Arch x86_64 package, for eight platform variants in total.
+QuickHack publishes four logical products. Each logical product has a Windows x64 MSIX and a CachyOS/Arch x86_64 package, for eight platform variants in total.
 
 | logical artifact | Windows result | Arch result | mutable state |
 |---|---|---|---|
-| demonstration server | `QuickHack-Demo-Server-Setup-<version>.exe` | `quickhack-demonstration-server-<version>-1-x86_64.pkg.tar.zst` | artifact-specific ProgramData or `/etc`/`/var/lib`/`/var/cache` roots |
-| demonstration client | `QuickHack-Demo-Client-Setup-<version>.exe` | `quickhack-demonstration-client-<version>-1-x86_64.pkg.tar.zst` | artifact-specific LocalAppData or XDG roots; local port 3001 |
-| operational server | `QuickHack-Operational-Server-Setup-<version>.exe` | `quickhack-operational-server-<version>-1-x86_64.pkg.tar.zst` | artifact-specific ProgramData or `/etc`/`/var/lib`/`/var/cache` roots |
-| operational client | `QuickHack-Operational-Client-Setup-<version>.exe` | `quickhack-operational-client-<version>-1-x86_64.pkg.tar.zst` | artifact-specific LocalAppData or XDG roots; local port 3002 |
+| demonstration server | `QuickHack-Demo-Server-<version>.msix` | `quickhack-demonstration-server-<version>-1-x86_64.pkg.tar.zst` | artifact-specific ProgramData or `/etc`/`/var/lib`/`/var/cache` roots |
+| demonstration client | `QuickHack-Demo-Client-<version>.msix` | `quickhack-demonstration-client-<version>-1-x86_64.pkg.tar.zst` | artifact-specific LocalAppData or XDG roots; local port 3001 |
+| operational server | `QuickHack-Operational-Server-<version>.msix` | `quickhack-operational-server-<version>-1-x86_64.pkg.tar.zst` | artifact-specific ProgramData or `/etc`/`/var/lib`/`/var/cache` roots |
+| operational client | `QuickHack-Operational-Client-<version>.msix` | `quickhack-operational-client-<version>-1-x86_64.pkg.tar.zst` | artifact-specific LocalAppData or XDG roots; local port 3002 |
 
 Every result is accompanied by its immutable `quickhack-package.json` metadata and SHA-256 checksum file. Portable ZIP files are debug staging inputs only and are not official release artifacts.
 
 ## Build commands
 
-Build the standalone Next output once, then choose an explicit platform and target:
+Build the standalone Next output once, stage all four Windows targets from shared inputs, then build one unsigned exact set for integration:
 
 ```powershell
 npm run build
-npm run stage:windows:demo-server -- "--postgresql-runtime-dir=C:\Program Files\PostgreSQL\18"
-npm run release:windows:demo-server -- -Version 1.0.0
+./packaging/stage-windows-four-artifacts.ps1 -PostgresqlRuntimeDir C:\qh\runtimes\postgresql-18 -PlatformToolsDir C:\Android\platform-tools -RequirePlatformTools
+npm run release:msix:four -- -Version 1.0.0 -Publisher "CN=Verified Publisher, O=Verified Organization" -SigningMode Unsigned
 ```
 
 On CachyOS/Arch, the release command stages all four package roots because the checked-in `PKGBUILD` is a split package:
@@ -28,18 +28,14 @@ npm run build
 npm run release:linux:operational-server -- --version=1.0.0
 ```
 
-The old `stage:demo-server`, `stage:demo-client`, `release:demo-server`, and `release:demo-client` names remain Windows compatibility aliases.
+The Inno Setup source and old Windows commands remain rollback-only compatibility material. CI and public Windows release workflows do not invoke them and no `.exe` is an official Windows asset.
 
 ### Exact-four Windows MSIX candidate
 
-PR-07 adds a build-only MSIX candidate without changing the public Windows release workflow yet. Stage all four targets at one source revision, then create one exact set:
+The integration workflow creates the four packages once, unsigned but with the exact reviewed production Publisher. The protected candidate workflow downloads that same artifact and applies Azure Artifact Signing with OIDC, or an isolated self-hosted operator can use the approved CA certificate-store adapter. Neither path accepts a private-key file or secret password argument.
 
 ```powershell
-npm run stage:windows:demo-server -- --postgresql-runtime-dir=C:\qh\runtimes\postgresql-18
-npm run stage:windows:demo-client
-npm run stage:windows:operational-server -- --postgresql-runtime-dir=C:\qh\runtimes\postgresql-18
-npm run stage:windows:operational-client
-npm run release:msix:four -- -Version 1.0.0 -SigningMode TestCertificate -SdkRoot C:\qh\sdk-buildtools
+./packaging/windows/msix/sign-msix.ps1 -Provider AzureArtifactSigning -Version 1.0.0 -Publisher "CN=Verified Publisher, O=Verified Organization"
 ```
 
 The exact output contains these four packages and one manifest/checksum pair for each package:
@@ -49,7 +45,7 @@ The exact output contains these four packages and one manifest/checksum pair for
 - `QuickHack-Operational-Server-<version>.msix`
 - `QuickHack-Operational-Client-<version>.msix`
 
-Both server MSIX builds require packaged services and the elevated Server Setup application. Both client builds forbid those declarations and PostgreSQL content. The exact-four verifier rejects extra/stale files, mixed source commits, dirty source by default, mismatched package hashes, and mixed Publisher/signing modes. Production signing and the public MSIX-only cutover remain PR-08 gates.
+Both server MSIX builds require packaged services and the elevated Server Setup application. Both client builds forbid those declarations and PostgreSQL content. Production finalization re-verifies the unpacked package, public-trust signature, exact certificate subject, timestamp, source/content inventory, pinned Node/PostgreSQL metadata, generated visual assets, and compiled launcher PE icon before replacing unsigned sidecars with schema-v2 production sidecars.
 
 ## Installation and lifecycle
 
@@ -61,12 +57,12 @@ Both server MSIX builds require packaged services and the elevated Server Setup 
 
 ## Verification cadence
 
-PR stages are work-splitting and review units, not execution blockers. Each stage runs only focused checks for its changed scope. The manual `Final integration gate` workflow runs the secret scan, dependency audit, lint, complete PostgreSQL verification, Windows package matrix, Arch package matrix, and Android test/build once after all planned stages are complete.
+PR stages are work-splitting and review units, not execution blockers. Each stage runs only focused checks for its changed scope. The manual `Final integration gate` workflow runs the secret scan, dependency audit, lint, complete PostgreSQL verification, one exact-four unsigned Windows MSIX build, the Arch package matrix, and Android test/build once after all planned stages are complete.
 
 Actual clean install, upgrade, repair, uninstall/purge, SCM, pacman, systemd, ADB, printer, QHKEY, and cross-host pairing remain separate physical acceptance work. The public automated workflow neither requests those results nor treats unavailable hardware as a passing result. A successful public workflow therefore certifies the automated source/build/package checks only.
 
-Every Windows and Arch distribution directory contains exactly the binary package, its immutable package manifest, and a SHA-256 checksum file covering both. The integration workflow verifies the expected file set, manifest schema, version, platform, target, artifact kind, and file digests before uploading the directory. Its final aggregation job runs even after an upstream failure and fails unless every automated job succeeded.
+Every Windows target directory contains exactly one MSIX, one sidecar, and one checksum; every Arch directory contains the corresponding package triplet. The Windows production release additionally publishes a release manifest, its checksum, and one sanitized native evidence document for each supported workstation family, for exactly 16 public assets. `.exe`, `.appinstaller`, extra files, development Publishers, missing timestamps, stale hashes, and mixed source revisions fail before publication.
 
-Official tag workflows do not rebuild packages or rerun the full CI graph. They locate a successful `Final integration gate` run for the exact tag SHA, download that run's exact target package artifact, and repeat the manifest/version/target/checksum verification before publishing. A tag or manual release run without a successful same-revision integration artifact fails closed. Debug or independently rebuilt artifacts are never substituted for the verified package set.
+The candidate workflow does not rebuild packages or rerun the full CI graph. It resolves a successful `Final integration gate` run for the request's exact source revision, signs that run's unsigned exact-four artifact, finalizes provenance, and uploads a private 30-day candidate artifact. The public release gate then requires exact-hash Windows 10 build 19041+ and Windows 11 workstation evidence covering install, provisioning, interruption recovery, update/reboot, migration, repair, conflict, dual clients, uninstall/purge, shell icon, and residue 0.
 
-The separate `Windows demo prerelease` workflow is intentionally not an official four-artifact release. A reviewed JSON request under `release-requests/windows-demo/` triggers a Windows-only build containing exactly the demonstration server and demonstration client. It requires Android platform-tools for the client, repeats artifact verification before and after artifact transfer, creates a `demo-windows-v<version>` tag at the merged request commit, and publishes a prerelease with six files. The release notes must retain the unsigned and physical-acceptance limitations until those gates are completed.
+Release requests live under `release-requests/windows-msix/` and are checked against their complete Git addition history, so deleting a release or request does not permit its version/tag to be reused. Candidate generation never publishes. Public `windows-v<version>` tag/release creation requires a separate manual dispatch with `publish=true` and a protected production-release environment. Actual printers, Coupang/Logen accounts, approved external operations, and long-running real operations are `NOT_APPLICABLE(reason=EXTERNAL_OPERATION_ENVIRONMENT_UNAVAILABLE)` for this project and do not masquerade as automated PASS results.
