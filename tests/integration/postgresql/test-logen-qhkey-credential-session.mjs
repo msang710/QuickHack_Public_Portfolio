@@ -23,6 +23,17 @@ const masterKeyFile = path.join(
   "security",
   "qhkey-master.key"
 );
+const originalCredentialsDirectory = process.env.CREDENTIALS_DIRECTORY;
+if (process.platform === "linux") {
+  const credentialDirectory = path.join(temporaryDirectory, "credentials");
+  fs.mkdirSync(credentialDirectory, { recursive: true });
+  fs.writeFileSync(
+    path.join(credentialDirectory, "quickhack.qhkey-master-key"),
+    Buffer.alloc(32, 0x5a),
+    { mode: 0o600 }
+  );
+  process.env.CREDENTIALS_DIRECTORY = credentialDirectory;
+}
 const originalFetch = globalThis.fetch;
 
 function writeRuntimeConfig(environment) {
@@ -139,7 +150,9 @@ function writeLogenCredential({ alias, userId, customerCode, secretKey }, replac
 try {
   fs.mkdirSync(path.dirname(qhkeyFile), { recursive: true });
   fs.mkdirSync(path.dirname(masterKeyFile), { recursive: true });
-  writeQhkeyMasterKeyFile(masterKeyFile, false, { protection: "RAW" });
+  if (process.platform !== "linux") {
+    writeQhkeyMasterKeyFile(masterKeyFile, false, { protection: "RAW" });
+  }
   const firstMetadata = writeLogenCredential(
     {
       alias: "logen-session-first",
@@ -261,6 +274,11 @@ try {
 } finally {
   runtimeConfigService.read = originalRuntimeRead;
   globalThis.fetch = originalFetch;
+  if (originalCredentialsDirectory === undefined) {
+    delete process.env.CREDENTIALS_DIRECTORY;
+  } else {
+    process.env.CREDENTIALS_DIRECTORY = originalCredentialsDirectory;
+  }
   await prisma.$disconnect();
   temporaryDatabase.cleanup();
 }

@@ -51,6 +51,13 @@ function required(value, label) {
 }
 
 function loadOrCreateMasterKey(filePath, force, protection) {
+  try {
+    if (getQhkeyMasterKeyFileProtection(filePath) === "SYSTEMD_CREDENTIAL") {
+      return readQhkeyMasterKeyFile(filePath);
+    }
+  } catch {
+    // File-backed providers still need to create their first key below.
+  }
   if (fs.existsSync(filePath)) {
     return readQhkeyMasterKeyFile(filePath);
   }
