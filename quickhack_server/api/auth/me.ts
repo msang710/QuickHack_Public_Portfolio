@@ -81,8 +81,7 @@ async function loadAccountProfileSecurityEnrichment(
     prisma.mobile_registered_devices.count({
       where: {
         user_id: userId,
-        enabled: 1,
-        revoked_at: null,
+        registration_state: "ACTIVE",
       },
     }),
   ]);
@@ -253,8 +252,7 @@ export async function GET(request: NextRequest) {
     prisma.mobile_registered_devices.count({
       where: {
         user_id: session.users.user_id,
-        enabled: 1,
-        revoked_at: null,
+        registration_state: "ACTIVE",
       },
     }),
     prisma.user_totp_recovery_codes.count({

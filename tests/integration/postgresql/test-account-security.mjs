@@ -184,6 +184,88 @@ try {
   const leaderToken = await authService.createUserSession(leader.user_id);
   const staffToken = await authService.createUserSession(staff.user_id);
 
+  const mobileStateUser = await createUser({
+    username: "account-mobile-state",
+    password: "Mobile!234",
+    displayName: "모바일 상태 계정",
+  });
+  const mobileStateToken = await authService.createUserSession(
+    mobileStateUser.user_id
+  );
+  const mobileStateTimestamp = new Date("2026-07-30T12:00:00+09:00");
+  await prisma.mobile_registered_devices.createMany({
+    data: [
+      {
+        user_id: mobileStateUser.user_id,
+        adb_serial_hmac: "account-mobile-provisioning-hmac",
+        adb_serial_preview: "provisioning",
+        registration_state: "PROVISIONING",
+        provisioning_token_hash: "account-mobile-provisioning-token",
+        provisioning_expires_at: new Date("2099-01-01T00:00:00+09:00"),
+        registered_by_user_id: mobileStateUser.user_id,
+        created_at: mobileStateTimestamp,
+        updated_at: mobileStateTimestamp,
+      },
+      {
+        user_id: mobileStateUser.user_id,
+        adb_serial_hmac: "account-mobile-active-hmac",
+        adb_serial_preview: "active",
+        registration_state: "ACTIVE",
+        provisioning_token_hash: "account-mobile-active-provisioning-token",
+        provisioning_expires_at: new Date("2099-01-01T00:00:00+09:00"),
+        app_instance_id_hash: "account-mobile-active-instance",
+        device_public_key_spki: "account-mobile-active-public-key",
+        device_public_key_fingerprint: "account-mobile-active-fingerprint",
+        device_token_hash: "account-mobile-active-device-token",
+        user_credential_revision: mobileStateUser.credential_revision,
+        instance_epoch: 1,
+        activated_at: mobileStateTimestamp,
+        registered_by_user_id: mobileStateUser.user_id,
+        created_at: mobileStateTimestamp,
+        updated_at: mobileStateTimestamp,
+      },
+      {
+        user_id: mobileStateUser.user_id,
+        adb_serial_hmac: "account-mobile-revoked-hmac",
+        adb_serial_preview: "revoked",
+        registration_state: "REVOKED",
+        revoked_by_user_id: mobileStateUser.user_id,
+        revoked_at: mobileStateTimestamp,
+        registered_by_user_id: mobileStateUser.user_id,
+        created_at: mobileStateTimestamp,
+        updated_at: mobileStateTimestamp,
+      },
+    ],
+  });
+
+  const mobileStateMeResponse = await meApi.GET(
+    request("/api/auth/me", mobileStateToken)
+  );
+  assert.equal(mobileStateMeResponse.status, 200);
+  assert.equal(
+    (await mobileStateMeResponse.json()).profile.activeMobileDeviceCount,
+    1,
+    "The account profile must count only ACTIVE mobile registrations."
+  );
+
+  const mobileStatePatchResponse = await meApi.PATCH(
+    patchRequest("/api/auth/me", mobileStateToken, {
+      username: mobileStateUser.username,
+      displayName: "모바일 상태 계정 수정",
+      phone: "",
+      email: "",
+      birthDate: "",
+      hireDate: "",
+      expectedRevision: mobileStateUser.revision,
+    })
+  );
+  assert.equal(mobileStatePatchResponse.status, 200);
+  assert.equal(
+    (await mobileStatePatchResponse.json()).profile.activeMobileDeviceCount,
+    1,
+    "The post-mutation enrichment must count only ACTIVE mobile registrations."
+  );
+
   const profileMutationUser = await createUser({
     username: "account-profile-before",
     password: "Profile!234",
