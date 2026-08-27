@@ -360,6 +360,16 @@ export async function finalizePersistedCoupangReturnWrite(input: {
     requestedAfterStatus: request.requested_after_status,
     finalizedAt: input.finalizedAt,
   });
+  if (action === "stopShipment" || action === "approve") {
+    const { resolveDesktopNotificationBySource } = await import(
+      "@/quickhack_server/notifications/desktop-notification-service"
+    );
+    await resolveDesktopNotificationBySource(input.tx, {
+      sourceType: "COUPANG_RETURN_RAW",
+      sourceId: String(returnRow.coupang_return_raw_id),
+      resolvedAt: input.finalizedAt,
+    });
+  }
 
   if (action === "stopShipment" || action === "approve") {
     if (action === "stopShipment") {

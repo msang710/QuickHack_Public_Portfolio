@@ -300,6 +300,7 @@ type LabelPrintItem = {
 
 type LabelPrintView = {
   issueBatchId: number;
+  batchRevision: number;
   labelPrintStatus: string;
   activeRequestKey: string | null;
   printAttemptCount: number;
@@ -317,6 +318,7 @@ type LabelPrintApiResponse = {
   code?: string;
   message?: string;
   blockers?: LogenLabelBlocker[];
+  previewToken?: string;
   labelPrint?: LabelPrintView & {
     requestKey?: string;
     payloadHash?: string | null;
@@ -1047,6 +1049,7 @@ export function ShipmentOrderListView({
   const [invoiceIssueBatch, setInvoiceIssueBatch] =
     React.useState<CarrierInvoiceIssueBatch | null>(null);
   const [labelPrint, setLabelPrint] = React.useState<LabelPrintView | null>(null);
+  const [labelPrintPreviewToken, setLabelPrintPreviewToken] = React.useState("");
   const [printers, setPrinters] = React.useState<LocalPrinter[]>([]);
   const [printerSettings, setPrinterSettings] =
     React.useState<PrinterSettings | null>(null);
@@ -1249,6 +1252,20 @@ export function ShipmentOrderListView({
       ),
     [printBatches, selectedPrintBatchKey]
   );
+  React.useEffect(() => {
+    if (mode !== "matched") return;
+    const channel = new BroadcastChannel("quickhack-output-preview-v1");
+    const publish = () => {
+      if (!invoiceIssueBatch) return;
+      channel.postMessage({
+        type: "SELECT_ISSUE_BATCH",
+        issueBatchId: invoiceIssueBatch.issueBatchId,
+      });
+    };
+    channel.onmessage = (event) => { if (event.data?.type === "REQUEST_CURRENT_PREVIEW") publish(); };
+    publish();
+    return () => channel.close();
+  }, [invoiceIssueBatch, mode]);
   const selectedCurrentAllocationIds = React.useMemo(
     () => new Set(selectedAllocationIdsByTab[selectedMatchedTab] ?? []),
     [selectedMatchedTab, selectedAllocationIdsByTab]
@@ -1472,6 +1489,7 @@ export function ShipmentOrderListView({
         setInvoiceIssueBatch(issueBatch);
         if (!issueBatch) {
           setLabelPrint(null);
+          setLabelPrintPreviewToken("");
           return null;
         }
 
@@ -1488,6 +1506,7 @@ export function ShipmentOrderListView({
           );
         }
         setLabelPrint(labelPayload.labelPrint);
+        setLabelPrintPreviewToken(labelPayload.previewToken ?? "");
         if (labelPayload.labelPrint.labelPrintStatus === "SPOOLED") {
           setLabelConfirmationOpen(true);
         }
@@ -2241,7 +2260,7 @@ export function ShipmentOrderListView({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ printerName }),
+          body: JSON.stringify({ printerName, previewToken: labelPrintPreviewToken }),
         }
       );
       const startPayload = (await startResponse.json().catch(() => null)) as
@@ -2382,6 +2401,7 @@ export function ShipmentOrderListView({
     invoiceIssueBatch,
     labelPrint?.ready,
     printerSettings?.printerName,
+    labelPrintPreviewToken,
     updateCentralLabelPrint,
   ]);
 

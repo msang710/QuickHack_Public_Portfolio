@@ -4,6 +4,8 @@
   "description": "Galaxy device inspection helper project.",
   "main": "index.js",
   "scripts": {
+    "build:electron": "node tools/build-electron.mjs",
+    "desktop": "npm run build:electron && electron .quickhack-electron/main.cjs",
     "dev": "next dev",
     "server:console": "node tools/server-console.mjs",
     "mock:coupang": "node tools/mock-runtime-launcher.mjs coupang",
@@ -29,6 +31,14 @@
     "test:verification-graph": "node tests/contracts/test-verification-graph.mjs",
     "test:test-source-layout-contract": "node tests/contracts/test-source-layout-contract.mjs",
     "test:package-source-boundary": "node tests/contracts/test-package-source-boundary.mjs",
+    "test:electron-source-boundary": "node tests/contracts/test-electron-source-boundary.mjs",
+    "test:electron-security": "node tests/contracts/test-electron-security.mjs",
+    "test:electron-runtime-host": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-electron-runtime-host.mjs",
+    "test:electron-native-broker": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-electron-native-broker.mjs",
+    "test:electron-output-preview": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-electron-output-preview-token.mjs",
+    "test:electron-update": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-electron-update-contract.mjs",
+    "test:electron-compatibility": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-electron-client-compatibility.mjs",
+    "test:desktop-notifications": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-desktop-notification-service.mjs",
     "test:platform-capability-contract": "node tests/contracts/test-platform-capability-contract.mjs",
     "test:platform-composition-roots": "node --import ./tests/support/register-ts-alias.mjs tests/contracts/test-platform-composition-roots.mjs",
     "test:client-adb-platform": "node --import ./tests/support/register-ts-alias.mjs tests/contracts/test-client-adb-platform.mjs",
@@ -411,6 +421,8 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.5.2",
+    "electron": "44.0.0",
+    "esbuild": "0.28.2",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.1",
     "playwright": "^1.61.1",
@@ -444,6 +456,8 @@
     }
   },
   "allowScripts": {
+    "electron@44.0.0": true,
+    "esbuild@0.28.2": true,
     "prisma@7.9.1": true,
     "@prisma/engines@7.9.1": true,
     "unrs-resolver@1.12.2": true

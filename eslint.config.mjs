@@ -11,6 +11,7 @@ const eslintConfig = [
       "database/**",
       ".next/**",
       ".next-client/**",
+      ".quickhack-electron/**",
       ".next-verify-*/**",
       ".tmp/**",
       ".tmp-*/**",

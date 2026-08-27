@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runAdbAction, toAdbErrorResponse } from "@/quickhack_client/adb/adb";
+import { toAdbErrorResponse } from "@/quickhack_client/adb/adb";
+import { NativeBrokerClientError, requestNativeBroker } from "@/quickhack_client/native/native-broker-client";
 import { getRuntimeAuthUser } from "@/quickhack_client/auth/request-auth";
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isServerRuntime } from "@/quickhack_shared/core/runtime";
@@ -58,9 +59,13 @@ export async function POST(request: NextRequest) {
     );
   }
   try {
-    const result = await runAdbAction(body.action, serials);
+    const enumeration = await requestNativeBroker("adb.list", {}) as { revision: string };
+    const result = await requestNativeBroker("adb.action", { action: body.action, serials, enumerationRevision: enumeration.revision }) as { failCount: number } & Record<string, unknown>;
     return NextResponse.json({ ok: result.failCount === 0, ...result });
   } catch (error) {
+    if (error instanceof NativeBrokerClientError) {
+      return NextResponse.json({ ok: false, code: error.code, message: error.message }, { status: error.code === "SELECTION_STALE" ? 409 : 503 });
+    }
     const response = toAdbErrorResponse(error);
     return NextResponse.json(response.body, { status: response.status });
   }

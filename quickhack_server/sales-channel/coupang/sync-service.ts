@@ -77,6 +77,7 @@ import {
   coupangReturnReasonLabel,
   normalizeCoupangReasonLabel,
 } from "@/quickhack_shared/sales-channel/coupang-return-reasons";
+import { publishDesktopNotification } from "@/quickhack_server/notifications/desktop-notification-service";
 import {
   normalizeCoupangClaimFault,
   normalizeCoupangClaimReasonDetail,
@@ -1676,6 +1677,16 @@ async function upsertReturnRequest(
     observedAt: context.observedAt,
     apiCallLogId: context.apiCallLogId ?? null,
     workerJobId: context.workerJobId ?? null,
+  });
+  await publishDesktopNotification(tx, {
+    kind: "RETURN_REQUEST",
+    sourceType: "COUPANG_RETURN_RAW",
+    sourceId: String(returnRow.coupang_return_raw_id),
+    dedupeKey: `RETURN_REQUEST:${returnRequest.externalReceiptId}`,
+    menuId: "return-after-shipment",
+    title: "반품 요청 접수",
+    body: "판매채널 반품 요청이 동기화되었습니다.",
+    occurredAt: context.observedAt,
   });
   if (returnShipmentIds.length === 0) {
     await reconcilePersonalDataLifecyclesForOrder(tx, {

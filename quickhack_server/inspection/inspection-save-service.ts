@@ -673,7 +673,7 @@ export async function saveInspectionRecord(
       );
     }
 
-    return {
+    const result = {
       pg_no: device.pg_no,
       device_id: device.device_id,
       inbound_id: inbound.inbound_id,
@@ -681,5 +681,19 @@ export async function saveInspectionRecord(
       inspection_ids: inspections.map((inspection) => inspection.inspection_id),
       status: nextInboundStatus,
     };
+    const { publishDesktopNotification } = await import(
+      "@/quickhack_server/notifications/desktop-notification-service"
+    );
+    await publishDesktopNotification(tx, {
+      kind: "INSPECTION_COMPLETE",
+      sourceType: "INSPECTION",
+      sourceId: String(result.inspection_id ?? result.inbound_id),
+      dedupeKey: `INSPECTION_COMPLETE:${result.inspection_ids.join(",")}`,
+      menuId: "inbound-upload-pending",
+      title: "검수 저장 완료",
+      body: `${result.pg_no} 검수 결과가 저장되었습니다.`,
+      resolvedAt: timestamp,
+    });
+    return result;
   });
 }

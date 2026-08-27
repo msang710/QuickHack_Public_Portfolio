@@ -48,6 +48,7 @@ generated/
 .next/
 .next-client/
 .next-verify-*/
+.quickhack-electron/
 tsconfig.tsbuildinfo
 
 # Local reference documents (including carrier API specifications)

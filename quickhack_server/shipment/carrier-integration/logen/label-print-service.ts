@@ -382,10 +382,12 @@ function buildView(batch: LabelBatch) {
     shipmentListPrintBatchLabel: batch.shipment_list_print_batch.batch_label,
     issueType: batch.issue_type,
     issueStatus: batch.batch_status,
+    batchRevision: batch.revision,
     labelPrintStatus: batch.label_print_status,
     activeRequestKey: batch.label_active_request_key,
     printAttemptCount: batch.label_print_attempt_count,
     payloadHash: batch.label_payload_hash,
+    previewPayloadHash: hash({ template: LOGEN_LABEL_TEMPLATE, labels: targetLabels }),
     printerName: batch.label_printer_name,
     template: LOGEN_LABEL_TEMPLATE,
     ready:
@@ -449,6 +451,9 @@ export async function startLogenLabelPrint(input: {
   issueBatchId?: unknown;
   printerName?: unknown;
   userId?: number | null;
+  sessionId: string;
+  previewToken: string;
+  previewTokenSecret: string;
 }) {
   const issueBatchId = positiveId(input.issueBatchId, "Issue batch ID");
   const printerName = text(input.printerName);
@@ -512,6 +517,39 @@ export async function startLogenLabelPrint(input: {
     prisma,
     "carrier.label-print.start",
     async (tx) => {
+      await tx.$queryRaw`
+        SELECT carrier_invoice_issue_batch_id
+        FROM carrier_invoice_issue_batches
+        WHERE carrier_invoice_issue_batch_id = ${issueBatchId}
+        FOR UPDATE
+      `;
+      const locked = await loadBatchWithClient(tx, issueBatchId);
+      const lockedView = buildView(locked);
+      const { verifyOutputPreviewToken } = await import(
+        "@/quickhack_server/shipment/output-preview-token"
+      );
+      try {
+        verifyOutputPreviewToken(
+          input.previewToken,
+          {
+            userId: input.userId ?? 0,
+            sessionId: input.sessionId,
+            issueBatchId,
+            shipmentListPrintBatchId: locked.shipment_list_print_batch_id,
+            revision: locked.revision,
+            payloadHash: lockedView.previewPayloadHash,
+          },
+          input.previewTokenSecret
+        );
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "OUTPUT_PREVIEW_TOKEN_INVALID";
+        throw new LogenLabelPrintError(
+          code === "OUTPUT_PREVIEW_TOKEN_EXPIRED" ? code : "OUTPUT_PREVIEW_STALE",
+          code === "OUTPUT_PREVIEW_TOKEN_EXPIRED"
+            ? "The output preview expired. Refresh the preview before printing."
+            : "The output preview no longer matches the label batch. Refresh it before printing."
+        );
+      }
       const claimed = await tx.carrier_invoice_issue_batches.updateMany({
         where: {
           carrier_invoice_issue_batch_id: issueBatchId,
@@ -519,6 +557,7 @@ export async function startLogenLabelPrint(input: {
           label_print_attempt_count: existing.label_print_attempt_count,
           label_print_status: existing.label_print_status,
           batch_status: ISSUE_BATCH_READY_STATUS,
+          revision: locked.revision,
         },
         data: {
           label_template_code: LOGEN_LABEL_TEMPLATE.code,
@@ -531,6 +570,7 @@ export async function startLogenLabelPrint(input: {
           label_last_error_code: null,
           label_last_error_message: null,
           updated_at: now,
+          revision: { increment: 1 },
         },
       });
       if (claimed.count !== 1) {

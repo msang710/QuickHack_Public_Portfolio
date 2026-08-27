@@ -12,6 +12,7 @@ import {
 import { Button } from "@/quickhack_client/components/ui/button";
 import { DialogFrame } from "@/quickhack_client/components/ui/dialog-frame";
 import { FeedbackBanner } from "@/quickhack_client/components/ui/feedback-banner";
+import { useDesktopCapability } from "@/quickhack_client/components/desktop/desktop-capability-provider";
 
 export type UnsavedGuardIntent =
   | "menu-change"
@@ -159,6 +160,7 @@ export function UnsavedChangesProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const { api: desktopApi } = useDesktopCapability();
   const [registry] = React.useState(() => new UnsavedChangesRegistry());
   React.useSyncExternalStore(
     registry.subscribe,
@@ -297,6 +299,17 @@ export function UnsavedChangesProvider({
     },
     []
   );
+
+  React.useEffect(() => {
+    if (!desktopApi) return;
+    return desktopApi.onCloseRequested(() => {
+      runGuardedAction({
+        intent: "close-window",
+        targetLabel: "QuickHack 종료",
+        action: () => { void desktopApi.confirmClose(); },
+      });
+    });
+  }, [desktopApi, runGuardedAction]);
 
   const value = React.useMemo<UnsavedChangesContextValue>(
     () => ({

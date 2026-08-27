@@ -11,10 +11,7 @@ import {
   getCameraCheckByModelCode,
 } from "@/quickhack_client/adb/adb-config";
 import { normalizeFirstCallDate } from "@/quickhack_shared/inspection/inspection-schema";
-import {
-  getAppRoot,
-  getRuntimeDir,
-} from "@/quickhack_shared/core/runtime";
+import path from "node:path";
 import { PlatformCapabilityError } from "@/quickhack_shared/platform/platform-capability-error.mjs";
 import { isAdbVirtualSerial } from "@/quickhack_shared/adb/adb-target-policy";
 
@@ -23,6 +20,14 @@ const LONG_ADB_COMMAND_TIMEOUT_MS = 45_000;
 const MAX_PARALLEL_ADB_DEVICES = 10;
 
 const connectionOrder: string[] = [];
+
+function clientAppRoot() {
+  return path.resolve(String(process.env.QUICKHACK_APP_ROOT ?? "").trim() || process.cwd());
+}
+
+function clientRuntimeDir() {
+  return path.resolve(String(process.env.QUICKHACK_RUNTIME_DIR ?? "").trim() || path.join(clientAppRoot(), ".quickhack-runtime"));
+}
 
 export const ADB_ACTION_IDS = [
   "show-device-numbers",
@@ -85,8 +90,8 @@ export async function runAdb(
     return await runAdbCommand({
       resolver: platform.adbExecutableResolver,
       context: {
-        appRoot: getAppRoot(),
-        runtimeDir: getRuntimeDir(),
+        appRoot: clientAppRoot(),
+        runtimeDir: clientRuntimeDir(),
         environment: process.env,
       },
       arguments: args,

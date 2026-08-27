@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { issueOutputPreviewToken, verifyOutputPreviewToken } from "../../quickhack_server/shipment/output-preview-token.ts";
+const secret = "s".repeat(32);
+const claims = { userId: 7, sessionId: "session-1", issueBatchId: 11, shipmentListPrintBatchId: 21, revision: 3, payloadHash: "a".repeat(64), expiresAt: Date.now() + 10_000 };
+const token = issueOutputPreviewToken(claims, secret);
+const expected = { userId: 7, sessionId: "session-1", issueBatchId: 11, shipmentListPrintBatchId: 21, revision: 3, payloadHash: "a".repeat(64) };
+assert.deepEqual(verifyOutputPreviewToken(token, expected, secret), claims);
+assert.throws(() => verifyOutputPreviewToken(token, { ...expected, userId: 8 }, secret), /STALE/);
+assert.throws(() => verifyOutputPreviewToken(token, expected, secret, claims.expiresAt), /EXPIRED/);
+assert.throws(() => verifyOutputPreviewToken(`${token}x`, expected, secret), /INVALID/);
+console.log("Electron output preview token binding verified.");

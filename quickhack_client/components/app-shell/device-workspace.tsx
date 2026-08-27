@@ -115,6 +115,11 @@ import {
   type UserPreferenceKey,
   type UserShortcutBinding,
 } from "@/quickhack_shared/user/personal-settings";
+import { DesktopCapabilityProvider, useDesktopCapability } from "@/quickhack_client/components/desktop/desktop-capability-provider";
+import { DesktopCommandPalette } from "@/quickhack_client/components/desktop/desktop-command-palette";
+import { DesktopNotificationCenter } from "@/quickhack_client/components/desktop/desktop-notification-center";
+import { DesktopUpdateStatus } from "@/quickhack_client/components/desktop/desktop-update-status";
+import { menuWorkflowFamily } from "@/quickhack_shared/desktop/client-compatibility";
 
 // QuickHack object: 메인 ERP/WMS 화면은 로그인 사용자만 받고 메뉴 데이터는 필요할 때 조회합니다.
 type DeviceWorkspaceProps = {
@@ -591,9 +596,11 @@ export function DeviceWorkspace({
   currentUser,
 }: DeviceWorkspaceProps) {
   return (
-    <UnsavedChangesProvider>
-      <DeviceWorkspaceContent currentUser={currentUser} />
-    </UnsavedChangesProvider>
+    <DesktopCapabilityProvider>
+      <UnsavedChangesProvider>
+        <DeviceWorkspaceContent currentUser={currentUser} />
+      </UnsavedChangesProvider>
+    </DesktopCapabilityProvider>
   );
 }
 
@@ -601,6 +608,7 @@ function DeviceWorkspaceContent({
   currentUser,
 }: DeviceWorkspaceProps) {
   const { allowNextBeforeUnload, runGuardedAction } = useUnsavedChanges();
+  const { api: desktopApi } = useDesktopCapability();
   const [selectedDevice, setSelectedDevice] =
     React.useState<DeviceListItem | null>(null);
   const [requestedDevicePgNo, setRequestedDevicePgNo] = React.useState("");
@@ -1192,6 +1200,10 @@ function DeviceWorkspaceContent({
   }
 
   function closeWorkspaceWindow() {
+    if (desktopApi) {
+      void desktopApi.closeWindow();
+      return;
+    }
     window.close();
     window.setTimeout(() => {
       if (!window.closed) {
@@ -1296,7 +1308,38 @@ function DeviceWorkspaceContent({
     runGuardedAction({
       intent: "menu-change",
       targetLabel: findMenuItem(nextMenuId).label,
-      action: () => commitMenuChange(nextMenuId, onCommitted),
+      action: () => {
+        const workflowFamily = menuWorkflowFamily(nextMenuId);
+        if (!workflowFamily) {
+          commitMenuChange(nextMenuId, onCommitted);
+          return;
+        }
+
+        void fetch("/api/auth/workflow-admission", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ workflowFamily }),
+        })
+          .then(async (response) => {
+            const payload = (await response.json().catch(() => null)) as
+              | { ok?: boolean; message?: string }
+              | null;
+            if (!response.ok || !payload?.ok) {
+              throw new Error(
+                payload?.message ?? "이 업무를 시작할 수 없습니다."
+              );
+            }
+            setWorkspaceError("");
+            commitMenuChange(nextMenuId, onCommitted);
+          })
+          .catch((error: unknown) => {
+            setWorkspaceError(
+              error instanceof Error
+                ? error.message
+                : "업무 시작 조건을 확인하지 못했습니다."
+            );
+          });
+      },
     });
   }
 
@@ -2055,6 +2098,7 @@ function DeviceWorkspaceContent({
 
   return (
     <main className="flex h-screen min-h-screen overflow-hidden bg-background">
+      <DesktopCommandPalette groups={allowedMenuGroups} onNavigate={(menuId) => requestMenuChange(menuId)} />
       <aside
         className={cn(
           "flex shrink-0 flex-col border-r bg-popover transition-[width]",
@@ -2213,6 +2257,10 @@ function DeviceWorkspaceContent({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <DesktopNotificationCenter
+              enabled={accountPersonalSettings.preferences.windowsNotificationsEnabled}
+              onNavigate={(menuId) => requestMenuChange(menuId as MenuItemId)}
+            />
             {accountProfile?.isBirthdayToday ? (
               <span className="whitespace-nowrap rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700">
                 생일을 축하합니다!{" "}
@@ -2282,6 +2330,7 @@ function DeviceWorkspaceContent({
             {workspaceError}
           </div>
         ) : null}
+        <DesktopUpdateStatus />
 
         <div
           key={`${selectedMenuId}:${contentRefreshRevision}`}

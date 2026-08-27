@@ -15,6 +15,7 @@ export const RUNTIME_PACKAGE_FORBIDDEN_SOURCE_DIRECTORIES = Object.freeze([
 
 export const RUNTIME_PACKAGE_ROLE_FORBIDDEN_ADAPTER_PREFIXES = Object.freeze({
   "demo-server": Object.freeze([
+    Object.freeze({ prefix: "quickhack_desktop/", ownerRole: "client" }),
     Object.freeze({
       prefix: "quickhack_client/platform/windows/",
       ownerRole: "client",
@@ -39,10 +40,12 @@ export const RUNTIME_PACKAGE_ROLE_FORBIDDEN_ADAPTER_PREFIXES = Object.freeze({
     }),
   ]),
   "demonstration-server": Object.freeze([
+    Object.freeze({ prefix: "quickhack_desktop/", ownerRole: "client" }),
     Object.freeze({ prefix: "quickhack_client/platform/windows/", ownerRole: "client" }),
     Object.freeze({ prefix: "quickhack_client/platform/linux/", ownerRole: "client" }),
   ]),
   "operational-server": Object.freeze([
+    Object.freeze({ prefix: "quickhack_desktop/", ownerRole: "client" }),
     Object.freeze({ prefix: "quickhack_client/platform/windows/", ownerRole: "client" }),
     Object.freeze({ prefix: "quickhack_client/platform/linux/", ownerRole: "client" }),
   ]),

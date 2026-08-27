@@ -65,6 +65,7 @@ import {
   type UserPreferenceKey,
   type UserShortcutBinding,
 } from "@/quickhack_shared/user/personal-settings";
+import { DesktopAppearanceSettings } from "@/quickhack_client/components/desktop/desktop-appearance-settings";
 
 type ShortcutBindingChange = Partial<
   Pick<UserShortcutBinding, "modifier" | "keyCode">
@@ -391,6 +392,7 @@ export function PersonalSettingsView({
         <TabsList>
           <TabsTrigger value="account">계정 설정</TabsTrigger>
           <TabsTrigger value="personal">개인 설정</TabsTrigger>
+          <TabsTrigger value="appearance">화면</TabsTrigger>
         </TabsList>
       </div>
 
@@ -492,6 +494,10 @@ export function PersonalSettingsView({
             {accountSaving ? "저장 중" : "계정 저장"}
           </Button>
         </FormActionBar>
+      </TabsContent>
+
+      <TabsContent value="appearance" className="mt-0 min-h-0 flex-1 overflow-auto p-5 data-[state=inactive]:hidden">
+        <div className="mx-auto w-full max-w-[760px]"><DesktopAppearanceSettings /></div>
       </TabsContent>
 
       <TabsContent

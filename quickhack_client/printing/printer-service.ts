@@ -26,6 +26,8 @@ import {
   inspectClientPrintSpoolRecovery,
   removePrivatePrintSpoolFile,
 } from "@/tools/client-print-spool-core.mjs";
+import { requestNativeBroker } from "@/quickhack_client/native/native-broker-client";
+import type { PrinterQueue, PrinterSubmitResult } from "@/quickhack_client/platform/contracts";
 
 const JOB_KEY_PATTERN = /^LOGEN-LABEL-\d+-[0-9a-f-]{36}$/i;
 const HASH_PATTERN = /^[0-9a-f]{64}$/i;
@@ -205,8 +207,7 @@ export function savePrinterSettings(value: unknown) {
 }
 
 export async function listPrinters() {
-  const runtime = clientRuntime();
-  return runtime.platform.printerBackend.list(runtime.context);
+  return await requestNativeBroker("printer.list", {}) as readonly PrinterQueue[];
 }
 
 function ascii(value: string) {
@@ -353,11 +354,9 @@ async function ensurePrintSpoolReady() {
   printSpoolInitialization ??= initializeClientPrintSpool({
     clientDataDir: runtime.directories.stateDir,
     platform: spoolPlatform(runtime.platform.platform),
-    applyWindowsAcl: (directory: string) =>
-      runtime.platform.printerBackend.secureSpoolDirectory({
-        ...runtime.context,
-        directory,
-      }),
+    applyWindowsAcl: async (directory: string) => {
+      await requestNativeBroker("printer.secure-spool", { directory });
+    },
   })
     .then(() => undefined)
     .catch((error) => {
@@ -602,12 +601,11 @@ export async function printLogenLabels(input: {
 
   let ledger: PrintJobLedger;
   try {
-    const result = await runtime.platform.printerBackend.submit({
-      ...runtime.context,
+    const result = await requestNativeBroker("printer.print", {
       printerName,
       spoolPath,
       requestedBytes: payload.length,
-    });
+    }) as PrinterSubmitResult;
     ledger = {
       requestKey,
       payloadHash,

@@ -280,6 +280,7 @@ model users {
   mobile_registered_devices_revoked       mobile_registered_devices[]                 @relation("MobileRegisteredDeviceRevokedBy")
   employee_profiles                       employee_profiles?
   user_preferences                        user_preferences?
+  desktop_notification_recipients         desktop_notification_recipients[]
   user_shortcut_bindings                  user_shortcut_bindings[]
   employee_activity_logs                  employee_activity_logs[]
   manual_order_match_receipts             manual_order_match_selection_receipts[]     @relation("ManualOrderMatchReceiptIssuedTo")
@@ -426,6 +427,40 @@ model user_preferences {
   created_at                               DateTime @default(now()) @db.Timestamptz(3)
   updated_at                               DateTime @default(now()) @updatedAt @db.Timestamptz(3)
   users                                    users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+}
+
+/// QuickHack model: 업무 transaction에서 한 번 생성되는 데스크톱 알림 사건입니다.
+model desktop_notification_events {
+  notification_event_id BigInt                            @id @default(autoincrement())
+  event_kind           String
+  source_type          String
+  source_id            String
+  dedupe_key           String                            @unique(map: "uq_desktop_notification_events_dedupe_key")
+  menu_id              String
+  title                String
+  body                 String
+  occurred_at          DateTime                          @default(now()) @db.Timestamptz(3)
+  resolved_at          DateTime?                         @db.Timestamptz(3)
+  created_at           DateTime                          @default(now()) @db.Timestamptz(3)
+  recipients           desktop_notification_recipients[]
+
+  @@index([occurred_at, notification_event_id], map: "idx_desktop_notification_events_time")
+  @@index([source_type, source_id], map: "idx_desktop_notification_events_source")
+}
+
+/// QuickHack model: 알림 사건의 계정별 전달 및 읽음 상태입니다.
+model desktop_notification_recipients {
+  notification_recipient_id BigInt                      @id @default(autoincrement())
+  notification_event_id     BigInt
+  user_id                   Int
+  delivered_at             DateTime?                    @db.Timestamptz(3)
+  read_at                  DateTime?                    @db.Timestamptz(3)
+  created_at               DateTime                     @default(now()) @db.Timestamptz(3)
+  event                    desktop_notification_events @relation(fields: [notification_event_id], references: [notification_event_id], onDelete: Cascade)
+  user                     users                       @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@unique([notification_event_id, user_id], map: "uq_desktop_notification_recipients_event_user")
+  @@index([user_id, read_at, notification_recipient_id], map: "idx_desktop_notification_recipients_inbox")
 }
 
 /// QuickHack model: 사용자별 업무 동작과 실제 키 조합을 한 행씩 보관합니다.

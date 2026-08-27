@@ -54,6 +54,7 @@ type ProjectionClient = Pick<
   | "shipment_package_groups"
   | "shipment_address_change_work"
   | "employee_activity_logs"
+  | "desktop_notification_events"
 >;
 
 type Projection = {
@@ -263,6 +264,14 @@ async function projectOnce(
             work.requested_by_user_id,
           updated_at: input.projectedAt,
         },
+      });
+      const { resolveDesktopNotificationBySource } = await import(
+        "@/quickhack_server/notifications/desktop-notification-service"
+      );
+      await resolveDesktopNotificationBySource(tx, {
+        sourceType: "SHIPMENT_ADDRESS_CHANGE_WORK",
+        sourceId: String(work.shipment_address_change_work_id),
+        resolvedAt: input.projectedAt,
       });
     }
     await tx.employee_activity_logs.create({

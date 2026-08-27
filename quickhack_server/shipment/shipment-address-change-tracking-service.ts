@@ -379,6 +379,20 @@ async function processOneShipmentAddressChangeEvent(input: {
       },
     });
 
+    const { publishDesktopNotification } = await import(
+      "@/quickhack_server/notifications/desktop-notification-service"
+    );
+    await publishDesktopNotification(tx, {
+      kind: "SHIPMENT_ADDRESS_CHANGE",
+      sourceType: "SHIPMENT_ADDRESS_CHANGE_WORK",
+      sourceId: String(work.shipment_address_change_work_id),
+      dedupeKey: `SHIPMENT_ADDRESS_CHANGE:${work.shipment_address_change_work_id}`,
+      menuId: "shipment-delivery-changes",
+      title: "배송지 변경 요청",
+      body: "판매채널 배송지 변경 요청이 접수되었습니다.",
+      occurredAt: event.detected_at,
+    });
+
     await tx.shipment_address_change_work_field.deleteMany({
       where: {
         shipment_address_change_work_id:

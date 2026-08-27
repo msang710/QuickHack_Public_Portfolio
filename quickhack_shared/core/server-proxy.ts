@@ -299,6 +299,9 @@ export async function proxyToServer(
   if (cookie) {
     headers.cookie = cookie;
   }
+  headers["x-quickhack-client-family"] = String(process.env.QUICKHACK_CLIENT_FAMILY ?? "BROWSER_DEVELOPMENT");
+  headers["x-quickhack-client-version"] = String(process.env.QUICKHACK_CLIENT_VERSION ?? "0.0.0");
+  headers["x-quickhack-update-channel"] = String(process.env.QUICKHACK_UPDATE_CHANNEL ?? "development");
 
   if (options.contentType !== null) {
     headers["content-type"] =

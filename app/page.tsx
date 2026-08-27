@@ -12,6 +12,8 @@ import {
   getServerProxyErrorMessage,
 } from "@/quickhack_shared/core/server-proxy";
 import { cookies } from "next/headers";
+import { DesktopAdbWindow } from "@/quickhack_client/components/desktop/desktop-adb-window";
+import { DesktopOutputWindow } from "@/quickhack_client/components/desktop/desktop-output-window";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +51,7 @@ async function tryFetchServerJson<T>(pathname: string, cookieHeader?: string) {
   }
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
   const cookieHeader = token ? `${AUTH_COOKIE_NAME}=${token}` : undefined;
@@ -79,6 +81,10 @@ export default async function Home() {
   if (authUser.mustChangePassword) {
     return <PasswordChangeRequiredScreen currentUser={authUser} />;
   }
+
+  const desktopWindow = (await searchParams)?.quickhackDesktopWindow;
+  if (desktopWindow === "adb") return <DesktopAdbWindow />;
+  if (desktopWindow === "output") return <DesktopOutputWindow />;
 
   return <DeviceWorkspace currentUser={authUser} />;
 }

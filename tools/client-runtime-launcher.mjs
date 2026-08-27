@@ -314,6 +314,9 @@ async function startRuntime(serverUrl, caCertificateFile) {
                 QUICKHACK_RUNTIME_DIR: runtimeDirectories.runtimeDir,
                 QUICKHACK_CLIENT_INSTANCE_ID: instanceId,
                 QUICKHACK_CLIENT_TRUST_BUNDLE_DIR: path.dirname(caCertificateFile),
+                QUICKHACK_DESKTOP_BROKER_ENDPOINT: process.env.QUICKHACK_DESKTOP_BROKER_ENDPOINT,
+                QUICKHACK_DESKTOP_BROKER_SECRET: process.env.QUICKHACK_DESKTOP_BROKER_SECRET,
+                QUICKHACK_DESKTOP_BROKER_INSTANCE_ID: process.env.QUICKHACK_DESKTOP_BROKER_INSTANCE_ID,
                 ...(packageIdentity
                   ? { QUICKHACK_PACKAGE_MANIFEST: packageIdentity.manifestPath }
                   : {}),

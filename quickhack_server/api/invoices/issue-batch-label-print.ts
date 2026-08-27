@@ -6,6 +6,7 @@ import {
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isClientRuntime } from "@/quickhack_shared/core/runtime";
 import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
+import { AUTH_COOKIE_NAME } from "@/quickhack_shared/auth/auth-constants";
 import {
   markOperationTraceFailed,
   runOperationTrace,
@@ -33,11 +34,11 @@ function parseJsonObject(text: string) {
 }
 
 async function authorize(request: NextRequest) {
-  const { getAuthUserFromRequest } = await import(
+  const { getAuthSessionFromRequest, toAuthUser } = await import(
     "@/quickhack_server/auth/auth-service"
   );
-  const user = await getAuthUserFromRequest(request);
-  if (!user) {
+  const session = await getAuthSessionFromRequest(request);
+  if (!session) {
     return {
       response: NextResponse.json(
         { ok: false, message: "Login is required." },
@@ -46,6 +47,7 @@ async function authorize(request: NextRequest) {
       user: null,
     };
   }
+  const user = toAuthUser(session.users);
   if (!canAccessRole(user.role, "STAFF")) {
     return {
       response: NextResponse.json(
@@ -56,7 +58,12 @@ async function authorize(request: NextRequest) {
     };
   }
   setOperationTraceUserId(user.userId);
-  return { response: null, user };
+  return {
+    response: null,
+    user,
+    sessionId: String(session.session_id),
+    previewTokenSecret: request.cookies.get(AUTH_COOKIE_NAME)?.value ?? "",
+  };
 }
 
 function errorResponse(error: unknown) {
@@ -119,8 +126,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const result = await traceOperationSpan("SERVICE_READ", () =>
           service.getLogenLabelPrintView({ issueBatchId })
         );
+        const { issueOutputPreviewToken } = await import(
+          "@/quickhack_server/shipment/output-preview-token"
+        );
+        const previewToken = issueOutputPreviewToken(
+          {
+            userId: auth.user!.userId,
+            sessionId: auth.sessionId!,
+            issueBatchId: result.issueBatchId,
+            shipmentListPrintBatchId: result.shipmentListPrintBatchId,
+            revision: result.batchRevision,
+            payloadHash: result.previewPayloadHash,
+            expiresAt: Date.now() + 5 * 60_000,
+          },
+          auth.previewTokenSecret!
+        );
         setOperationTraceTargetCount(result.items.length);
-        return NextResponse.json({ ok: true, labelPrint: result });
+        return NextResponse.json({ ok: true, labelPrint: result, previewToken });
       } catch (error) {
         return errorResponse(error);
       }
@@ -164,6 +186,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
             issueBatchId,
             printerName: body.printerName,
             userId: auth.user.userId,
+            sessionId: auth.sessionId!,
+            previewToken: String(body.previewToken ?? ""),
+            previewTokenSecret: auth.previewTokenSecret!,
           })
         );
         setOperationTraceTargetCount(result.labels.length);

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  deliverMobileProvisioningBootstrap,
-  type MobileProvisioningBootstrap,
-} from "@/quickhack_client/adb/mobile-provisioning";
+import { type MobileProvisioningBootstrap } from "@/quickhack_client/adb/mobile-provisioning";
+import { requestNativeBroker } from "@/quickhack_client/native/native-broker-client";
 import { getRuntimeAuthUser } from "@/quickhack_client/auth/request-auth";
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isAdbVirtualSerial } from "@/quickhack_shared/adb/adb-target-policy";
@@ -143,8 +141,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await deliverMobileProvisioningBootstrap({
+    const enumeration = await requestNativeBroker("adb.list", {}) as { revision: string };
+    await requestNativeBroker("adb.provision", {
       serial,
+      enumerationRevision: enumeration.revision,
       serverOrigin,
       bootstrap: provisioned.bootstrap,
       trustBundle,
