@@ -79,7 +79,6 @@ mock_server/database/
 # Local-only development helpers
 .codex-remote-attachments/
 .agents/
-.qwen/
 tools/dev/
 tools/docs/
 tools/sync-coupang-open-api-reference.ps1
