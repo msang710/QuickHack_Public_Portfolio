@@ -19,6 +19,7 @@ import { databaseDateTime } from "@/quickhack_server/core/database/time-boundary
 import { prisma } from "@/quickhack_server/core/prisma";
 import { findShipmentReturnConflicts } from "@/quickhack_server/returns/shipment-return-conflict-service";
 import { consumePackingConfirmedSupplies } from "@/quickhack_server/supplies/outbound-supply-service";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
 
 type PackingCheckInput = {
   orderBarcode?: unknown;
@@ -491,6 +492,11 @@ export async function checkPackingIntegrity(
       return result;
     }
 
+    await lockDeviceAggregates(tx, {
+      pgNos: [result.device.pgNo],
+      requireDevice: true,
+      requireInventory: true,
+    });
     await tx.$queryRaw`SELECT allocation_id FROM match_worker_allocation WHERE allocation_id = ${matchedAllocation.allocation_id} FOR UPDATE`;
     const currentAllocation = await tx.match_worker_allocation.findUnique({
       where: { allocation_id: matchedAllocation.allocation_id },

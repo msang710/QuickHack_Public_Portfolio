@@ -19,9 +19,9 @@ import {
 import { DEVICE_WARRANTY_OPTIONS } from "@/quickhack_shared/device/types";
 import { resolveInboundBatchId } from "@/quickhack_server/inbound/inbound-batch-reference";
 import { runMeasuredTransaction } from "@/quickhack_server/observability/transaction-trace";
-import { lockAggregateKey } from "@/quickhack_server/core/database/aggregate-command";
 import { raiseModelSequenceFloor } from "@/quickhack_server/inbound/model-sequence-service";
-import { lockDeviceAggregateRow } from "@/quickhack_server/inventory/device-aggregate-lock";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
+import { normalizePgNo as normalizeCanonicalPgNo } from "@/quickhack_shared/inventory/pg-no";
 import {
   publicBadRequest,
   publicConflict,
@@ -177,7 +177,7 @@ function nullableModelSeq(input: InventoryManagementInput) {
 }
 
 function normalizePgNo(input: InventoryManagementInput) {
-  const pgNo = requiredText(input, "pgNo", "PG").toUpperCase();
+  const pgNo = normalizeCanonicalPgNo(requiredText(input, "pgNo", "PG"));
 
   if (!PG_NO_PATTERN.test(pgNo)) {
     throw inventoryInputError("PG는 알파벳 2자리 + 숫자 10자리 형식이어야 합니다.");
@@ -671,8 +671,7 @@ export async function createManualInventoryRecord(
   const purchasePrice = nullableInt(input, "purchasePrice", "매입가");
 
   return runMeasuredTransaction(client, "inventory.manual.create", async (tx) => {
-    await lockAggregateKey(tx, { namespace: "device-inbound", key: pgNo });
-    await lockDeviceAggregateRow(tx, pgNo);
+    await lockDeviceAggregates(tx, { pgNos: [pgNo], lockInventory: false });
     const existing = await tx.devices.findUnique({
       where: { pg_no: pgNo },
       select: { pg_no: true },
@@ -793,7 +792,7 @@ export async function deleteManualInventoryRecord(
   input: InventoryManagementInput,
   user: AuthUser
 ) {
-  const pgNo = pgNoInput.trim().toUpperCase();
+  const pgNo = normalizeCanonicalPgNo(pgNoInput);
   const reason = normalizeReason(input, "재고 삭제 사유");
   const expectedRevision = Number(input.expectedRevision);
   const timestamp = databaseNow();
@@ -804,10 +803,16 @@ export async function deleteManualInventoryRecord(
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
     throw inventoryInputError("삭제 대상 기기의 revision이 올바르지 않습니다.");
   }
+  const targetExists = await client.devices.findUnique({
+    where: { pg_no: pgNo },
+    select: { device_id: true },
+  });
+  if (!targetExists) {
+    throw publicNotFound("INVENTORY_NOT_FOUND", `${pgNo} 재고를 찾을 수 없습니다.`);
+  }
 
   return runMeasuredTransaction(client, "inventory.manual.delete", async (tx) => {
-    await lockAggregateKey(tx, { namespace: "device-inbound", key: pgNo });
-    await lockDeviceAggregateRow(tx, pgNo);
+    await lockDeviceAggregates(tx, { pgNos: [pgNo], requireDevice: true });
     const before = await readDeviceSnapshot(tx, pgNo);
 
     if (!before) {

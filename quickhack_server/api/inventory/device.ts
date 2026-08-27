@@ -16,6 +16,7 @@ import {
   setOperationTraceUserId,
   traceOperationSpan,
 } from "@/quickhack_server/observability/operation-trace";
+import { normalizePgNo } from "@/quickhack_shared/inventory/pg-no";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,7 @@ function parseJsonObject(text: string) {
 
 async function getPgNo(context: RouteContext) {
   const params = await context.params;
-  return String(params.pgNo || "").trim().toUpperCase();
+  return normalizePgNo(params.pgNo);
 }
 
 async function requireSensitiveManager(

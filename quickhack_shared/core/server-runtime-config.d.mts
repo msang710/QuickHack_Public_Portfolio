@@ -12,6 +12,8 @@ type ServerRuntimeConfigBase = {
   environment: ServerRuntimeEnvironment;
   coupangWriteApiEnabled: boolean;
   logenWriteApiEnabled: boolean;
+  manualOrderMatchReadEnabled: boolean;
+  manualOrderMatchMutationEnabled: boolean;
   dataDirectory: string;
   backupRetentionCount: number;
 };

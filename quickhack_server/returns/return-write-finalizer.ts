@@ -10,6 +10,7 @@ import {
 } from "@/quickhack_server/sales-channel/projection-revision-service";
 import {
   INVENTORY_QUANTITY_MOVEMENT_TYPE,
+  lockInventoryQuantityBalanceKeys,
   transitionInventoryStatusWithLedger,
 } from "@/quickhack_server/inventory/inventory-quantity-ledger-service";
 import { groupSalesChannelWriteTargets } from "@/quickhack_server/sales-channel/write/sales-channel-write-target-group";
@@ -31,6 +32,7 @@ import {
   lockSalesAllocationRoots,
   markSalesRecordsReturnedForAllocations,
 } from "@/quickhack_server/sales/sales-record-service";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
 
 const ACTIVE_RETURN_ALLOCATION_STATUSES = [
   "ALLOCATED",
@@ -281,6 +283,18 @@ export async function finalizePersistedCoupangReturnWrite(input: {
   const allocationIds = allocationTargets.map(
     (target) => target.allocation_id as number
   );
+  const allocationPgRows = allocationIds.length === 0
+    ? []
+    : await input.tx.match_worker_allocation.findMany({
+        where: { allocation_id: { in: allocationIds } },
+        select: { allocation_id: true, pg_no: true },
+        orderBy: { allocation_id: "asc" },
+      });
+  await lockDeviceAggregates(input.tx, {
+    pgNos: allocationPgRows.map((allocation) => allocation.pg_no),
+    requireDevice: true,
+    requireInventory: true,
+  });
   await lockSalesAllocationRoots(input.tx, allocationIds);
   const allocations =
     allocationIds.length === 0
@@ -304,6 +318,19 @@ export async function finalizePersistedCoupangReturnWrite(input: {
       throw new Error("요청 당시 PG 배정 스냅샷과 현재 배정 정보가 다릅니다.");
     }
   }
+
+  await lockInventoryQuantityBalanceKeys(
+    input.tx,
+    allocations
+      .map((allocation) => allocation.inventory_sku_id)
+      .filter((inventorySkuId): inventorySkuId is number => Number.isSafeInteger(inventorySkuId) && Number(inventorySkuId) > 0)
+      .flatMap((inventorySkuId) =>
+        Object.values(INVENTORY_STATUS).map((inventoryStatus) => ({
+          inventorySkuId,
+          inventoryStatus,
+        }))
+      )
+  );
 
   if (
     request.source_projection_revision === null ||

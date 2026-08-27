@@ -53,7 +53,8 @@ import {
   transitionInventoryStatusWithLedger,
 } from "@/quickhack_server/inventory/inventory-quantity-ledger-service";
 import { runMeasuredTransaction } from "@/quickhack_server/observability/transaction-trace";
-import { lockDeviceAggregateRow } from "@/quickhack_server/inventory/device-aggregate-lock";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
+import { compareCanonicalPgNo, normalizePgNo } from "@/quickhack_shared/inventory/pg-no";
 
 type TransactionClient = Prisma.TransactionClient;
 type CommandInput = Record<string, unknown>;
@@ -894,16 +895,22 @@ export async function updateExistingInventoryRecord(
   input: CommandInput,
   user: AuthUser
 ) {
-  const pgNo = pgNoInput.trim().toUpperCase();
+  const pgNo = normalizePgNo(pgNoInput);
   if (!pgNo) throw inputError("PG 값이 필요합니다.");
   const reason = reasonFrom(input);
   const patches = parsePatches(input.patches);
   const timestamp = databaseNow();
   const operationKey = `inventory-correction:${pgNo}:${randomUUID()}`;
+  const targetExists = await client.devices.findUnique({
+    where: { pg_no: pgNo },
+    select: { device_id: true },
+  });
+  if (!targetExists) {
+    throw publicNotFound("INVENTORY_NOT_FOUND", "수정할 기기를 찾을 수 없습니다.");
+  }
   try {
     return await runMeasuredTransaction(client, "inventory.correction", async (tx) => {
-      await lockAggregateKey(tx, { namespace: "device-inbound", key: pgNo });
-      await lockDeviceAggregateRow(tx, pgNo);
+      await lockDeviceAggregates(tx, { pgNos: [pgNo], requireDevice: true, requireInventory: true });
       const exists = await tx.devices.findUnique({ where: { pg_no: pgNo }, select: { device_id: true } });
       if (!exists) throw publicNotFound("INVENTORY_NOT_FOUND", "수정할 기기를 찾을 수 없습니다.");
       return applyPgCorrection(tx, { pgNo, patches, user, reason, timestamp, operationKey });
@@ -926,14 +933,14 @@ export async function updateExistingInventoryRecordsAtomically(
   if (!reason) throw inputError("수정 사유를 입력해야 저장할 수 있습니다.");
   if (items.length === 0) throw inputError("일괄 수정할 재고를 선택해야 합니다.");
   const normalized = items.map((item) => ({
-    pgNo: item.pgNo.trim().toUpperCase(),
+    pgNo: normalizePgNo(item.pgNo),
     patches: parsePatches(item.patches),
   }));
   if (normalized.some((item) => !item.pgNo)) throw inputError("일괄 수정 대상에 PG가 없습니다.");
   if (new Set(normalized.map((item) => item.pgNo)).size !== normalized.length) {
     throw inputError("일괄 수정 대상에 같은 PG가 중복되어 있습니다.");
   }
-  const ordered = [...normalized].sort((a, b) => a.pgNo.localeCompare(b.pgNo));
+  const ordered = [...normalized].sort((a, b) => compareCanonicalPgNo(a.pgNo, b.pgNo));
   const timestamp = databaseNow();
   const batchId = randomUUID();
   try {
@@ -941,12 +948,11 @@ export async function updateExistingInventoryRecordsAtomically(
       client,
       "inventory.correction.bulk",
       async (tx) => {
-        for (const item of ordered) {
-          await lockAggregateKey(tx, { namespace: "device-inbound", key: item.pgNo });
-        }
-        for (const item of ordered) {
-          await lockDeviceAggregateRow(tx, item.pgNo);
-        }
+        await lockDeviceAggregates(tx, {
+          pgNos: ordered.map((item) => item.pgNo),
+          requireDevice: true,
+          requireInventory: true,
+        });
         const sequenceItems = ordered.filter((item) =>
           item.patches.some(
             (patch) =>

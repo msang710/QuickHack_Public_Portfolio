@@ -282,6 +282,9 @@ model users {
   user_preferences                        user_preferences?
   user_shortcut_bindings                  user_shortcut_bindings[]
   employee_activity_logs                  employee_activity_logs[]
+  manual_order_match_receipts             manual_order_match_selection_receipts[]     @relation("ManualOrderMatchReceiptIssuedTo")
+  manual_order_match_intent_leases         manual_order_match_intent_leases[]           @relation("ManualOrderMatchIntentLeaseOwner")
+  manual_recoveries_started               order_matching_work_queue[]                 @relation("ManualOrderMatchRecoveryStartedBy")
   inbounds                                inbounds[]
   inbound_batches                         inbound_batches[]
   product_camera_check_rules              product_camera_check_rules[]
@@ -1038,10 +1041,15 @@ model order_matching_work_queue {
   required_warranty_group  String?
   work_status              String        @default("UNMATCHED")
   work_failure_reason      String?
+  manual_recovery_status   String        @default("NONE")
+  manual_recovery_started_at DateTime?   @db.Timestamptz(3)
+  manual_recovery_started_by_user_id Int?
   matched_at               DateTime?     @db.Timestamptz(3)
   created_at               DateTime      @default(now()) @db.Timestamptz(3)
   updated_at               DateTime      @default(now()) @updatedAt @db.Timestamptz(3)
   sales_offer              sales_offers? @relation(fields: [sales_offer_id], references: [sales_offer_id], onDelete: Restrict)
+  manual_recovery_started_by users?      @relation("ManualOrderMatchRecoveryStartedBy", fields: [manual_recovery_started_by_user_id], references: [user_id], onDelete: Restrict)
+  manual_order_match_receipts manual_order_match_selection_receipts[]
 
   @@unique([channel, external_order_id, external_shipment_id, external_vendor_item_id], map: "uq_order_matching_work_queue_channel_order_shipment_vendor")
   @@index([channel, external_order_id], map: "idx_order_matching_work_queue_channel_order_id")
@@ -1052,7 +1060,48 @@ model order_matching_work_queue {
   @@index([sales_offer_id], map: "idx_order_matching_work_queue_sales_offer_id")
   @@index([work_status], map: "idx_order_matching_work_queue_work_status")
   @@index([work_failure_reason], map: "idx_order_matching_work_queue_work_failure_reason")
+  @@index([manual_recovery_status], map: "idx_order_matching_work_queue_manual_recovery")
+  @@index([manual_recovery_started_by_user_id], map: "idx_order_matching_work_queue_manual_recovery_user")
   @@index([ordered_at, work_item_id], map: "idx_order_matching_work_queue_ordered_id")
+}
+
+model manual_order_match_selection_receipts {
+  receipt_id                String                    @id @default(uuid()) @db.Uuid
+  work_item_id              Int
+  operation                 String
+  pg_no                     String
+  candidate_fingerprint_hash String
+  issued_to_user_id         Int
+  work_revision             Int
+  inventory_revision        Int?
+  issued_at                 DateTime                  @default(now()) @db.Timestamptz(3)
+  expires_at                DateTime                  @db.Timestamptz(3)
+  consumed_at               DateTime?                 @db.Timestamptz(3)
+  work_item                 order_matching_work_queue @relation(fields: [work_item_id], references: [work_item_id], onDelete: Cascade)
+  issued_to_user            users                     @relation("ManualOrderMatchReceiptIssuedTo", fields: [issued_to_user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([work_item_id, operation, pg_no], map: "idx_manual_order_match_receipts_scope")
+  @@index([issued_to_user_id, expires_at], map: "idx_manual_order_match_receipts_user_expiry")
+  @@index([expires_at], map: "idx_manual_order_match_receipts_expiry")
+}
+
+model manual_order_match_intent_leases {
+  lease_id                 String   @id @default(uuid()) @db.Uuid
+  external_order_id        String
+  external_shipment_id     String
+  pg_nos                   String[]
+  command_key              String
+  owner_user_id            Int
+  lease_status             String   @default("ACTIVE")
+  acquired_at              DateTime @default(now()) @db.Timestamptz(3)
+  expires_at               DateTime @db.Timestamptz(3)
+  released_at              DateTime? @db.Timestamptz(3)
+  owner_user               users    @relation("ManualOrderMatchIntentLeaseOwner", fields: [owner_user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([external_order_id, external_shipment_id, lease_status, expires_at], map: "idx_manual_match_intent_shipment_active")
+  @@index([owner_user_id, lease_status, expires_at], map: "idx_manual_match_intent_owner_active")
+  @@index([expires_at], map: "idx_manual_match_intent_expiry")
+  @@index([pg_nos], type: Gin, map: "idx_manual_match_intent_pg_nos")
 }
 
 /// QuickHack model: 매칭 완료 목록을 실제 출고 작업 단위로 출력한 차수 헤더입니다.

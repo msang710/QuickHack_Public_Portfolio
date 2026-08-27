@@ -37,6 +37,7 @@ import {
 import { SALES_CHANNEL_WRITE_REVIEW_STATUSES } from "@/quickhack_shared/sales-channel/write-requests";
 import { runMeasuredTransaction } from "@/quickhack_server/observability/transaction-trace";
 import { transitionShipmentPrintBatchStatus } from "@/quickhack_server/shipment/shipment-print-batch-state-service";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
 import {
   cancelShipmentPackageGroups,
   createDraftShipmentPackageGroups,
@@ -590,6 +591,7 @@ async function filterExactQuantityShipmentAllocations(
     external_shipment_id: string;
     external_vendor_item_id: string;
     matchable_quantity: number;
+    manual_recovery_status: string;
   }> = [];
   const activeAllocations: Array<{
     external_order_id: string;
@@ -617,6 +619,20 @@ async function filterExactQuantityShipmentAllocations(
         ORDER BY work_item_id ASC
         FOR UPDATE
       `;
+      const allocationPgRows = await client.$queryRaw<Array<{ pg_no: string }>>`
+        SELECT pg_no
+        FROM match_worker_allocation
+        WHERE (${pairPredicate})
+          AND allocation_status IN (${Prisma.join([
+            ...ACTIVE_MATCH_WORKER_ALLOCATION_STATUSES,
+          ])})
+        ORDER BY pg_no ASC
+      `;
+      await lockDeviceAggregates(client as Prisma.TransactionClient, {
+        pgNos: allocationPgRows.map((allocation) => allocation.pg_no),
+        requireDevice: true,
+        requireInventory: true,
+      });
       await client.$queryRaw`
         SELECT allocation_id
         FROM match_worker_allocation
@@ -636,6 +652,7 @@ async function filterExactQuantityShipmentAllocations(
           external_shipment_id: true,
           external_vendor_item_id: true,
           matchable_quantity: true,
+          manual_recovery_status: true,
         },
       }))
     );
@@ -676,6 +693,7 @@ async function filterExactQuantityShipmentAllocations(
     workItemKeys.add(shipmentItemKey(item));
     workShipmentKeys.add(shipmentPairKey(item));
     if (
+      item.manual_recovery_status !== "NONE" ||
       (activeCountByItem.get(shipmentItemKey(item)) ?? 0) +
         (settledReturnCountByItem.get(shipmentItemKey(item)) ?? 0) !==
       item.matchable_quantity

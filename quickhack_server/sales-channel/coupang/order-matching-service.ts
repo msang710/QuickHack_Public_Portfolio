@@ -48,6 +48,8 @@ import {
 } from "@/quickhack_server/workers/lease-guard";
 import type { WorkerLeaseGuard } from "@/quickhack_server/workers/types";
 import { runMeasuredTransaction } from "@/quickhack_server/observability/transaction-trace";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
+import { hasActiveManualOrderMatchIntent } from "@/quickhack_server/sales-channel/coupang/manual-order-match-intent-service";
 import {
   countActiveAllocationsForWorkItem,
   lockOrderMatchingWorkItem,
@@ -75,6 +77,10 @@ type OrderMatchingDependencies = {
     salesOfferId: number;
   }) => Promise<void>;
   afterInventoryVerificationPrepared?: () => Promise<void>;
+  beforeManualIntentCheck?: (input: {
+    workItemId: number;
+    externalShipmentId: string;
+  }) => Promise<void>;
   requestWrite?: typeof requestSalesChannelWrite;
   refreshInstructOrderAddresses?:
     typeof refreshCoupangOrderAddressesAfterInstruct;
@@ -315,6 +321,22 @@ async function markShipmentsApiAckedAndReserveInventory(
       },
       data: {
         allocation_status: ALLOCATION_STATUS.apiAcked,
+        updated_at: timestamp,
+      },
+    });
+    await tx.order_matching_work_queue.updateMany({
+      where: {
+        channel: COUPANG_CHANNEL,
+        OR: batch,
+        work_status: "MATCHED",
+        manual_recovery_status: "REASSIGNMENT_REQUIRED",
+      },
+      data: {
+        manual_recovery_status: "NONE",
+        manual_recovery_started_at: null,
+        manual_recovery_started_by_user_id: null,
+        work_failure_reason: null,
+        revision: { increment: 1 },
         updated_at: timestamp,
       },
     });
@@ -1428,6 +1450,47 @@ async function acknowledgeMatchedAcceptShipments(
   return summary;
 }
 
+export async function runCoupangMatchingPostCycleForShipment(
+  input: {
+    externalOrderId: string;
+    externalShipmentId: string;
+  },
+  workerLease?: WorkerLeaseGuard,
+  dependencies: Pick<
+    OrderMatchingDependencies,
+    "requestWrite" | "refreshInstructOrderAddresses"
+  > = {}
+) {
+  const ownedWorkerLease = requireOwnedWorkerLease(workerLease);
+  const shipmentKey = shipmentSnapshotKey(
+    input.externalOrderId,
+    input.externalShipmentId
+  );
+
+  await assertWorkerLeaseActive(ownedWorkerLease);
+  const shippingWorkStatus = await refreshShipmentMatchingStatus(
+    input.externalOrderId,
+    input.externalShipmentId
+  );
+  await assertWorkerLeaseActive(ownedWorkerLease);
+  const coupangAcknowledgement = await acknowledgeMatchedAcceptShipments(
+    [shipmentKey],
+    databaseNow(),
+    ownedWorkerLease,
+    false,
+    dependencies.requestWrite,
+    dependencies.refreshInstructOrderAddresses
+  );
+  await assertWorkerLeaseActive(ownedWorkerLease);
+
+  return {
+    shippingWorkStatus,
+    coupangAcknowledgement,
+    postAcknowledgementRefresh:
+      coupangAcknowledgement.postAcknowledgementRefresh,
+  };
+}
+
 type MatchAllocationCountClient = Pick<
   typeof prisma,
   "order_matching_work_queue" | "match_worker_allocation"
@@ -1632,6 +1695,19 @@ async function matchSingleOrderItem(
     inventoryReservedCount: 0,
   };
 
+  await dependencies.beforeManualIntentCheck?.({
+    workItemId: item.work_item_id,
+    externalShipmentId: item.external_shipment_id,
+  });
+  if (await hasActiveManualOrderMatchIntent(prisma, {
+    externalOrderId: item.external_order_id,
+    externalShipmentId: item.external_shipment_id,
+  })) {
+    result.deferred = true;
+    result.failureReason = "MANUAL_ORDER_MATCH_INTENT_ACTIVE";
+    return result;
+  }
+
   if (!itemCanBeMatched(item) || !offer) {
     result.failureReason = itemCanBeMatched(item)
       ? INVENTORY_MATCH_FAILURE_REASONS.noChannelSalesOffer
@@ -1755,6 +1831,16 @@ async function matchSingleOrderItem(
             lockedItem
           );
 
+          if (await hasActiveManualOrderMatchIntent(tx, {
+            externalOrderId: lockedItem.external_order_id,
+            externalShipmentId: lockedItem.external_shipment_id,
+            pgNo: candidate.pgNo,
+          })) {
+            throw Object.assign(new Error("Manual order match intent is active"), {
+              code: "MANUAL_ORDER_MATCH_INTENT_ACTIVE",
+            });
+          }
+
           if (
             lockedItem.canceled === 1 ||
             currentRequired <= 0 ||
@@ -1770,6 +1856,11 @@ async function matchSingleOrderItem(
             });
           }
 
+          await lockDeviceAggregates(tx, {
+            pgNos: [candidate.pgNo],
+            requireDevice: true,
+            requireInventory: true,
+          });
           await transitionInventoryStatusWithLedger(tx, {
             pgNo: candidate.pgNo,
             expectedFromStatus: INVENTORY_STATUS.sellable,
@@ -1846,6 +1937,19 @@ async function matchSingleOrderItem(
         if (isOrderMappingSnapshotChanged(error)) {
           result.conflictCount += 1;
           result.deferred = true;
+          remainingQuantity = 0;
+          break;
+        }
+
+        if (
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "MANUAL_ORDER_MATCH_INTENT_ACTIVE"
+        ) {
+          result.conflictCount += 1;
+          result.deferred = true;
+          result.failureReason = "MANUAL_ORDER_MATCH_INTENT_ACTIVE";
           remainingQuantity = 0;
           break;
         }
@@ -1974,9 +2078,11 @@ export async function matchCoupangOrders(
     const result = await matchSingleOrderItem(item, dependencies);
 
     results.push(result);
-    affectedShipmentKeys.add(
-      shipmentSnapshotKey(item.external_order_id, item.external_shipment_id)
-    );
+    if (result.failureReason !== "MANUAL_ORDER_MATCH_INTENT_ACTIVE") {
+      affectedShipmentKeys.add(
+        shipmentSnapshotKey(item.external_order_id, item.external_shipment_id)
+      );
+    }
   }
 
   const inventoryVerificationCycle =

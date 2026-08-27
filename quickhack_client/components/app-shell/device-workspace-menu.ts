@@ -78,6 +78,7 @@ export type MenuItemId =
   | "admin-sales-product-combinations"
   | "admin-channel-products"
   | "admin-channel-order-matching"
+  | "sales-channel-manual-order-match"
   | "admin-order-matching-policy"
   | "admin-staff-work-history"
   | "admin-server-logs"
@@ -476,6 +477,13 @@ export const menuGroups: MenuGroup[] = [
         minRole: "LEADER",
         icon: Store,
         description: "판매 채널별 상품 매핑과 상품 정보를 관리하는 메뉴입니다.",
+      },
+      {
+        id: "sales-channel-manual-order-match",
+        label: "주문 변경 요청",
+        minRole: "STAFF",
+        icon: PencilLine,
+        description: "기존 판매채널 주문의 고객 변경 요청에 따라 출고 PG를 직접 조정합니다.",
       },
       {
         id: "admin-channel-order-matching",

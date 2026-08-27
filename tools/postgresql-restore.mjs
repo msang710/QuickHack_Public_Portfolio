@@ -14,11 +14,16 @@ import { decryptBackupFile } from "../quickhack_server/security/backup-encryptio
 import { createBackupKeyProvider } from "../quickhack_server/security/backup-key-provider-core.mjs";
 import { readServerRuntimeConfigSync } from "../quickhack_shared/core/server-runtime-config.mjs";
 import { composeServerPlatform } from "../quickhack_server/platform/compose-server-platform.ts";
+import {
+  ACTIVE_ALLOCATION_INDEX_CONTRACT,
+  QUICKHACK_POSTGRESQL_SCHEMA_VERSION,
+  assertActiveAllocationIndex,
+  assertAppliedPostgresqlMigrations,
+} from "../quickhack_shared/core/postgresql-schema-contract.mjs";
 
 const { Pool } = pg;
 const serverPlatform = composeServerPlatform();
 const serverProcessExecution = serverPlatform.processExecution;
-const SCHEMA_VERSION = "20260811010000_postgresql_baseline";
 const PROHIBITED_TABLES = [
   "coupang_product_inquiry_raw",
   "coupang_call_center_inquiry_raw",
@@ -222,14 +227,25 @@ async function applyStagingSecurityBarrier({
   const client = await pool.connect();
   try {
     const migrations = await client.query(`
-      SELECT migration_name, finished_at, rolled_back_at
+      SELECT migration_name, checksum, finished_at, rolled_back_at
       FROM "_prisma_migrations"
       ORDER BY started_at
     `);
-    const applied = migrations.rows.filter((row) => row.finished_at && !row.rolled_back_at);
-    if (applied.length !== 1 || applied[0].migration_name !== SCHEMA_VERSION) {
-      throw new Error("The restored database schema does not match this QuickHack release.");
-    }
+    assertAppliedPostgresqlMigrations(migrations.rows);
+    const activeIndex = await client.query(
+      `SELECT index_class.relname AS index_name,
+              table_class.relname AS table_name,
+              index_meta.indisunique AS is_unique,
+              index_meta.indisvalid AS is_valid,
+              index_meta.indisready AS is_ready,
+              pg_get_expr(index_meta.indpred, index_meta.indrelid) AS predicate
+       FROM pg_catalog.pg_index AS index_meta
+       JOIN pg_catalog.pg_class AS index_class ON index_class.oid = index_meta.indexrelid
+       JOIN pg_catalog.pg_class AS table_class ON table_class.oid = index_meta.indrelid
+       WHERE index_class.relname = $1`,
+      [ACTIVE_ALLOCATION_INDEX_CONTRACT.name]
+    );
+    assertActiveAllocationIndex(activeIndex.rows[0]);
     const invalidConstraints = await client.query(`
       SELECT conname
       FROM pg_catalog.pg_constraint
@@ -435,7 +451,7 @@ export async function restoreOperationalPostgresqlBackup(input) {
     expectedDatabase: runtime.database.name,
     restoredDatabaseOwner: runtime.database.migratorUser,
     expectedApplicationVersion: packageJson.version,
-    expectedSchemaVersion: SCHEMA_VERSION,
+    expectedSchemaVersion: QUICKHACK_POSTGRESQL_SCHEMA_VERSION,
     decryptFile: (source, target) =>
       provider.withKey((key) => decryptBackupFile(source, target, key)),
     processExecution: serverProcessExecution,

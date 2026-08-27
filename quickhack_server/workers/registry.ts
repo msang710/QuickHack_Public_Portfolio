@@ -3,6 +3,7 @@ import {
   COUPANG_SYNC_WORKER_KEY,
   LOGEN_WORKER_KEY,
   OBSERVABILITY_WORKER_KEY,
+  MANUAL_ORDER_MATCH_WORKER_KEY,
   ORDER_MATCHING_WORKER_KEY,
   STATISTICS_WORKER_KEY,
 } from "@/quickhack_server/workers/worker-keys";
@@ -399,6 +400,29 @@ export const registeredWorkers: RegisteredWorker[] = [
       );
       const result = await runObservabilityTraceRetention({ context });
 
+      return {
+        summary: result,
+        summaryText: result.summaryText,
+        progressCurrent: result.deletedCount,
+        progressTotal: null,
+      };
+    },
+  },
+  {
+    key: MANUAL_ORDER_MATCH_WORKER_KEY.retention,
+    name: "Manual order match temporary data retention",
+    type: "DATABASE_MAINTENANCE",
+    defaultIntervalSeconds: 24 * 60 * 60,
+    defaultScheduleEnabled: true,
+    dailyScheduleKstTime: "04:20",
+    initialScheduleMode: "NEXT_SCHEDULE",
+    maxAttempts: 2,
+    lockSeconds: 10 * 60,
+    async run(context) {
+      const { runManualOrderMatchRetention } = await import(
+        "@/quickhack_server/sales-channel/coupang/manual-order-match-retention-service"
+      );
+      const result = await runManualOrderMatchRetention({ context });
       return {
         summary: result,
         summaryText: result.summaryText,

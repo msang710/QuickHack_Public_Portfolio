@@ -51,6 +51,7 @@ import { InspectionWorkspace } from "@/quickhack_client/components/inspection/in
 import { SensitiveMenuGate } from "@/quickhack_client/components/security/sensitive-action-guards";
 import { ChannelProductsManagerView } from "@/quickhack_client/components/sales-channel/channel-products-manager-view";
 import { ChannelOrderMatchingManagerView } from "@/quickhack_client/components/sales-channel/channel-order-matching-manager-view";
+import { ManualOrderMatchView } from "@/quickhack_client/components/sales-channel/manual-order-match-view";
 import { EmployeeActivityLogView } from "@/quickhack_client/components/admin/employee-activity-log-view";
 import { InventoryAuditView } from "@/quickhack_client/components/inventory/inventory-audit-view";
 import { InventoryEditView } from "@/quickhack_client/components/inventory/inventory-edit-view";
@@ -1904,6 +1905,10 @@ function DeviceWorkspaceContent({
           <ChannelOrderMatchingManagerView />
         </SensitiveMenuGate>
       );
+    }
+
+    if (selectedMenuId === "sales-channel-manual-order-match") {
+      return <ManualOrderMatchView user={effectiveCurrentUser} />;
     }
 
     if (selectedMenuId === "admin-order-matching-policy") {

@@ -23,27 +23,18 @@ import {
   type CarrierInvoiceStatus,
 } from "@/quickhack_shared/shipment/carrier-invoice-status";
 import { CARRIER_SHIPMENT_STATUS } from "@/quickhack_shared/shipment/carrier-tracking-status";
+import {
+  CARRIER_INVOICE_ISSUE_BATCH_STATUS,
+  CARRIER_INVOICE_ISSUE_ITEM_STATUS,
+} from "@/quickhack_shared/shipment/carrier-workflow-status";
 
 const CARRIER_CODE = "LOGEN";
 const CONFIRMED_BATCH_STATUS = "CONFIRMED";
 const FROZEN_PACKAGE_GROUP_STATUS = "FROZEN";
 const TRACKING_NUMBER_PATTERN = /^\d{11}$/;
 
-const ISSUE_BATCH_STATUS = {
-  pending: "PENDING",
-  allocating: "ALLOCATING",
-  allocated: "ALLOCATED",
-  reviewRequired: "REVIEW_REQUIRED",
-  failed: "FAILED",
-} as const;
-
-const ISSUE_ITEM_STATUS = {
-  pending: "PENDING",
-  allocated: "ALLOCATED",
-  failed: "FAILED",
-  missingResponse: "MISSING_RESPONSE",
-  conflict: "CONFLICT",
-} as const;
+const ISSUE_BATCH_STATUS = CARRIER_INVOICE_ISSUE_BATCH_STATUS;
+const ISSUE_ITEM_STATUS = CARRIER_INVOICE_ISSUE_ITEM_STATUS;
 
 const issueBatchInclude = {
   shipment_list_print_batch: {

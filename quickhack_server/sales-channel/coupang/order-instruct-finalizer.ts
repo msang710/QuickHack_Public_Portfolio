@@ -5,12 +5,14 @@ import {
 } from "@/quickhack_server/sales-channel/projection-revision-service";
 import {
   INVENTORY_QUANTITY_MOVEMENT_TYPE,
+  lockInventoryQuantityBalanceKeys,
   transitionInventoryStatusWithLedger,
 } from "@/quickhack_server/inventory/inventory-quantity-ledger-service";
 import { INVENTORY_STATUS } from "@/quickhack_shared/inventory/inventory-status";
 import { INVENTORY_TRANSITION_POLICY } from "@/quickhack_shared/inventory/inventory-write-rules";
 import { SALES_CHANNEL_WRITE_REQUEST_TYPE } from "@/quickhack_shared/sales-channel/write-requests";
 import { SALES_CHANNEL_WRITE_TARGET_EXTERNAL_STATUS } from "@/quickhack_shared/sales-channel/write-requests";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
 
 const FINALIZABLE_ALLOCATION_STATUSES = [
   "ALLOCATED",
@@ -226,22 +228,40 @@ export async function finalizePersistedCoupangOrderInstruct(input: {
     ORDER BY work_item_id ASC
     FOR UPDATE
   `;
-  const activeAllocations = await input.tx.$queryRaw<
+  const allocationRoots = await input.tx.$queryRaw<
     Array<{
+      allocation_id: number;
       external_order_id: string;
       external_shipment_id: string;
       external_vendor_item_id: string | null;
+      pg_no: string;
     }>
   >`
-    SELECT external_order_id,
+    SELECT allocation_id,
+           external_order_id,
            external_shipment_id,
-           external_vendor_item_id
+           external_vendor_item_id,
+           pg_no
     FROM match_worker_allocation
     WHERE external_shipment_id IN (${Prisma.join(shipmentIds)})
       AND allocation_status IN (${Prisma.join([...ACTIVE_ALLOCATION_STATUSES])})
     ORDER BY allocation_id ASC
-    FOR UPDATE
   `;
+  await lockDeviceAggregates(input.tx, {
+    pgNos: allocationRoots.map((allocation) => allocation.pg_no),
+    requireDevice: true,
+    requireInventory: true,
+  });
+  if (allocationRoots.length > 0) {
+    await input.tx.$queryRaw`
+      SELECT allocation_id
+      FROM match_worker_allocation
+      WHERE allocation_id IN (${Prisma.join(allocationRoots.map((row) => row.allocation_id))})
+      ORDER BY allocation_id ASC
+      FOR UPDATE
+    `;
+  }
+  const activeAllocations = allocationRoots;
   const itemKey = (item: {
     external_order_id: string;
     external_shipment_id: string;
@@ -293,7 +313,18 @@ export async function finalizePersistedCoupangOrderInstruct(input: {
         },
       },
     },
+    orderBy: { allocation_id: "asc" },
   });
+  await lockInventoryQuantityBalanceKeys(
+    input.tx,
+    allocations
+      .map((allocation) => allocation.inventory_sku_id)
+      .filter((inventorySkuId): inventorySkuId is number => Number.isSafeInteger(inventorySkuId) && Number(inventorySkuId) > 0)
+      .flatMap((inventorySkuId) => [
+        { inventorySkuId, inventoryStatus: INVENTORY_STATUS.sellable },
+        { inventorySkuId, inventoryStatus: INVENTORY_STATUS.reserved },
+      ])
+  );
   let reservedCount = 0;
 
   for (const allocation of allocations) {

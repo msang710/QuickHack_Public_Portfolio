@@ -11,6 +11,7 @@ export type SearchSelectOption = {
   label?: string;
   description?: string;
   searchText?: string;
+  receiptId?: string;
 };
 
 function normalizeOptions(
@@ -60,6 +61,9 @@ type BasePickerProps = {
   isChanged?: boolean;
   className?: string;
   inputClassName?: string;
+  onSearchChange?: (value: string) => void;
+  selectionMode?: "matching-text" | "explicit-option";
+  onSelectionInvalidated?: () => void;
 };
 
 function useAnchoredPopup(isOpen: boolean) {
@@ -151,6 +155,9 @@ export function SearchSelect({
   isChanged = false,
   className,
   inputClassName,
+  onSearchChange,
+  selectionMode = "matching-text",
+  onSelectionInvalidated,
 }: BasePickerProps & {
   onValueChange: (value: string) => void;
 }) {
@@ -176,6 +183,7 @@ export function SearchSelect({
       ? draftState.draftValue
       : selectedDisplayValue;
   const [isOpen, setIsOpen] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(-1);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const { anchorRef, popupRef, position } = useAnchoredPopup(isOpen);
   const isDisabled = disabled || readOnly;
@@ -207,7 +215,7 @@ export function SearchSelect({
       return;
     }
 
-    if (nextValue) {
+    if (nextValue && selectionMode === "matching-text") {
       const matchedOption = optionByDisplayText(normalizedOptions, nextValue);
 
       if (matchedOption && values.has(matchedOption.value)) {
@@ -225,6 +233,7 @@ export function SearchSelect({
     normalizedOptions,
     onValueChange,
     resetDraft,
+    selectionMode,
     value,
     values,
   ]);
@@ -237,6 +246,7 @@ export function SearchSelect({
         externalValue: value,
       });
       setIsOpen(false);
+      setActiveIndex(-1);
 
       if (nextValue !== value) {
         onValueChange(nextValue);
@@ -250,8 +260,13 @@ export function SearchSelect({
       externalValue: value,
     });
     setIsOpen(true);
+    setActiveIndex(-1);
+    onSearchChange?.("");
+    if (selectionMode === "explicit-option" && value) {
+      onSelectionInvalidated?.();
+    }
     window.requestAnimationFrame(() => inputRef.current?.focus());
-  }, [value]);
+  }, [onSearchChange, onSelectionInvalidated, selectionMode, value]);
 
   React.useEffect(() => {
     const anchor = anchorRef.current;
@@ -262,6 +277,7 @@ export function SearchSelect({
 
     function closePopup() {
       setIsOpen(false);
+      setActiveIndex(-1);
       resetDraft();
     }
 
@@ -294,13 +310,14 @@ export function SearchSelect({
                 </button>
               ) : null}
               {filteredOptions.length > 0 ? (
-                filteredOptions.map((option) => (
+                filteredOptions.map((option, index) => (
                   <button
                     key={option.value}
                     type="button"
                     className={cn(
                       "flex w-full items-center justify-between gap-3 rounded-sm px-3 py-1.5 text-left text-sm hover:bg-secondary",
-                      option.value === value && "bg-secondary"
+                      (option.value === value || index === activeIndex) &&
+                        "bg-secondary"
                     )}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectValue(option.value)}
@@ -350,7 +367,13 @@ export function SearchSelect({
               "border-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.24)] focus-visible:ring-emerald-500",
             inputClassName
           )}
-          onFocus={() => !isDisabled && setIsOpen(true)}
+          onFocus={() => {
+            if (!isDisabled) {
+              setIsOpen(true);
+              setActiveIndex(-1);
+              onSearchChange?.(draftValue);
+            }
+          }}
           onBlur={() => {
             window.setTimeout(() => {
               commitDraft();
@@ -358,25 +381,59 @@ export function SearchSelect({
             }, 0);
           }}
           onChange={(event) => {
+            if (
+              selectionMode === "explicit-option" &&
+              value &&
+              event.target.value !== selectedDisplayValue
+            ) {
+              onSelectionInvalidated?.();
+            }
             setDraftState({
               draftValue: event.target.value,
               externalValue: value,
             });
+            onSearchChange?.(event.target.value);
             setIsOpen(true);
+            setActiveIndex(-1);
           }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) {
               return;
             }
 
+            if (event.key === "ArrowDown" && filteredOptions.length > 0) {
+              event.preventDefault();
+              setIsOpen(true);
+              setActiveIndex((current) =>
+                current < filteredOptions.length - 1 ? current + 1 : 0
+              );
+              return;
+            }
+
+            if (event.key === "ArrowUp" && filteredOptions.length > 0) {
+              event.preventDefault();
+              setIsOpen(true);
+              setActiveIndex((current) =>
+                current > 0 ? current - 1 : filteredOptions.length - 1
+              );
+              return;
+            }
+
             if (event.key === "Enter") {
-              commitDraft();
+              event.preventDefault();
+              const activeOption = filteredOptions[activeIndex];
+              if (activeOption) {
+                selectValue(activeOption.value);
+              } else {
+                commitDraft();
+              }
               event.currentTarget.blur();
             }
 
             if (event.key === "Escape") {
               resetDraft();
               setIsOpen(false);
+              setActiveIndex(-1);
               event.currentTarget.blur();
             }
           }}

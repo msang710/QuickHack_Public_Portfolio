@@ -105,6 +105,8 @@ export class RuntimeConfigService {
         policies: {
           coupangWriteApiEnabled: false,
           logenWriteApiEnabled: false,
+          manualOrderMatchReadEnabled: false,
+          manualOrderMatchMutationEnabled: false,
         },
         endpoints: {
           remoteServerUrl: trimTrailingSlashes(
@@ -157,6 +159,9 @@ export class RuntimeConfigService {
       policies: {
         coupangWriteApiEnabled: serverConfig.coupangWriteApiEnabled,
         logenWriteApiEnabled: serverConfig.logenWriteApiEnabled,
+        manualOrderMatchReadEnabled: serverConfig.manualOrderMatchReadEnabled,
+        manualOrderMatchMutationEnabled:
+          serverConfig.manualOrderMatchMutationEnabled,
       },
       endpoints: {
         remoteServerUrl: "",

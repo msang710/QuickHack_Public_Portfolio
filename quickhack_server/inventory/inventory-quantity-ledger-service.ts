@@ -3,6 +3,7 @@ import {
   completeDomainOperationKey,
   digestDomainOperation,
   insertOrObserve,
+  lockAggregateKey,
   lockAggregateRow,
   reserveDomainOperationKey,
 } from "@/quickhack_server/core/database/aggregate-command";
@@ -26,6 +27,36 @@ export { INVENTORY_QUANTITY_MOVEMENT_TYPE } from "@/quickhack_shared/inventory/i
 
 type TransactionClient = Prisma.TransactionClient;
 
+type InventoryQuantityBalanceKey = {
+  inventorySkuId: number;
+  inventoryStatus: string;
+};
+
+export function buildInventoryQuantityBalanceLockPlan(
+  keys: readonly InventoryQuantityBalanceKey[]
+) {
+  return Object.freeze([...new Set(keys.map((key) => {
+    if (!Number.isSafeInteger(key.inventorySkuId) || key.inventorySkuId <= 0) {
+      throw new Error("inventorySkuId 값이 올바르지 않습니다.");
+    }
+    return `${key.inventorySkuId}:${requiredText(key.inventoryStatus, "inventoryStatus")}`;
+  }))].sort());
+}
+
+export async function lockInventoryQuantityBalanceKeys(
+  tx: TransactionClient,
+  keys: readonly InventoryQuantityBalanceKey[]
+) {
+  const sortedKeys = buildInventoryQuantityBalanceLockPlan(keys);
+  for (const key of sortedKeys) {
+    await lockAggregateKey(tx, {
+      namespace: "inventory-quantity-balance",
+      key,
+    });
+  }
+  return sortedKeys;
+}
+
 function assertPublicInventoryRule(work: () => void) {
   try {
     work();
@@ -48,6 +79,11 @@ type MovementContext = {
   actorUserId?: number | null;
   workerJobId?: number | null;
   occurredAt?: DateTimeInput;
+  beforeBalanceLock?: (input: {
+    inventorySkuId: number;
+    fromStatus: string;
+    toStatus: string;
+  }) => Promise<void>;
 };
 
 function requiredText(value: unknown, label: string) {
@@ -401,6 +437,17 @@ export async function transitionInventoryStatusWithLedger(
       `PG ${pgNo}의 재고 SKU를 확정할 수 없습니다.`
     );
   }
+
+  await input.beforeBalanceLock?.({
+    inventorySkuId: sku.inventory_sku_id,
+    fromStatus,
+    toStatus,
+  });
+
+  await lockInventoryQuantityBalanceKeys(tx, [
+    { inventorySkuId: sku.inventory_sku_id, inventoryStatus: fromStatus },
+    { inventorySkuId: sku.inventory_sku_id, inventoryStatus: toStatus },
+  ]);
 
   const updated = await tx.inventory.updateMany({
     where: {

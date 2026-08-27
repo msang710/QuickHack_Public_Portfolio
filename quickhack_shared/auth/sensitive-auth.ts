@@ -61,6 +61,7 @@ export function sensitiveActionForMenu(menuId: string): SensitiveAction | null {
       return SENSITIVE_ACTIONS.channelProducts;
     case "admin-channel-order-matching":
     case "admin-order-matching-policy":
+    case "sales-channel-manual-order-match":
       return SENSITIVE_ACTIONS.channelOrderMatching;
     case "inventory-edit":
       return SENSITIVE_ACTIONS.inventoryEdit;

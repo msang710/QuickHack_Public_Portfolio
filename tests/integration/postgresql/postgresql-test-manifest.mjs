@@ -188,6 +188,14 @@ test:sales-channel-write-failures
 test:sales-channel-write-review-ownership
 test:coupang-targeted-write-verification
 test:order-matching-integration
+test:manual-order-match-contract
+test:manual-order-match-source-completion
+test:manual-order-match-execution
+test:manual-order-match-retention
+test:manual-order-match-priority-soak
+test:manual-order-match-priority-randomized-soak
+test:postgresql-schema-contract
+test:inventory-lock-plan
 test:shipment-print-batch-state
 test:shipment-partial-return-print
 test:shipment-order-projections

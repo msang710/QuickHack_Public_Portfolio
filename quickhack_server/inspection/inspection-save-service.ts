@@ -33,6 +33,7 @@ import {
   databaseNow,
 } from "@/quickhack_server/core/database/time-boundary";
 import { assignCurrentInventorySkuToDevice } from "@/quickhack_server/catalog/inventory-sku-service";
+import { normalizePgNo as normalizeCanonicalPgNo } from "@/quickhack_shared/inventory/pg-no";
 
 // QuickHack object: 구글 시트식 한글 컬럼명과 DB 저장 로직 사이의 필드명을 한곳에 모읍니다.
 const FIELD = {
@@ -487,7 +488,7 @@ async function saveInspectionRows(
 }
 
 function normalizePgNo(value: string) {
-  return value.trim().toUpperCase();
+  return normalizeCanonicalPgNo(value);
 }
 
 function isValidPgNo(value: string) {

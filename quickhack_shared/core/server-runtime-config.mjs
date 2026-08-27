@@ -18,6 +18,8 @@ const CONFIG_KEYS = new Set([
   "environment",
   "coupangWriteApiEnabled",
   "logenWriteApiEnabled",
+  "manualOrderMatchReadEnabled",
+  "manualOrderMatchMutationEnabled",
   "dataDirectory",
   "backupRetentionCount",
   "database",
@@ -140,6 +142,8 @@ export function defaultSourceServerRuntimeConfig(sourceRoot) {
     environment: "development",
     coupangWriteApiEnabled: true,
     logenWriteApiEnabled: true,
+    manualOrderMatchReadEnabled: true,
+    manualOrderMatchMutationEnabled: false,
     dataDirectory: path.join(path.resolve(sourceRoot), "database"),
     backupRetentionCount: 30,
     database: {
@@ -280,6 +284,26 @@ export function validateServerRuntimeConfig(value) {
     );
   }
 
+  if (
+    value.manualOrderMatchReadEnabled !== undefined &&
+    typeof value.manualOrderMatchReadEnabled !== "boolean"
+  ) {
+    fail(
+      "SERVER_RUNTIME_CONFIG_INVALID",
+      "서버 런타임 설정의 manualOrderMatchReadEnabled 값이 올바르지 않습니다."
+    );
+  }
+
+  if (
+    value.manualOrderMatchMutationEnabled !== undefined &&
+    typeof value.manualOrderMatchMutationEnabled !== "boolean"
+  ) {
+    fail(
+      "SERVER_RUNTIME_CONFIG_INVALID",
+      "서버 런타임 설정의 manualOrderMatchMutationEnabled 값이 올바르지 않습니다."
+    );
+  }
+
   const dataDirectoryText = String(value.dataDirectory ?? "").trim();
   if (!dataDirectoryText || !path.isAbsolute(dataDirectoryText)) {
     fail(
@@ -303,6 +327,9 @@ export function validateServerRuntimeConfig(value) {
     environment: enumValue(value.environment, ENVIRONMENTS, "environment"),
     coupangWriteApiEnabled: value.coupangWriteApiEnabled,
     logenWriteApiEnabled: value.logenWriteApiEnabled,
+    manualOrderMatchReadEnabled: value.manualOrderMatchReadEnabled ?? false,
+    manualOrderMatchMutationEnabled:
+      value.manualOrderMatchMutationEnabled ?? false,
     dataDirectory: path.normalize(path.resolve(dataDirectoryText)),
     backupRetentionCount,
     database: validateDatabaseConfig(value.database, packageFlavor),

@@ -47,6 +47,8 @@ const developmentConfig = {
   environment: "development",
   coupangWriteApiEnabled: true,
   logenWriteApiEnabled: false,
+  manualOrderMatchReadEnabled: true,
+  manualOrderMatchMutationEnabled: false,
   dataDirectory: developmentDataDirectory,
   backupRetentionCount: 17,
   database: {
@@ -81,6 +83,8 @@ assert.equal(development.production, false);
 assert.equal(development.role, "server");
 assert.equal(development.policies.coupangWriteApiEnabled, true);
 assert.equal(development.policies.logenWriteApiEnabled, false);
+assert.equal(development.policies.manualOrderMatchReadEnabled, true);
+assert.equal(development.policies.manualOrderMatchMutationEnabled, false);
 assert.equal(
   development.paths.dataDir,
   path.win32.normalize(developmentConfig.dataDirectory)

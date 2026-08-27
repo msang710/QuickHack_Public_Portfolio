@@ -19,4 +19,8 @@ export const OBSERVABILITY_WORKER_KEY = {
   traceRetention: "observability-trace-retention",
 } as const;
 
+export const MANUAL_ORDER_MATCH_WORKER_KEY = {
+  retention: "manual-order-match-retention",
+} as const;
+
 export const ORDER_MATCHING_WORKER_KEY = "coupang-order-matching";

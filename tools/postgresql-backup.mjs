@@ -13,8 +13,8 @@ import {
 import { createBackupKeyProvider } from "../quickhack_server/security/backup-key-provider-core.mjs";
 import { readServerRuntimeConfigSync } from "../quickhack_shared/core/server-runtime-config.mjs";
 import { composeServerPlatform } from "../quickhack_server/platform/compose-server-platform.ts";
+import { QUICKHACK_POSTGRESQL_SCHEMA_VERSION } from "../quickhack_shared/core/postgresql-schema-contract.mjs";
 
-const SCHEMA_VERSION = "20260811010000_postgresql_baseline";
 const serverPlatform = composeServerPlatform();
 const serverProcessExecution = serverPlatform.processExecution;
 
@@ -81,7 +81,7 @@ export async function runOperationalPostgresqlBackup(input) {
       privateDirectory: context.privateDirectory,
       backupDirectory: context.backupDirectory,
       applicationVersion: packageJson.version,
-      schemaVersion: SCHEMA_VERSION,
+      schemaVersion: QUICKHACK_POSTGRESQL_SCHEMA_VERSION,
       encryptFile: (source, target) =>
         context.provider.withKey((key) => encryptBackupFile(source, target, key)),
       processExecution: serverProcessExecution,

@@ -12,6 +12,7 @@ import {
   setOperationTraceUserId,
   traceOperationSpan,
 } from "@/quickhack_server/observability/operation-trace";
+import { normalizePgNo } from "@/quickhack_shared/inventory/pg-no";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ type RouteContext = {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   const params = await context.params;
-  const pgNo = String(params.pgNo || "").trim().toUpperCase();
+  const pgNo = normalizePgNo(params.pgNo);
 
   if (isClientRuntime()) {
     return proxyToServer(

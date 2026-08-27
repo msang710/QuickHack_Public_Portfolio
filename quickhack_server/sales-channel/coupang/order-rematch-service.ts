@@ -5,6 +5,7 @@ import { publicBadRequest, publicConflict } from "@/quickhack_server/core/public
 import { activityLogChangeData } from "@/quickhack_server/audit/structured-log-values";
 import {
   INVENTORY_QUANTITY_MOVEMENT_TYPE,
+  lockInventoryQuantityBalanceKeys,
   transitionInventoryStatusWithLedger,
 } from "@/quickhack_server/inventory/inventory-quantity-ledger-service";
 import { runMeasuredTransaction } from "@/quickhack_server/observability/transaction-trace";
@@ -23,6 +24,8 @@ import type { AuthUser } from "@/quickhack_shared/auth/auth-constants";
 import { INVENTORY_STATUS } from "@/quickhack_shared/inventory/inventory-status";
 import { INVENTORY_TRANSITION_POLICY } from "@/quickhack_shared/inventory/inventory-write-rules";
 import { INVENTORY_MATCH_STATUSES } from "@/quickhack_shared/sales-channel/order-matching";
+import { lockDeviceAggregates } from "@/quickhack_server/inventory/device-aggregate-lock";
+import { filterTargetsWithoutManualOrderMatchIntent } from "@/quickhack_server/sales-channel/coupang/manual-order-match-intent-service";
 
 const COUPANG_CHANNEL = "COUPANG";
 const REVERSIBLE_ALLOCATION_STATUSES = ["ALLOCATED", "API_ACKED"] as const;
@@ -32,6 +35,7 @@ type RematchMatcher = typeof matchCoupangOrders;
 type OrderRematchDependencies = {
   workerLease: OwnedWorkerLeaseGuard;
   runMatcher?: RematchMatcher;
+  beforeManualIntentCheck?: () => Promise<void>;
 };
 
 type ManagedOrderRematchDependencies = {
@@ -130,14 +134,23 @@ async function lockEligibleRematchTargets(
     `;
   }
 
-  for (const pgNo of pgNos) {
-    await tx.$queryRaw`
-      SELECT inventory_id
-      FROM inventory
-      WHERE pg_no = ${pgNo}
-      FOR UPDATE
-    `;
-  }
+  const lockedDevices = await lockDeviceAggregates(tx, {
+    pgNos,
+    requireDevice: true,
+    requireInventory: true,
+  });
+  const inventorySkuIds = lockedDevices.devices
+    .map((device) => device.row?.inventory_sku_id ?? null)
+    .filter(
+      (inventorySkuId): inventorySkuId is number => inventorySkuId !== null
+    );
+  await lockInventoryQuantityBalanceKeys(
+    tx,
+    inventorySkuIds.flatMap((inventorySkuId) => [
+      { inventorySkuId, inventoryStatus: INVENTORY_STATUS.sellable },
+      { inventorySkuId, inventoryStatus: INVENTORY_STATUS.reserved },
+    ])
+  );
 
   for (const allocation of allocationRows) {
     await tx.$queryRaw`
@@ -161,6 +174,7 @@ function isWorkerLeaseLostError(error: unknown) {
 async function resetEligibleOrders(input: {
   manifestToken: string;
   user: AuthUser;
+  beforeManualIntentCheck?: () => Promise<void>;
 }) {
   return runMeasuredTransaction(
     prisma,
@@ -179,8 +193,13 @@ async function resetEligibleOrders(input: {
         );
       }
 
-      const initialEligibleShipments = initialPreview.items.filter(
+      await input.beforeManualIntentCheck?.();
+      const initialEligibility = initialPreview.items.filter(
         (item) => item.eligible
+      );
+      const initialEligibleShipments = await filterTargetsWithoutManualOrderMatchIntent(
+        tx,
+        initialEligibility
       );
 
       if (initialEligibleShipments.length === 0) {
@@ -206,8 +225,12 @@ async function resetEligibleOrders(input: {
         );
       }
 
-      const eligibleShipments = lockedPreview.items.filter(
+      const lockedEligibility = lockedPreview.items.filter(
         (item) => item.eligible
+      );
+      const eligibleShipments = await filterTargetsWithoutManualOrderMatchIntent(
+        tx,
+        lockedEligibility
       );
 
       const resetAt = databaseNow();
@@ -450,7 +473,11 @@ export async function resetAndRematchCoupangOrders(
   await assertWorkerLeaseActive(workerLease);
 
   try {
-    reset = await resetEligibleOrders({ manifestToken, user });
+    reset = await resetEligibleOrders({
+      manifestToken,
+      user,
+      beforeManualIntentCheck: dependencies.beforeManualIntentCheck,
+    });
   } catch (error) {
     if (isTransactionConflict(error)) {
       throw publicConflict(

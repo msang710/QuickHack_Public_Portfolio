@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { resolvePostgresqlConnectionStringSync } from "../quickhack_server/core/database/postgresql-credential.mjs";
 import { serverRuntimeConfigService as runtimeConfigService } from "../quickhack_server/platform/server-runtime.ts";
+import {
+  ACTIVE_ALLOCATION_INDEX_CONTRACT,
+  assertActiveAllocationIndex,
+  assertAppliedPostgresqlMigrations,
+} from "../quickhack_shared/core/postgresql-schema-contract.mjs";
 
 const { Pool } = pg;
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,6 +21,85 @@ const APPEND_ONLY_TABLES = [
   "employee_activity_logs",
   "employee_activity_log_changes",
 ];
+const ACTIVE_ALLOCATION_STATUSES = ACTIVE_ALLOCATION_INDEX_CONTRACT.statuses;
+
+async function migrationTableExists(client) {
+  const result = await client.query(
+    `SELECT to_regclass('public."_prisma_migrations"') IS NOT NULL AS exists`
+  );
+  return result.rows[0]?.exists === true;
+}
+
+async function requireManualAllocationIndexReadiness(client) {
+  if (!(await migrationTableExists(client))) return;
+  const applied = await client.query(
+    `SELECT migration_name FROM "_prisma_migrations"
+     WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`
+  );
+  if (
+    applied.rows.some(
+      (row) => row.migration_name === "20260826143000_active_allocation_pg_unique"
+    )
+  ) {
+    return;
+  }
+  const runtime = runtimeConfigService.read();
+  if (runtime.policies.manualOrderMatchMutationEnabled) {
+    throw new Error(
+      "Manual order matching mutation must be disabled before applying the active allocation index."
+    );
+  }
+  const [runningWorkers, invalidAllocations] = await Promise.all([
+    client.query(
+      `SELECT worker_key FROM server_worker_jobs
+       WHERE status = 'RUNNING'
+         AND worker_type IN ('ORDER_MATCHING', 'COUPANG_SYNC', 'CARRIER_SYNC')
+       LIMIT 1`
+    ),
+    client.query(
+      `SELECT pg_no
+       FROM match_worker_allocation
+       WHERE allocation_status = ANY($1::text[])
+       GROUP BY pg_no
+       HAVING COUNT(*) > 1 OR pg_no !~ '^[A-Z]{2}[0-9]{10}$'
+       LIMIT 1`,
+      [ACTIVE_ALLOCATION_STATUSES]
+    ),
+  ]);
+  if (runningWorkers.rowCount !== 0) {
+    throw new Error(
+      "Order, channel, and carrier workers must be drained before applying the active allocation index."
+    );
+  }
+  if (invalidAllocations.rowCount !== 0) {
+    throw new Error(
+      "Active allocation readiness failed before applying the unique index."
+    );
+  }
+}
+
+async function assertCurrentSchemaContract(client) {
+  const migrations = await client.query(
+    `SELECT migration_name, checksum, finished_at, rolled_back_at
+     FROM "_prisma_migrations"
+     ORDER BY started_at`
+  );
+  assertAppliedPostgresqlMigrations(migrations.rows);
+  const indexes = await client.query(
+    `SELECT index_class.relname AS index_name,
+            table_class.relname AS table_name,
+            index_meta.indisunique AS is_unique,
+            index_meta.indisvalid AS is_valid,
+            index_meta.indisready AS is_ready,
+            pg_get_expr(index_meta.indpred, index_meta.indrelid) AS predicate
+     FROM pg_catalog.pg_index AS index_meta
+     JOIN pg_catalog.pg_class AS index_class ON index_class.oid = index_meta.indexrelid
+     JOIN pg_catalog.pg_class AS table_class ON table_class.oid = index_meta.indrelid
+     WHERE index_class.relname = $1`,
+    [ACTIVE_ALLOCATION_INDEX_CONTRACT.name]
+  );
+  assertActiveAllocationIndex(indexes.rows[0]);
+}
 
 function quoteIdentifier(value) {
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(value)) {
@@ -100,7 +184,9 @@ export async function deployPostgresqlMigrations() {
   const client = await pool.connect();
   try {
     await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
+    await requireManualAllocationIndexReadiness(client);
     const result = await runPrismaMigrateDeploy(runtimeConfigPath);
+    await assertCurrentSchemaContract(client);
     await grantApplicationPrivileges(client);
     return result;
   } finally {

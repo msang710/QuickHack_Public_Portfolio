@@ -20,6 +20,8 @@ function runtimeConfig(directory) {
     environment: "development",
     coupangWriteApiEnabled: true,
     logenWriteApiEnabled: true,
+    manualOrderMatchReadEnabled: true,
+    manualOrderMatchMutationEnabled: true,
     dataDirectory: directory,
     backupRetentionCount: 30,
     database: {

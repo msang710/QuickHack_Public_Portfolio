@@ -46,6 +46,7 @@ import type { WorkerLeaseGuard } from "@/quickhack_server/workers/types";
 import { addSeconds, quickHackClock } from "@/quickhack_shared/core/time";
 import { CARRIER_INVOICE_STATUS } from "@/quickhack_shared/shipment/carrier-invoice-status";
 import { ACTIVE_CARRIER_INVOICE_REPLACEMENT_STATUSES } from "@/quickhack_shared/shipment/invoice-replacement";
+import { CARRIER_REGISTRATION_WORK_STATUS } from "@/quickhack_shared/shipment/carrier-workflow-status";
 import { CARRIER_SHIPMENT_STATUS } from "@/quickhack_shared/shipment/carrier-tracking-status";
 
 const TRACKING_NUMBER_PATTERN = /^\d{11}$/;
@@ -59,16 +60,7 @@ const ELIGIBLE_CHANNEL_STATUSES = new Set([
   "FINAL_DELIVERY",
 ]);
 
-const WORK_STATUS = {
-  pending: "PENDING",
-  prepared: "PREPARED",
-  submitting: "SUBMITTING",
-  retryWaiting: "RETRY_WAITING",
-  reconciling: "RECONCILING",
-  registered: "REGISTERED",
-  blocked: "BLOCKED",
-  reviewRequired: "REVIEW_REQUIRED",
-} as const;
+const WORK_STATUS = CARRIER_REGISTRATION_WORK_STATUS;
 
 const AUTOMATIC_WORK_STATUSES = [
   WORK_STATUS.pending,

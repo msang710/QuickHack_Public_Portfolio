@@ -111,7 +111,9 @@ export async function createSellableDeviceFixtures(
   const timestamp = databaseTimestamp(input.timestamp);
 
   for (let index = 1; index <= input.count; index += 1) {
-    const pgNo = `${catalog.prefix}-PG-${index}`;
+    const fixtureSequence =
+      BigInt(catalog.sku.inventory_sku_id) * 1000n + BigInt(index);
+    const pgNo = `IT${fixtureSequence.toString().padStart(10, "0")}`;
 
     await prisma.devices.create({
       data: {

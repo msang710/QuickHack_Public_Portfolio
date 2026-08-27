@@ -29,6 +29,7 @@ import {
   requiredApiDate,
   requiredApiDateTime,
 } from "@/quickhack_server/core/database/time-boundary";
+import { normalizePgNo } from "@/quickhack_shared/inventory/pg-no";
 
 const DEVICE_WORKSPACE_BATCH_SIZE = 200;
 export const deviceAllocationSelect = {
@@ -482,7 +483,7 @@ export async function getDeviceDetailByPgNo(
   pgNo: string,
   owner: PrismaClient = prisma
 ) {
-  const normalizedPgNo = pgNo.trim().toUpperCase();
+  const normalizedPgNo = normalizePgNo(pgNo);
   if (!normalizedPgNo) return null;
 
   return runConsistentReadSnapshot(

@@ -16,9 +16,9 @@ import {
 } from "@/quickhack_server/security/backup-encryption";
 import { getRuntimeConfig } from "@/quickhack_shared/core/runtime";
 import { composeServerPlatform } from "@/quickhack_server/platform/compose-server-platform";
+import { QUICKHACK_POSTGRESQL_SCHEMA_VERSION } from "@/quickhack_shared/core/postgresql-schema-contract.mjs";
 
-export const QUICKHACK_POSTGRESQL_SCHEMA_VERSION =
-  "20260811010000_postgresql_baseline";
+export { QUICKHACK_POSTGRESQL_SCHEMA_VERSION };
 
 const serverProcessExecution = composeServerPlatform().processExecution;
 
