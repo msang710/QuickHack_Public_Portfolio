@@ -99,9 +99,15 @@ assert.deepEqual(packageJson.overrides, {
   "@prisma/config": {
     "deepmerge-ts": "8.0.0",
   },
-}, "Prisma config의 GHSA-ggr8-5vv4-36mx 보정 외 dependency override를 허용하지 않습니다.");
+  browserslist: "4.28.8",
+  "fast-uri": "4.1.4",
+  mysql2: "3.24.3",
+}, "검토된 dependency 보안 보정 외 override를 허용하지 않습니다.");
 const packageLock = JSON.parse(await readProjectFile("package-lock.json"));
 assert.equal(packageLock.packages["node_modules/deepmerge-ts"]?.version, "8.0.0");
+assert.equal(packageLock.packages["node_modules/browserslist"]?.version, "4.28.8");
+assert.equal(packageLock.packages["node_modules/fast-uri"]?.version, "4.1.4");
+assert.equal(packageLock.packages["node_modules/mysql2"]?.version, "3.24.3");
 assert.equal(packageJson.scripts["audit:dependencies"], "npm audit --package-lock-only --audit-level=low");
 assert.equal(
   packageJson.scripts["test:dependency-security-policy"],
