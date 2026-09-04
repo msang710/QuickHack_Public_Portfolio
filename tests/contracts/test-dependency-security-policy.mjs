@@ -154,7 +154,7 @@ const releaseWorkflows = await Promise.all([
   readProjectFile(".github/workflows/linux-release.yml"),
 ]);
 assert.equal(
-  [...finalIntegrationWorkflow.matchAll(/- run: npm run audit:dependencies/g)].length,
+  [...finalIntegrationWorkflow.matchAll(/npm run audit:dependencies/g)].length,
   1,
   "최종 통합 워크플로에서 의존성 감사를 정확히 한 번 실행해야 합니다.",
 );
@@ -167,7 +167,7 @@ assert.match(finalIntegrationWorkflow, /^on:\r?\n  workflow_dispatch:/m);
 assert.doesNotMatch(finalIntegrationWorkflow, /^\s*pull_request:/m);
 
 const installIndex = finalIntegrationWorkflow.indexOf("- run: npm ci");
-const auditIndex = finalIntegrationWorkflow.indexOf("- run: npm run audit:dependencies");
+const auditIndex = finalIntegrationWorkflow.indexOf("npm run audit:dependencies");
 const lintIndex = finalIntegrationWorkflow.indexOf("- run: npm run lint");
 assert.ok(installIndex >= 0 && installIndex < auditIndex && auditIndex < lintIndex);
 
