@@ -338,6 +338,7 @@ export function FunctionInspectionEditTable({
               <TableCell>
                 <Input
                   value={row.pg}
+                  placeholder={t("placeholders.pgAuto")}
                   onChange={(event) =>
                     updateFunctionRow(row.id, {
                       pg: event.target.value.toUpperCase(),

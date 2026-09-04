@@ -90,11 +90,17 @@ import { Tabs, TabsContent } from "@/quickhack_client/components/ui/tabs";
 import type { AuthUser } from "@/quickhack_shared/auth/auth-constants";
 import {
   CLIENT_RECORD_ID,
+  CLIENT_RECORD_KIND_COLUMN,
+  CLIENT_PG_RESERVATION_STATUSES,
   DISCOUNT_CHECK_URL,
   INSPECTION_RECORD_KINDS,
+  PG_RESERVATION_ERROR_COLUMN,
+  PG_RESERVATION_EXPIRES_AT_COLUMN,
+  PG_RESERVATION_STATUS_COLUMN,
   UPLOAD_STATUSES,
   UPLOAD_STATUS_COLUMN,
   createInspectionRecord,
+  createUploadRecord,
   getRecordLabel,
   hasActualDefectText,
   isValidFirstCallDateInput,
@@ -130,7 +136,19 @@ const INSPECTION_FUNCTION_DRAFT_FORM_ID = "inspection.function-draft";
 type UploadResult = {
   ok: boolean;
   label: string;
+  clientRecordId?: string;
   errorCode?: string;
+};
+
+type PgReservationResponse = {
+  ok: boolean;
+  code?: string;
+  result?: {
+    clientRecordId: string;
+    pgNo: string;
+    status: string;
+    expiresAt: string;
+  };
 };
 
 type UploadResponse = {
@@ -425,14 +443,73 @@ export function InspectionWorkspace({
     setRecords(normalizeInspectionRecordKinds);
   }, [setRecords]);
 
+  async function reservePgForRecord(record: InspectionRecordWithStatus) {
+    const recordId = record[CLIENT_RECORD_ID];
+    try {
+      const response = await fetch("/api/inspection-pg-reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientRecordId: recordId,
+          inspectionKind: record[CLIENT_RECORD_KIND_COLUMN],
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | PgReservationResponse
+        | null;
+      if (
+        !response.ok ||
+        !payload?.result?.pgNo ||
+        payload.result.status !== "RESERVED"
+      ) {
+        throw new Error(payload?.code ?? "PG_ISSUANCE_FAILED");
+      }
+      setRecords((current) =>
+        current.map((item) =>
+          item[CLIENT_RECORD_ID] === recordId
+            ? {
+                ...item,
+                PG: payload.result!.pgNo,
+                [PG_RESERVATION_STATUS_COLUMN]: CLIENT_PG_RESERVATION_STATUSES.reserved,
+                [PG_RESERVATION_EXPIRES_AT_COLUMN]: payload.result!.expiresAt,
+                [PG_RESERVATION_ERROR_COLUMN]: undefined,
+              }
+            : item
+        )
+      );
+      showMessage(t("messages.pgIssued", { pg: payload.result.pgNo }));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "PG_ISSUANCE_FAILED";
+      setRecords((current) =>
+        current.map((item) =>
+          item[CLIENT_RECORD_ID] === recordId
+            ? {
+                ...item,
+                [PG_RESERVATION_STATUS_COLUMN]: CLIENT_PG_RESERVATION_STATUSES.failed,
+                [PG_RESERVATION_ERROR_COLUMN]: code,
+              }
+            : item
+        )
+      );
+      showMessage(t("messages.pgIssueFailed", { code }), "warning");
+    }
+  }
+
   function addOrUpdateRecord(
     record: InspectionRecord,
     kind: InspectionRecordKind
   ) {
-    const label = getRecordLabel(record);
+    if (record.PG) {
+      const label = getRecordLabel(record);
+      setRecords((current) => mergeInspectionRecord(current, record, kind).records);
+      showMessage(t("messages.recordApplied", { label }));
+      return;
+    }
 
-    setRecords((current) => mergeInspectionRecord(current, record, kind).records);
-    showMessage(t("messages.recordApplied", { label }));
+    const pendingRecord = createUploadRecord(record, kind);
+    setRecords((current) => [...current, pendingRecord]);
+    showMessage(t("messages.pgIssuing"));
+    void reservePgForRecord(pendingRecord);
   }
 
   function handleAddAppearanceRecord() {
@@ -441,13 +518,9 @@ export function InspectionWorkspace({
       return;
     }
 
-    const validation = validateBarcodeInput(appearancePg, "PG");
-
-    if (!validation.ok) {
-      showMessage(barcodeValidationMessage(validation.code), "warning");
-      setAppearancePg("");
-      return;
-    }
+    const validation = appearancePg.trim()
+      ? validateBarcodeInput(appearancePg, "PG")
+      : { ok: true as const, value: "", code: "BARCODE_VALID" as const };
 
     addOrUpdateRecord(
       createInspectionRecord({
@@ -483,12 +556,14 @@ export function InspectionWorkspace({
   }
 
   function commitFunctionRow(row: FunctionRow) {
-    if (!row.pg || !row.imei) {
+    if (!row.imei) {
       showMessage(t("messages.functionRequired"), "warning");
       return false;
     }
 
-    const pgValidation = validateBarcodeInput(row.pg, "PG");
+    const pgValidation = row.pg
+      ? validateBarcodeInput(row.pg, "PG")
+      : { ok: true as const, value: "", code: "BARCODE_VALID" as const };
     const imeiValidation = validateBarcodeInput(row.imei, "IMEI");
 
     if (!pgValidation.ok) {
@@ -890,17 +965,41 @@ export function InspectionWorkspace({
     );
   }, [isUploading, selectedRecordIds, t, toggleSelectedRecord]);
 
-  function deleteSelectedRecords() {
+  async function deleteSelectedRecords() {
     if (selectedRecordIds.size === 0) {
       showMessage(t("messages.selectDelete"), "warning");
       return;
     }
 
+    const reservedRecordIds = records
+      .filter(
+        (record) =>
+          selectedRecordIds.has(record[CLIENT_RECORD_ID]) &&
+          record[PG_RESERVATION_STATUS_COLUMN] === CLIENT_PG_RESERVATION_STATUSES.reserved
+      )
+      .map((record) => record[CLIENT_RECORD_ID]);
+
+    const abandonResults = await Promise.allSettled(
+      reservedRecordIds.map((recordId) =>
+        fetch(`/api/inspection-pg-reservations/${encodeURIComponent(recordId)}`, {
+          method: "DELETE",
+        }).then((response) => {
+          if (!response.ok) throw new Error("PG_RESERVATION_ABANDON_FAILED");
+        })
+      )
+    );
+
     setRecords((current) =>
       current.filter((record) => !selectedRecordIds.has(record[CLIENT_RECORD_ID]))
     );
     setSelectedRecordIds(new Set());
-    showMessage(t("messages.deleteComplete"));
+    const failedCount = abandonResults.filter((result) => result.status === "rejected").length;
+    showMessage(
+      failedCount
+        ? t("messages.deleteReservationWarning", { count: failedCount })
+        : t("messages.deleteComplete"),
+      failedCount ? "warning" : "success"
+    );
   }
 
   const updateAppearanceReturnYn = React.useCallback((recordId: string, value: "Y" | "N") => {
@@ -921,6 +1020,17 @@ export function InspectionWorkspace({
     }
 
     const recordIdSet = new Set(recordIds);
+    const reservationPending = records.filter(
+      (record) =>
+        recordIdSet.has(record[CLIENT_RECORD_ID]) &&
+        (!record.PG ||
+          record[PG_RESERVATION_STATUS_COLUMN] === CLIENT_PG_RESERVATION_STATUSES.issuing ||
+          record[PG_RESERVATION_STATUS_COLUMN] === CLIENT_PG_RESERVATION_STATUSES.failed)
+    );
+    if (reservationPending.length > 0) {
+      showMessage(t("messages.pgNotReady", { count: reservationPending.length }), "warning");
+      return;
+    }
     const uploadItems = records
       .filter((record) => recordIdSet.has(record[CLIENT_RECORD_ID]))
       .map((record) => ({
@@ -1100,6 +1210,7 @@ export function InspectionWorkspace({
                 <FieldLabel label="PG">
                   <Input
                     value={appearancePg}
+                    placeholder={t("appearance.pgPlaceholder")}
                     onChange={(event) => setAppearancePg(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {

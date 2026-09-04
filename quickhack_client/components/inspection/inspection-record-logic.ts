@@ -13,14 +13,27 @@ import {
 
 export function recordForUpload(
   record: InspectionRecordWithStatus
-): InspectionRecord {
+): {
+  clientRecordId: string;
+  inspectionKind: InspectionRecordKind;
+  record: InspectionRecord;
+} {
   const uploadRecord = createInspectionRecord({});
 
   for (const column of RECORD_COLUMNS) {
     uploadRecord[column] = record[column];
   }
 
-  return uploadRecord;
+  const inspectionKind =
+    record[CLIENT_RECORD_KIND_COLUMN] ?? inferLegacyInspectionRecordKind(record);
+  if (!inspectionKind) {
+    throw new Error("Inspection record kind is required for upload.");
+  }
+  return {
+    clientRecordId: record[CLIENT_RECORD_ID],
+    inspectionKind,
+    record: uploadRecord,
+  };
 }
 
 function hasAppearanceStamp(record: InspectionRecord) {

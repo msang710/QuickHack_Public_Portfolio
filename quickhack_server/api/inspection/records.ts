@@ -83,8 +83,8 @@ export async function POST(request: NextRequest) {
   const results = await traceOperationSpan("SERVICE_WRITE", async () => {
     const savedResults = [];
 
-    for (const record of records) {
-      if (!isObject(record)) {
+    for (const item of records) {
+      if (!isObject(item)) {
         savedResults.push({
           ok: false,
           label: "-",
@@ -93,19 +93,31 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      const envelope = isObject(item.record) ? item : null;
+      const record = envelope ? item.record : item;
+      if (!isObject(record)) {
+        savedResults.push({ ok: false, label: "-", errorCode: "INSPECTION_RECORD_INVALID" });
+        continue;
+      }
+      const clientRecordId = envelope ? String(envelope.clientRecordId ?? "").trim() : null;
+      const inspectionKind = envelope ? String(envelope.inspectionKind ?? "").trim() : null;
       const label = String(record.PG || record.IMEI || "-");
 
       try {
         const result = await saveInspectionRecord(
           prisma,
           record as Partial<InspectionRecord> & Record<string, unknown>,
-          user.userId
+          user.userId,
+          clientRecordId && (inspectionKind === "appearance" || inspectionKind === "function")
+            ? { clientRecordId, inspectionKind }
+            : undefined
         );
-        savedResults.push({ ok: true, label, result });
+        savedResults.push({ ok: true, clientRecordId, label: result.pg_no, result });
       } catch (error) {
         markOperationTraceFailed(error, "INSPECTION_RECORD_SAVE_FAILED");
         savedResults.push({
           ok: false,
+          clientRecordId,
           label,
           errorCode:
             error instanceof PublicError

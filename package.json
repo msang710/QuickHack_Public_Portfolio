@@ -148,6 +148,8 @@
     "test:client-http-trace": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-client-http-trace.mjs",
     "test:server-proxy-query": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-server-proxy-query-forwarding.mjs",
     "test:unsaved-changes": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-unsaved-changes.mjs",
+    "test:inspection-pg-issuance": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-inspection-pg-issuance.mjs",
+    "test:inspection-pg-issuance:postgresql": "node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-inspection-pg-issuance.mjs",
     "test:mobile-registration-draft-state": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-mobile-registration-draft-state.mjs",
     "test:mobile-activation-claim": "node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-mobile-activation-claim.mjs",
     "test:mobile-packing-integrity": "node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-mobile-packing-integrity.mjs",

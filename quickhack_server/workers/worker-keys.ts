@@ -24,3 +24,7 @@ export const MANUAL_ORDER_MATCH_WORKER_KEY = {
 } as const;
 
 export const ORDER_MATCHING_WORKER_KEY = "coupang-order-matching";
+
+export const INSPECTION_PG_WORKER_KEY = {
+  retention: "inspection-pg-reservation-retention",
+} as const;

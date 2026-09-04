@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { inferStoredDeviceStatus } from "@/quickhack_server/inspection/device-status";
 import {
   createInspectionRecord,
+  deriveInspectionRecordKind,
   saleGradeFromAppearanceGrade,
   type InspectionRecord,
 } from "@/quickhack_shared/inspection/inspection-schema";
@@ -34,6 +35,11 @@ import {
 } from "@/quickhack_server/core/database/time-boundary";
 import { assignCurrentInventorySkuToDevice } from "@/quickhack_server/catalog/inventory-sku-service";
 import { normalizePgNo as normalizeCanonicalPgNo } from "@/quickhack_shared/inventory/pg-no";
+import {
+  consumeLockedInspectionPg,
+  lockInspectionPgReservation,
+  lockInspectionPgReservationByPg,
+} from "@/quickhack_server/inspection/pg-issuance-service";
 
 // QuickHack object: 구글 시트식 한글 컬럼명과 DB 저장 로직 사이의 필드명을 한곳에 모읍니다.
 const FIELD = {
@@ -527,8 +533,10 @@ function validateInspectionRecordInput(record: InspectionRecordInput) {
 export async function saveInspectionRecord(
   client: PrismaClient,
   record: InspectionRecordInput,
-  userId?: number | null
+  userId?: number | null,
+  reservationContext?: { clientRecordId: string; inspectionKind: "appearance" | "function" }
 ) {
+  const activeReservationContext = reservationContext;
   const normalizedRecord = createInspectionRecord(record);
   const pgNo = validateInspectionRecordInput(normalizedRecord);
 
@@ -536,6 +544,34 @@ export async function saveInspectionRecord(
 
   return runMeasuredTransaction(client, "inspection.record.save", async (tx) => {
     await lockAggregateKey(tx, { namespace: "device-inbound", key: pgNo });
+    const reservation = activeReservationContext
+      ? await lockInspectionPgReservation(tx, activeReservationContext.clientRecordId)
+      : null;
+    if (reservation) {
+      if (reservation.status === "CONSUMED" && reservation.result_payload) {
+        return reservation.result_payload as ReturnType<typeof inspectionResultShape>;
+      }
+      if (reservation.status !== "RESERVED") {
+        throw publicConflict("PG_RESERVATION_NOT_ACTIVE", "PG_RESERVATION_NOT_ACTIVE");
+      }
+      if (reservation.expires_at.getTime() <= timestamp.getTime()) {
+        throw publicConflict("PG_RESERVATION_EXPIRED", "PG_RESERVATION_EXPIRED");
+      }
+      const derivedKind = deriveInspectionRecordKind(normalizedRecord);
+      if (
+        reservation.pg_no !== pgNo ||
+        reservation.inspection_kind !== activeReservationContext?.inspectionKind ||
+        derivedKind !== activeReservationContext?.inspectionKind
+      ) {
+        throw publicConflict("PG_RESERVATION_MISMATCH", "PG_RESERVATION_MISMATCH");
+      }
+    }
+    if (!reservation) {
+      const pgReservation = await lockInspectionPgReservationByPg(tx, pgNo);
+      if (pgReservation?.status === "RESERVED") {
+        throw publicConflict("PG_RESERVED_FOR_INSPECTION_ROW", "PG_RESERVED_FOR_INSPECTION_ROW");
+      }
+    }
     await lockDeviceAggregateRow(tx, pgNo);
 
     const existingDevice = await tx.devices.findUnique({
@@ -673,14 +709,17 @@ export async function saveInspectionRecord(
       );
     }
 
-    const result = {
+    const result = inspectionResultShape({
       pg_no: device.pg_no,
       device_id: device.device_id,
       inbound_id: inbound.inbound_id,
       inspection_id: inspections[0]?.inspection_id ?? null,
       inspection_ids: inspections.map((inspection) => inspection.inspection_id),
       status: nextInboundStatus,
-    };
+    });
+    if (reservation) {
+      await consumeLockedInspectionPg(tx, reservation, result, userId ?? null);
+    }
     const { publishDesktopNotification } = await import(
       "@/quickhack_server/notifications/desktop-notification-service"
     );
@@ -696,4 +735,15 @@ export async function saveInspectionRecord(
     });
     return result;
   });
+}
+
+function inspectionResultShape<T extends {
+  pg_no: string;
+  device_id: number;
+  inbound_id: number;
+  inspection_id: number | null;
+  inspection_ids: number[];
+  status: string;
+}>(value: T) {
+  return value;
 }

@@ -25,6 +25,17 @@ export const RECORD_COLUMNS = [
 export const UPLOAD_STATUS_COLUMN = "업로드상태";
 export const CLIENT_RECORD_ID = "__clientRecordId";
 export const CLIENT_RECORD_KIND_COLUMN = "__inspectionKind";
+export const PG_RESERVATION_STATUS_COLUMN = "__pgReservationStatus";
+export const PG_RESERVATION_ERROR_COLUMN = "__pgReservationErrorCode";
+export const PG_RESERVATION_EXPIRES_AT_COLUMN = "__pgReservationExpiresAt";
+
+export const CLIENT_PG_RESERVATION_STATUSES = {
+  idle: "IDLE",
+  issuing: "ISSUING",
+  reserved: "RESERVED",
+  failed: "FAILED",
+  abandoning: "ABANDONING",
+} as const;
 
 export const INSPECTION_RECORD_KINDS = {
   appearance: "appearance",
@@ -114,6 +125,10 @@ export type InspectionRecordWithStatus = InspectionRecord & {
   [CLIENT_RECORD_ID]: string;
   [UPLOAD_STATUS_COLUMN]: UploadStatus;
   [CLIENT_RECORD_KIND_COLUMN]?: InspectionRecordKind;
+  [PG_RESERVATION_STATUS_COLUMN]?:
+    (typeof CLIENT_PG_RESERVATION_STATUSES)[keyof typeof CLIENT_PG_RESERVATION_STATUSES];
+  [PG_RESERVATION_ERROR_COLUMN]?: string;
+  [PG_RESERVATION_EXPIRES_AT_COLUMN]?: string;
 };
 
 export function normalizeBarcode(value: string) {
@@ -511,6 +526,9 @@ export function createUploadRecord(
       globalThis.crypto?.randomUUID?.() ??
       `record-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     [UPLOAD_STATUS_COLUMN]: UPLOAD_STATUSES.pending,
+    [PG_RESERVATION_STATUS_COLUMN]: values.PG
+      ? CLIENT_PG_RESERVATION_STATUSES.idle
+      : CLIENT_PG_RESERVATION_STATUSES.issuing,
     ...(kind ? { [CLIENT_RECORD_KIND_COLUMN]: kind } : {}),
   };
 }

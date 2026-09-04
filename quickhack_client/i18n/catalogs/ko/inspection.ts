@@ -49,6 +49,7 @@ export const inspectionKo = {
     manual: "수동",
     placeholders: {
       carrier: "통신사 선택",
+      pgAuto: "비우면 PG 자동 발급",
       product: "제품명 선택",
       productSearch: "제품명 또는 모델코드 검색",
       storage: "저장공간 선택",
@@ -96,12 +97,13 @@ export const inspectionKo = {
     record: { selectAria: "{label} 선택" },
     messages: {
       invalidBarcode: "작업 상태 : PG 또는 IMEI 바코드 형식이 아닙니다.", barcode: { BARCODE_EMPTY: "작업 상태 : 바코드 값이 비어 있습니다.", PG_INVALID: "작업 상태 : PG는 알파벳 2자리와 숫자 10자리 형식이어야 합니다.", IMEI_INVALID: "작업 상태 : IMEI는 숫자 15자리 형식이어야 합니다.", BARCODE_VALID: "작업 상태 : 바코드 입력을 확인했습니다." }, adbDeviceLoadFailed: "연결 기기 조회에 실패했습니다.", adbActionFailed: "ADB 작업 실행에 실패했습니다.",
-      popupBlocked: "작업 상태 : 팝업 창이 차단되었습니다. 브라우저 팝업 허용을 확인하세요.", recordApplied: "작업 상태 : {label} 등록 내역 반영", invalidBatch: "작업 상태 : 차수는 1 이상의 숫자로 입력하세요.", raw: "작업 상태 : {message}", functionRequired: "작업 상태 : PG와 IMEI를 모두 입력해야 기능 검수 내역에 반영됩니다.", invalidFirstCall: "작업 상태 : 최초통화일은 YYYY-MM-DD, YYYYMMDD, 0000-00-00 형식으로 입력하세요.", scansApplied: "작업 상태 : 스캔 {scans, number}건 반영", scansRegistered: " / 등록 {count, number}건", selectDefectRow: "작업 상태 : 기능하자를 적용할 행을 선택하세요.", defectApplied: "작업 상태 : 기능하자 적용 완료", rowAdded: "작업 상태 : 기능 검수 행 추가", refreshingDevices: "작업 상태 : 연결 기기 새로고침 중...", devicesLoaded: "작업 상태 : ADB 작업 대상 {devices, number}대 조회 완료 / 작업 가능 {ready, number}대", virtualExcluded: " / 가상 포트 {count, number}개 제외", discountOpened: "작업 상태 : 약정조회 사이트 열기", selectAdb: "작업 상태 : ADB 작업을 실행할 연결 기기를 선택하세요.", connectedOnly: "작업 상태 : ADB 작업은 연결됨 상태의 기기에서만 실행할 수 있습니다.", recoveryConfirm: "선택한 실제 기기 {count, number}대를 리커버리 모드로 재부팅할까요?\n{preview}{suffix}\n계정이 남아 있으면 초기화 후 FRP 잠금이 걸릴 수 있습니다.", recoveryRemainder: " 외 {count, number}대", recoveryCanceled: "작업 상태 : 리커버리 모드 실행 취소", actionRunning: "작업 상태 : {action} 실행 중...", actionComplete: "작업 상태 : {action} 완료 / 성공 {success, number}대 / 실패 {failed, number}대", noActionableDevice: " / 작업 가능한 기기 없음", actionFailed: "작업 상태 : {action} 실패 - {message}", selectDelete: "작업 상태 : 삭제할 행을 선택하세요.", deleteComplete: "작업 상태 : 선택 행 삭제 완료", supplierReturn: "작업 상태 : 매입처 반품 {value} 적용", noUpload: "작업 상태 : 업로드할 내역이 없습니다.", uploadComplete: "작업 상태 : {title} 완료 / 성공 {success, number}건 / 실패 {failed, number}건", uploadFailed: "작업 상태 : 업로드 실패 - {message}", adbRefresh: "ADB 연결 기기 새로고침"
+      popupBlocked: "작업 상태 : 팝업 창이 차단되었습니다. 브라우저 팝업 허용을 확인하세요.", recordApplied: "작업 상태 : {label} 등록 내역 반영", pgIssuing: "작업 상태 : PG 발급 중", pgIssued: "작업 상태 : PG {pg} 발급 완료", pgIssueFailed: "작업 상태 : PG 발급 실패 - {code}", pgNotReady: "작업 상태 : PG 발급이 완료되지 않은 내역 {count, number}건은 업로드할 수 없습니다.", deleteReservationWarning: "작업 상태 : 선택 행은 삭제했지만 PG 예약 {count, number}건의 해제 기록은 서버에서 확인이 필요합니다.", invalidBatch: "작업 상태 : 차수는 1 이상의 숫자로 입력하세요.", raw: "작업 상태 : {message}", functionRequired: "작업 상태 : IMEI를 입력해야 기능 검수 내역에 반영됩니다.", invalidFirstCall: "작업 상태 : 최초통화일은 YYYY-MM-DD, YYYYMMDD, 0000-00-00 형식으로 입력하세요.", scansApplied: "작업 상태 : 스캔 {scans, number}건 반영", scansRegistered: " / 등록 {count, number}건", selectDefectRow: "작업 상태 : 기능하자를 적용할 행을 선택하세요.", defectApplied: "작업 상태 : 기능하자 적용 완료", rowAdded: "작업 상태 : 기능 검수 행 추가", refreshingDevices: "작업 상태 : 연결 기기 새로고침 중...", devicesLoaded: "작업 상태 : ADB 작업 대상 {devices, number}대 조회 완료 / 작업 가능 {ready, number}대", virtualExcluded: " / 가상 포트 {count, number}개 제외", discountOpened: "작업 상태 : 약정조회 사이트 열기", selectAdb: "작업 상태 : ADB 작업을 실행할 연결 기기를 선택하세요.", connectedOnly: "작업 상태 : ADB 작업은 연결됨 상태의 기기에서만 실행할 수 있습니다.", recoveryConfirm: "선택한 실제 기기 {count, number}대를 리커버리 모드로 재부팅할까요?\n{preview}{suffix}\n계정이 남아 있으면 초기화 후 FRP 잠금이 걸릴 수 있습니다.", recoveryRemainder: " 외 {count, number}대", recoveryCanceled: "작업 상태 : 리커버리 모드 실행 취소", actionRunning: "작업 상태 : {action} 실행 중...", actionComplete: "작업 상태 : {action} 완료 / 성공 {success, number}대 / 실패 {failed, number}대", noActionableDevice: " / 작업 가능한 기기 없음", actionFailed: "작업 상태 : {action} 실패 - {message}", selectDelete: "작업 상태 : 삭제할 행을 선택하세요.", deleteComplete: "작업 상태 : 선택 행 삭제 완료", supplierReturn: "작업 상태 : 매입처 반품 {value} 적용", noUpload: "작업 상태 : 업로드할 내역이 없습니다.", uploadComplete: "작업 상태 : {title} 완료 / 성공 {success, number}건 / 실패 {failed, number}건", uploadFailed: "작업 상태 : 업로드 실패 - {message}", adbRefresh: "ADB 연결 기기 새로고침"
     },
     appearance: {
       color: "공식 색상명",
       colorPlaceholder: "공식 색상명 선택",
       colorSearch: "공식 색상명 검색",
+      pgPlaceholder: "비우면 PG 자동 발급",
       defect: "외관하자",
       defectEmpty: "선택된 하자 없음",
       grade: "외관등급",
