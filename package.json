@@ -469,7 +469,10 @@
   "overrides": {
     "@prisma/config": {
       "deepmerge-ts": "8.0.0"
-    }
+    },
+    "browserslist": "4.28.8",
+    "fast-uri": "4.1.4",
+    "mysql2": "3.24.3"
   },
   "allowScripts": {
     "electron@44.0.0": true,
