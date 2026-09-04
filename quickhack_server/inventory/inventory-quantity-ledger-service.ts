@@ -63,9 +63,7 @@ function assertPublicInventoryRule(work: () => void) {
   } catch (error) {
     throw publicConflict(
       "INVENTORY_STATE_CONFLICT",
-      error instanceof Error
-        ? error.message
-        : "현재 재고 상태에서는 요청한 작업을 처리할 수 없습니다."
+      "INVENTORY_STATE_CONFLICT"
     );
   }
 }
@@ -266,7 +264,7 @@ async function applyQuantityDelta(
   if (updated.count !== 1) {
     throw publicConflict(
       "INVENTORY_QUANTITY_CONCURRENT_CHANGE",
-      "재고 수량 잔액이 동시에 변경되어 처리를 중단했습니다."
+      "INVENTORY_QUANTITY_CONCURRENT_CHANGE"
     );
   }
 
@@ -324,7 +322,7 @@ export async function transitionInventoryStatusWithLedger(
   if (!inventoryRow) {
     throw publicNotFound(
       "INVENTORY_NOT_FOUND",
-      `재고 행을 찾을 수 없습니다: ${pgNo}`
+      "INVENTORY_NOT_FOUND"
     );
   }
 
@@ -404,7 +402,7 @@ export async function transitionInventoryStatusWithLedger(
   ) {
     throw publicConflict(
       "INVENTORY_STATE_CONFLICT",
-      `재고 상태 충돌: ${pgNo}의 현재 상태는 ${fromStatus}, 예상 상태는 ${input.expectedFromStatus}입니다.`
+      "INVENTORY_STATE_CONFLICT"
     );
   }
 
@@ -434,7 +432,7 @@ export async function transitionInventoryStatusWithLedger(
   if (!sku) {
     throw publicConflict(
       "INVENTORY_SKU_INCOMPLETE",
-      `PG ${pgNo}의 재고 SKU를 확정할 수 없습니다.`
+      "INVENTORY_SKU_INCOMPLETE"
     );
   }
 
@@ -467,7 +465,7 @@ export async function transitionInventoryStatusWithLedger(
   if (updated.count !== 1) {
     throw publicConflict(
       "INVENTORY_STATE_CONCURRENT_CHANGE",
-      `재고 상태가 동시에 변경되어 처리를 중단했습니다: ${pgNo}`
+      "INVENTORY_STATE_CONCURRENT_CHANGE"
     );
   }
 
@@ -514,7 +512,7 @@ export async function recordInventoryCreatedWithLedger(
   if (!sku) {
     throw publicConflict(
       "INVENTORY_SKU_INCOMPLETE",
-      `PG ${input.pgNo}의 재고 SKU를 확정할 수 없습니다.`
+      "INVENTORY_SKU_INCOMPLETE"
     );
   }
 
@@ -587,7 +585,7 @@ export async function reclassifyInventorySkuWithLedger(
     if (inventoryCount > 0 && movementCount === 0) {
       throw publicUnavailable(
         "INVENTORY_LEDGER_NOT_READY",
-        "재고 수량 원장의 기초 수량이 아직 확정되지 않았습니다. 재고 수량 원장 점검 worker를 먼저 실행해 주세요."
+        "INVENTORY_LEDGER_NOT_READY"
       );
     }
 

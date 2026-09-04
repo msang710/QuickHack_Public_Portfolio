@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   BadgeDollarSign,
   CheckCheck,
@@ -95,6 +97,8 @@ const PURCHASE_PRICE_CRITERIA_FORM_ID = "inbound.purchase-price-criteria";
 
 // QuickHack object: 상품 기준 조합별 매입가를 날짜와 조건 메모 기준으로 입력하는 화면입니다.
 export function PurchasePriceCriteriaRateView() {
+  const t = useTranslations("inbound.purchasePriceRate");
+  const locale = useLocale();
   const [criteria, setCriteria] = React.useState<ProductCriteriaPayload | null>(
     null
   );
@@ -229,16 +233,16 @@ export function PurchasePriceCriteriaRateView() {
     return Array.from(rowsByKey.values()).sort((a, b) =>
       [a.model, a.storage].join(" ").localeCompare(
         [b.model, b.storage].join(" "),
-        "ko-KR"
+        locale
       )
     );
-  }, [criteria]);
+  }, [criteria, locale]);
   const storageOptions = React.useMemo(
     () =>
       Array.from(new Set(allCriteriaRows.map((row) => row.storage))).sort(
-        (a, b) => a.localeCompare(b, "ko-KR")
+        (a, b) => a.localeCompare(b, locale)
       ),
-    [allCriteriaRows]
+    [allCriteriaRows, locale]
   );
   const gradeOptions = React.useMemo(() => {
     const seen = new Set<number>();
@@ -343,7 +347,7 @@ export function PurchasePriceCriteriaRateView() {
 
   useUnsavedForm({
     id: PURCHASE_PRICE_CRITERIA_FORM_ID,
-    label: `${priceDate} 매입가 기준`,
+    label: t("unsaved.label", { date: priceDate }),
     isDirty: hasDraftEntries,
     isBusy: isSaving,
     discard: discardPriceDrafts,
@@ -364,7 +368,7 @@ export function PurchasePriceCriteriaRateView() {
           | null;
 
         if (!criteriaResponse.ok || !payload?.ok || !payload.data) {
-          throw new Error(payload?.message || "상품 기준값을 불러오지 못했습니다.");
+          throw new Error(legacyApiMessage(payload, t("message.criteriaLoadFailed")));
         }
 
         if (!ignore) {
@@ -387,7 +391,7 @@ export function PurchasePriceCriteriaRateView() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     let ignore = false;
@@ -428,12 +432,12 @@ export function PurchasePriceCriteriaRateView() {
         )) as PurchasePriceApiResponse | null;
 
         if (!response.ok || !payload?.ok) {
-          throw new Error(payload?.message || "매입가 기준을 불러오지 못했습니다.");
+          throw new Error(legacyApiMessage(payload, t("message.rateLoadFailed")));
         }
 
         if (!previousResponse.ok || !previousPayload?.ok) {
           throw new Error(
-            previousPayload?.message || "전일 매입가 기준을 불러오지 못했습니다."
+            previousPayload?.message || t("message.previousRateLoadFailed")
           );
         }
 
@@ -446,7 +450,7 @@ export function PurchasePriceCriteriaRateView() {
           previousResponseContext?.priceDate !== previousPriceDate ||
           previousResponseContext.note !== conditionNote
         ) {
-          throw new Error("요청한 날짜와 조건이 아닌 매입가 응답을 받았습니다.");
+          throw new Error(t("message.queryMismatch"));
         }
 
         if (!ignore && requestGenerationRef.current === generation) {
@@ -477,7 +481,7 @@ export function PurchasePriceCriteriaRateView() {
     return () => {
       ignore = true;
     };
-  }, [conditionNote, previousPriceDate, priceDate]);
+  }, [conditionNote, previousPriceDate, priceDate, t]);
 
   function defaultDraftForCell() {
     return {
@@ -526,7 +530,7 @@ export function PurchasePriceCriteriaRateView() {
       const next = { ...current };
 
       for (const target of targets) {
-        const previousPriceText = target.previousPrice.toLocaleString("ko-KR");
+        const previousPriceText = target.previousPrice.toLocaleString(locale);
 
         if (checked) {
           next[target.key] = {
@@ -553,7 +557,7 @@ export function PurchasePriceCriteriaRateView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [PURCHASE_PRICE_CRITERIA_FORM_ID],
-      targetLabel: `${value || "미지정"} 매입가 기준 열기`,
+      targetLabel: t("unsaved.openDate", { date: value || "-" }),
       action: () => setPriceDate(value),
     });
   }
@@ -566,20 +570,20 @@ export function PurchasePriceCriteriaRateView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [PURCHASE_PRICE_CRITERIA_FORM_ID],
-      targetLabel: `${value || "기본"} 조건 매입가 열기`,
+      targetLabel: t("unsaved.openCondition", { condition: value || "-" }),
       action: () => setConditionNote(value),
     });
   }
 
   async function saveChangedRates() {
     if (!queryReady) {
-      setMessage("현재 날짜와 조건의 매입가 기준을 불러온 뒤 저장해 주세요.");
+      setMessage(t("message.loadBeforeSave"));
       setMessageTone("warning");
       return;
     }
 
     if (changedDraftEntries.length === 0 || isSaving) {
-      setMessage("저장할 매입가를 입력하세요. ");
+      setMessage(t("message.priceRequired"));
       setMessageTone("warning");
       return;
     }
@@ -593,14 +597,11 @@ export function PurchasePriceCriteriaRateView() {
         const purchasePrice = parsePriceInput(draft.purchasePrice);
 
         if (!cell) {
-          throw new Error("매입가 저장 대상 조합을 확인할 수 없습니다. ");
+          throw new Error(t("message.targetMissing"));
         }
 
         if (purchasePrice === null) {
-          throw new Error(
-            cell.appearanceGrade +
-              " 매입가를 숫자로 입력하세요."
-          );
+          throw new Error(t("message.invalidPrice", { grade: cell.appearanceGrade }));
         }
 
         return {
@@ -625,14 +626,14 @@ export function PurchasePriceCriteriaRateView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "매입가 기준 저장에 실패했습니다. ");
+        throw new Error(legacyApiMessage(payload, t("message.saveFailed")));
       }
 
       if (
         payload.queryContext?.priceDate !== priceDate ||
         payload.queryContext.note !== conditionNote
       ) {
-        throw new Error("저장한 날짜와 조건이 아닌 매입가 응답을 받았습니다.");
+        throw new Error(t("message.saveMismatch"));
       }
 
       const refreshDeferred = payload.receipt?.refreshRequired === true;
@@ -657,8 +658,8 @@ export function PurchasePriceCriteriaRateView() {
       setLoadedQueryKey(currentQueryKey);
       setMessage(
         refreshDeferred
-          ? `${payload.message || "매입가 기준을 저장했습니다."} 전체 목록은 새로고침해 확인하세요.`
-          : payload.message || "매입가 기준을 저장했습니다. "
+          ? t("message.savedRefresh", { message: t("message.saved") })
+          : t("message.saved")
       );
       setMessageTone(refreshDeferred ? "warning" : "success");
     } catch (error) {
@@ -672,20 +673,20 @@ export function PurchasePriceCriteriaRateView() {
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4 p-5">
       <SummaryStrip className="grid-cols-4">
-        <SummaryCell icon={Database} label="기종/용량 조합" value={totalCriteriaCount} />
+        <SummaryCell icon={Database} label={t("summary.combinations")} value={totalCriteriaCount} />
         <SummaryCell
           icon={BadgeDollarSign}
-          label="저장된 매입가"
+          label={t("summary.savedRates")}
           value={rates.length}
         />
         <SummaryCell
           icon={ListChecks}
-          label="표시 행"
+          label={t("summary.rows")}
           value={criteriaRows.length}
         />
         <SummaryCell
           icon={CheckCheck}
-          label="입력 셀"
+          label={t("summary.changedCells")}
           value={changedDraftEntries.length}
         />
       </SummaryStrip>
@@ -693,7 +694,7 @@ export function PurchasePriceCriteriaRateView() {
       <section className="grid gap-3 rounded-md border bg-popover p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid w-[170px] gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">적용일</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("effectiveDate")}</span>
             <Input
               type="date"
               value={priceDate}
@@ -706,20 +707,20 @@ export function PurchasePriceCriteriaRateView() {
             onChange={requestConditionNoteChange}
           />
           <SearchInput
-            label="기종 검색"
+            label={t("filters.modelSearch")}
             wrapperClassName="min-w-[240px] flex-1"
-            placeholder="기종명 또는 모델코드 검색"
+            placeholder={t("filters.modelPlaceholder")}
             value={query}
             onValueChange={setQuery}
           />
           <label className="grid w-[140px] gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">용량</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("filters.storage")}</span>
             <Select value={storageFilter} onValueChange={setStorageFilter}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">전체</SelectItem>
+                <SelectItem value="ALL">{t("filters.all")}</SelectItem>
                 {storageOptions.map((storage) => (
                   <SelectItem key={storage} value={storage}>
                     {storage}
@@ -729,13 +730,13 @@ export function PurchasePriceCriteriaRateView() {
             </Select>
           </label>
           <label className="grid w-[140px] gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">외관등급</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("filters.appearanceGrade")}</span>
             <Select value={gradeFilter} onValueChange={setGradeFilter}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">전체</SelectItem>
+                <SelectItem value="ALL">{t("filters.all")}</SelectItem>
                 {gradeOptions.map((grade) => (
                   <SelectItem
                     key={grade.optionId}
@@ -748,7 +749,7 @@ export function PurchasePriceCriteriaRateView() {
             </Select>
           </label>
           <label className="grid w-[150px] gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">표시</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("filters.priceStatus")}</span>
             <Select
               value={priceStatus}
               onValueChange={(value) =>
@@ -759,9 +760,9 @@ export function PurchasePriceCriteriaRateView() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="unpriced">매입가 미입력</SelectItem>
-                <SelectItem value="priced">매입가 입력됨</SelectItem>
-                <SelectItem value="all">전체</SelectItem>
+                <SelectItem value="unpriced">{t("filters.unpriced")}</SelectItem>
+                <SelectItem value="priced">{t("filters.priced")}</SelectItem>
+                <SelectItem value="all">{t("filters.all")}</SelectItem>
               </SelectContent>
             </Select>
           </label>
@@ -771,7 +772,7 @@ export function PurchasePriceCriteriaRateView() {
             disabled={!queryReady || !hasDraftEntries || isSaving}
           >
             <X className="size-4" />
-            입력 초기화
+            {t("actions.reset")}
           </Button>
           <Button
             onClick={() => void saveChangedRates()}
@@ -779,10 +780,8 @@ export function PurchasePriceCriteriaRateView() {
           >
             <Save className="size-4" />
             {isSaving
-              ? "저장중"
-              : "입력 셀 " +
-                changedDraftEntries.length.toLocaleString("ko-KR") +
-                "개 저장"}
+              ? t("actions.saving")
+              : t("actions.save", { count: changedDraftEntries.length })}
           </Button>
         </div>
 
@@ -809,8 +808,8 @@ export function PurchasePriceCriteriaRateView() {
       {isLoadingSkus || isLoadingRates ? (
         <div className="text-xs text-muted-foreground">
           {isLoadingSkus
-            ? "매입가 입력 기준 조합을 불러오는 중입니다."
-            : "매입가 기준을 불러오는 중입니다."}
+            ? t("loading.criteria")
+            : t("loading.rates")}
         </div>
       ) : null}
     </section>

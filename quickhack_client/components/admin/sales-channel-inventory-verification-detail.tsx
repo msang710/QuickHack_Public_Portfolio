@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   AlertTriangle,
   Database,
@@ -15,7 +16,6 @@ import {
   formatSalesChannelSyncCheckDate,
   inventoryVerificationStatusVariant,
   isInventoryVerificationRecheckable,
-  SALES_CHANNEL_INVENTORY_VERIFICATION_STATUS_LABELS,
 } from "@/quickhack_client/components/admin/sales-channel-sync-check-presentation";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -69,6 +69,23 @@ export function SalesChannelInventoryVerificationDetail({
   onRecheck: () => void | Promise<void>;
   onRepair: () => void | Promise<void>;
 }) {
+  const t = useTranslations("admin.inventoryVerification");
+  const syncT = useTranslations("admin.syncCheck");
+  const locale = useLocale();
+  const formatOptions = {
+    locale,
+    unknownLabel: syncT("format.unknown"),
+    anyLabel: syncT("format.any"),
+    randomLabel: syncT("format.random"),
+  };
+  const statusLabel = {
+    PENDING: t("status.pending"),
+    CHECKING: t("status.checking"),
+    MATCHED: t("status.matched"),
+    MISMATCH: t("status.mismatch"),
+    CHECK_FAILED: t("status.checkFailed"),
+    SKIPPED: t("status.skipped"),
+  }[item.verificationStatus];
   const [repairDialogOpen, setRepairDialogOpen] = React.useState(false);
   const recheckable = isInventoryVerificationRecheckable(
     item.verificationStatus
@@ -88,25 +105,23 @@ export function SalesChannelInventoryVerificationDetail({
     <div>
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-background px-4 py-3">
         <PackageSearch className="size-4 text-red-700" />
-        <h3 className="text-sm font-semibold">재고 점검 #{item.id}</h3>
+        <h3 className="text-sm font-semibold">{t("title", { id: item.id })}</h3>
         <Badge
           className="ml-auto"
           variant={inventoryVerificationStatusVariant(item.verificationStatus)}
         >
-          {SALES_CHANNEL_INVENTORY_VERIFICATION_STATUS_LABELS[
-            item.verificationStatus
-          ] ?? item.verificationStatus}
+          {statusLabel}
         </Badge>
       </div>
 
       <DescriptionList className="px-4 py-2">
         <DescriptionRow
-          label="채널"
+          label={t("fields.channel")}
           value={item.channel || "-"}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="상품 ID"
+          label={t("fields.productId")}
           value={
             <span className="break-all font-mono text-xs">
               {item.externalProductId || "-"}
@@ -124,7 +139,7 @@ export function SalesChannelInventoryVerificationDetail({
           labelWidth="116px"
         />
         <DescriptionRow
-          label="외부 옵션"
+          label={t("fields.externalOption")}
           value={
             <span className="break-words">
               {item.externalOptionName || "-"}
@@ -133,33 +148,35 @@ export function SalesChannelInventoryVerificationDetail({
           labelWidth="116px"
         />
         <DescriptionRow
-          label="판매 오퍼"
+          label={t("fields.offer")}
           value={item.offerCode || "-"}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="모델"
+          label={t("fields.model")}
           value={item.model || "-"}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="용량"
+          label={t("fields.storage")}
           value={formatSalesChannelInventoryOption(
             item.storageMatchMode,
-            item.storage
+            item.storage,
+            formatOptions
           )}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="색상"
+          label={t("fields.color")}
           value={formatSalesChannelInventoryOption(
             item.colorMatchMode,
-            item.color
+            item.color,
+            formatOptions
           )}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="보증"
+          label={t("fields.warranty")}
           value={item.warranty || "-"}
           labelWidth="116px"
         />
@@ -169,72 +186,72 @@ export function SalesChannelInventoryVerificationDetail({
         <div className="mb-3 flex items-center gap-2">
           <Database className="size-4 text-muted-foreground" />
           <h4 className="text-xs font-semibold text-muted-foreground">
-            수량 판정 근거
+            {t("quantity.title")}
           </h4>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <QuantityCard
-            label="원장 판매가능"
-            value={formatSalesChannelQuantity(item.ledgerQuantity)}
+            label={t("quantity.ledger")}
+            value={formatSalesChannelQuantity(item.ledgerQuantity, formatOptions)}
           />
           <QuantityCard
-            label="미반영 주문"
-            value={formatSalesChannelQuantity(item.pendingOrderQuantity)}
+            label={t("quantity.pending")}
+            value={formatSalesChannelQuantity(item.pendingOrderQuantity, formatOptions)}
           />
           <QuantityCard
-            label="기대 채널"
-            value={formatSalesChannelQuantity(item.expectedChannelQuantity)}
+            label={t("quantity.expected")}
+            value={formatSalesChannelQuantity(item.expectedChannelQuantity, formatOptions)}
           />
           <QuantityCard
-            label="실제 채널"
-            value={formatSalesChannelQuantity(item.channelQuantity)}
+            label={t("quantity.actual")}
+            value={formatSalesChannelQuantity(item.channelQuantity, formatOptions)}
           />
           <div className="sm:col-span-2">
             <QuantityCard
-              label="차이 (실제 - 기대)"
-              value={formatSalesChannelDifference(item.difference)}
+              label={t("quantity.difference")}
+              value={formatSalesChannelDifference(item.difference, formatOptions)}
               tone={differenceTone}
             />
           </div>
         </div>
         <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          기대 채널수량 = max(0, 원장 판매가능수량 - 미반영 주문수량)
+          {t("quantity.formula")}
         </p>
       </div>
 
       <DescriptionList className="border-t border-border px-4 py-2">
         <DescriptionRow
-          label="기준 버전"
+          label={t("fields.desiredVersion")}
           value={item.desiredVersion}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="처리 버전"
+          label={t("fields.processingVersion")}
           value={item.processingVersion ?? "-"}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="최근 점검"
+          label={t("fields.lastChecked")}
           value={formatSalesChannelSyncCheckDate(item.lastCheckedAt)}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="불일치 시작"
+          label={t("fields.mismatchSince")}
           value={formatSalesChannelSyncCheckDate(item.mismatchSince)}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="점검 실패 횟수"
+          label={t("fields.retries")}
           value={item.retryCount}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="해소 시각"
+          label={t("fields.resolvedAt")}
           value={formatSalesChannelSyncCheckDate(item.resolvedAt)}
           labelWidth="116px"
         />
         <DescriptionRow
-          label="최근 오류"
+          label={t("fields.lastError")}
           value={
             <span className="break-words">
               {[item.lastErrorCode, item.lastErrorMessage]
@@ -245,7 +262,7 @@ export function SalesChannelInventoryVerificationDetail({
           labelWidth="116px"
         />
         <DescriptionRow
-          label="API 로그 / 작업"
+          label={t("fields.apiJob")}
           value={`${item.lastApiCallLogId ?? "-"} / ${item.lastWorkerJobId ?? "-"}`}
           labelWidth="116px"
         />
@@ -255,9 +272,7 @@ export function SalesChannelInventoryVerificationDetail({
         <div className="flex gap-2">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <p>
-            다시 점검하면 최신 원장과 미반영 주문으로 기대수량을 다시 계산한 뒤
-            해당 쿠팡 옵션을 한 번 조회합니다. 이 작업은 쿠팡 재고수량을
-            수정하지 않습니다.
+            {t("recheck.explanation")}
           </p>
         </div>
         {recheckable ? (
@@ -269,7 +284,7 @@ export function SalesChannelInventoryVerificationDetail({
               onClick={() => void onRecheck()}
             >
               <RefreshCcw className={cn("size-4", working && "animate-spin")} />
-              {working ? "처리 중..." : "최신 수량으로 다시 점검"}
+              {working ? t("recheck.working") : t("recheck.action")}
             </Button>
             {repairable ? (
               <Button
@@ -278,13 +293,13 @@ export function SalesChannelInventoryVerificationDetail({
                 onClick={() => setRepairDialogOpen(true)}
               >
                 <Wrench className="size-4" />
-                쿠팡 재고수량 복구
+                {t("repair.action")}
               </Button>
             ) : null}
           </div>
         ) : (
           <p className="mt-3 text-xs">
-            수량 불일치 또는 점검 실패 상태에서만 다시 점검할 수 있습니다.
+            {t("recheck.unavailable")}
           </p>
         )}
       </div>
@@ -294,8 +309,8 @@ export function SalesChannelInventoryVerificationDetail({
         onOpenChange={(open) => {
           if (!working) setRepairDialogOpen(open);
         }}
-        title="쿠팡 재고수량 복구"
-        description="최신 상태가 아래 snapshot과 같을 때만 exact vendorItemId 한 건을 기대수량으로 변경합니다."
+        title={t("repair.action")}
+        description={t("repair.description")}
         icon={<Wrench className="size-5 text-red-700" />}
         closeDisabled={working}
         footer={
@@ -306,7 +321,7 @@ export function SalesChannelInventoryVerificationDetail({
               disabled={working}
               onClick={() => setRepairDialogOpen(false)}
             >
-              취소
+              {t("repair.cancel")}
             </Button>
             <Button
               type="button"
@@ -318,8 +333,8 @@ export function SalesChannelInventoryVerificationDetail({
             >
               <Wrench className="size-4" />
               {working
-                ? "복구 확인 중..."
-                : `기대수량 ${item.expectedChannelQuantity.toLocaleString("ko-KR")}개로 복구`}
+                ? t("repair.checking")
+                : t("repair.confirm", { count: item.expectedChannelQuantity })}
             </Button>
           </div>
         }
@@ -335,35 +350,33 @@ export function SalesChannelInventoryVerificationDetail({
             labelWidth="132px"
           />
           <DescriptionRow
-            label="원장 판매가능"
-            value={formatSalesChannelQuantity(item.ledgerQuantity)}
+            label={t("quantity.ledger")}
+            value={formatSalesChannelQuantity(item.ledgerQuantity, formatOptions)}
             labelWidth="132px"
           />
           <DescriptionRow
-            label="미반영 주문"
-            value={formatSalesChannelQuantity(item.pendingOrderQuantity)}
+            label={t("quantity.pending")}
+            value={formatSalesChannelQuantity(item.pendingOrderQuantity, formatOptions)}
             labelWidth="132px"
           />
           <DescriptionRow
-            label="현재 쿠팡"
-            value={formatSalesChannelQuantity(item.channelQuantity)}
+            label={t("quantity.current")}
+            value={formatSalesChannelQuantity(item.channelQuantity, formatOptions)}
             labelWidth="132px"
           />
           <DescriptionRow
-            label="복구 기대수량"
-            value={formatSalesChannelQuantity(item.expectedChannelQuantity)}
+            label={t("quantity.repairExpected")}
+            value={formatSalesChannelQuantity(item.expectedChannelQuantity, formatOptions)}
             labelWidth="132px"
           />
           <DescriptionRow
-            label="차이 (실제 - 기대)"
-            value={formatSalesChannelDifference(item.difference)}
+            label={t("quantity.difference")}
+            value={formatSalesChannelDifference(item.difference, formatOptions)}
             labelWidth="132px"
           />
         </DescriptionList>
         <p className="mt-4 border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
-          복구 직전에 원장·미반영 주문·쿠팡 수량을 다시 확인합니다. 값이
-          달라졌거나 처리 결과를 확정할 수 없으면 자동으로 다시 쓰지 않고
-          판매 채널 동기화 점검의 쓰기 결과에 남깁니다.
+          {t("repair.warning")}
         </p>
       </DialogFrame>
     </div>

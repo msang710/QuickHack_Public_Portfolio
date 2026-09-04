@@ -71,7 +71,7 @@ function requiredText(value: unknown, label: string) {
   if (!text) {
     throw publicBadRequest(
       "SALES_OFFER_VALUE_REQUIRED",
-      `${label} 값이 필요합니다.`
+      "SALES_OFFER_VALUE_REQUIRED"
     );
   }
 
@@ -185,7 +185,7 @@ async function requireActiveOptionById(
   if (!option || option.category !== category || option.is_active !== 1) {
     throw publicBadRequest(
       "SALES_OFFER_CRITERIA_NOT_FOUND",
-      `${label} 상품 기준값을 찾을 수 없거나 비활성 상태입니다.`
+      "SALES_OFFER_CRITERIA_NOT_FOUND"
     );
   }
 
@@ -208,14 +208,14 @@ async function requireUniqueActiveOption(
   if (options.length === 0) {
     throw publicBadRequest(
       "SALES_OFFER_CRITERIA_NOT_FOUND",
-      `${label} '${value}'이(가) 상품 기준값에 등록되어 있지 않습니다.`
+      "SALES_OFFER_CRITERIA_NOT_FOUND"
     );
   }
 
   if (options.length > 1) {
     throw publicConflict(
       "SALES_OFFER_CRITERIA_AMBIGUOUS",
-      `${label} '${value}'에 해당하는 기준값이 둘 이상입니다. option ID를 명시해 주세요.`
+      "SALES_OFFER_CRITERIA_AMBIGUOUS"
     );
   }
 
@@ -300,7 +300,7 @@ export async function resolveOrCreateSalesOffer(
   if (!isWarrantyGroupCode(warrantyGroup)) {
     throw publicBadRequest(
       "INVALID_SALES_OFFER_WARRANTY",
-      `지원하지 않는 판매 보증조건입니다: ${warrantyGroup}`
+      "INVALID_SALES_OFFER_WARRANTY"
     );
   }
   const where = {
@@ -616,7 +616,7 @@ async function assertSalesOfferCanDeactivate(
   if (mappingCount > 0) {
     throw publicBadRequest(
       "SALES_OFFER_IN_USE",
-      "판매 채널 상품 매핑에서 사용 중인 판매 오퍼는 비활성화할 수 없습니다. 먼저 해당 상품 매핑을 변경하거나 해제해 주세요."
+      "SALES_OFFER_IN_USE"
     );
   }
 }
@@ -667,7 +667,7 @@ export async function saveSalesOffer(
       if (!existing) {
         throw publicNotFound(
           "SALES_OFFER_NOT_FOUND",
-          "판매 오퍼를 찾을 수 없습니다."
+          "SALES_OFFER_NOT_FOUND"
         );
       }
 
@@ -676,14 +676,14 @@ export async function saveSalesOffer(
       if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
         throw publicBadRequest(
           "SALES_OFFER_REVISION_REQUIRED",
-          "판매 오퍼를 수정하려면 현재 revision이 필요합니다."
+          "SALES_OFFER_REVISION_REQUIRED"
         );
       }
 
       if (existing.revision !== expectedRevision) {
         throw publicConflict(
           "SALES_OFFER_CONFLICT",
-          "판매 오퍼가 다른 작업에서 변경되었습니다. 목록을 새로 고친 뒤 다시 시도해 주세요.",
+          "SALES_OFFER_CONFLICT",
           { currentRevision: existing.revision }
         );
       }
@@ -736,7 +736,7 @@ export async function saveSalesOffer(
     if (!row) {
       throw publicNotFound(
         "SALES_OFFER_NOT_FOUND",
-        "판매 오퍼를 찾을 수 없습니다."
+        "SALES_OFFER_NOT_FOUND"
       );
     }
 
@@ -792,7 +792,7 @@ export async function bootstrapSalesOffersFromCriteria(user: AuthUser) {
         if (!warrantyGroupOptionId) {
           throw publicBadRequest(
             "SALES_OFFER_CRITERIA_NOT_FOUND",
-            `판매 보증조건 '${warrantyGroup}'이(가) 상품 기준값에 등록되어 있지 않습니다.`
+            "SALES_OFFER_CRITERIA_NOT_FOUND"
           );
         }
 

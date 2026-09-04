@@ -31,7 +31,7 @@ async function auth(request: NextRequest, minRole: "VIEWER" | "MANAGER") {
   if (!user) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -40,7 +40,7 @@ async function auth(request: NextRequest, minRole: "VIEWER" | "MANAGER") {
   if (!canAccessRole(user.role, minRole)) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "판매 오퍼 접근 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }

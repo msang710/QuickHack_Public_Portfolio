@@ -5,6 +5,8 @@ import {
 } from "../platform/qhkey-contract.mjs";
 import path from "node:path";
 
+const preserveKoreanSnapshot = (value) => value;
+
 export { QHKEY_PROVIDER_RELATIVE_PATHS };
 
 export function qhkeyProviderFilePath(root, provider) {
@@ -37,7 +39,7 @@ export async function locateSingleQhkeyRoot() {
       volumeId: "",
       drives,
       errorCode: "QHKEY_VOLUME_MISSING",
-      errorMessage: "QHKEY가 있는 removable volume을 찾을 수 없습니다.",
+      errorMessage: preserveKoreanSnapshot("QHKEY가 있는 removable volume을 찾을 수 없습니다."),
     };
   }
   if (roots.length > 1) {
@@ -46,7 +48,7 @@ export async function locateSingleQhkeyRoot() {
       volumeId: "",
       drives,
       errorCode: "QHKEY_VOLUME_AMBIGUOUS",
-      errorMessage: "QHKEY가 있는 removable volume이 여러 개라 자동 선택할 수 없습니다.",
+      errorMessage: preserveKoreanSnapshot("QHKEY가 있는 removable volume이 여러 개라 자동 선택할 수 없습니다."),
     };
   }
   return {

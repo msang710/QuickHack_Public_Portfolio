@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import type { InventoryQuantityDetailSelection } from "@/quickhack_client/components/inventory/inventory-quantity-detail-sheet";
@@ -13,9 +14,14 @@ import {
 import type { InventoryQuantityMatrixRowDto } from "@/quickhack_shared/inventory/inventory-quantity";
 import { cn } from "@/quickhack_shared/core/utils";
 
+type PresentedInventoryQuantityMatrixColumn = InventoryQuantityMatrixColumn & {
+  label: string;
+  shortLabel: string;
+};
+
 type InventoryQuantityMatrixTableProps = {
   groups: readonly InventoryQuantityModelGroup[];
-  columns: readonly InventoryQuantityMatrixColumn[];
+  columns: readonly PresentedInventoryQuantityMatrixColumn[];
   presetLabel: string;
   expandedGroupKeys: ReadonlySet<string>;
   autoExpandedGroupKeys: ReadonlySet<string>;
@@ -24,8 +30,8 @@ type InventoryQuantityMatrixTableProps = {
   emptyMessage: string;
 };
 
-function quantityText(value: number) {
-  return value.toLocaleString("ko-KR");
+function quantityText(value: number, locale: string) {
+  return value.toLocaleString(locale);
 }
 
 function detailSelection(
@@ -76,9 +82,11 @@ function QuantityCell({
   onSelect,
 }: {
   row: InventoryQuantityMatrixRowDto;
-  column: InventoryQuantityMatrixColumn;
+  column: PresentedInventoryQuantityMatrixColumn;
   onSelect: (selection: InventoryQuantityDetailSelection) => void;
 }) {
+  const t = useTranslations("inventory.quantityMatrix");
+  const locale = useLocale();
   const metric = inventoryQuantityMetricForRow(row, column);
   const selection = detailSelection(row, column);
 
@@ -88,8 +96,8 @@ function QuantityCell({
         className="text-muted-foreground"
         title={
           metric.calculatedQuantity === null
-            ? "재고 원장 수량을 아직 확정할 수 없습니다."
-            : "생성된 재고 잔액이 없습니다."
+            ? t("unconfirmedLedger")
+            : t("noBalance")
         }
       >
         –
@@ -100,7 +108,7 @@ function QuantityCell({
   if (!selection) {
     return (
       <span className="font-semibold tabular-nums">
-        {quantityText(metric.displayQuantity)}
+        {quantityText(metric.displayQuantity, locale)}
       </span>
     );
   }
@@ -109,12 +117,14 @@ function QuantityCell({
     <button
       type="button"
       className="min-w-8 rounded px-1.5 py-1 text-right font-semibold tabular-nums text-primary underline decoration-primary/35 underline-offset-4 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={`${rowDescription(row)} ${column.label} ${quantityText(
-        metric.displayQuantity
-      )} 상세 보기`}
+      aria-label={t("detailAria", {
+        column: column.label,
+        quantity: quantityText(metric.displayQuantity, locale),
+        row: rowDescription(row),
+      })}
       onClick={() => onSelect(selection)}
     >
-      {quantityText(metric.displayQuantity)}
+      {quantityText(metric.displayQuantity, locale)}
     </button>
   );
 }
@@ -129,6 +139,8 @@ export function InventoryQuantityMatrixTable({
   onSelect,
   emptyMessage,
 }: InventoryQuantityMatrixTableProps) {
+  const t = useTranslations("inventory.quantityMatrix");
+  const locale = useLocale();
   const minimumWidth = 560 + columns.length * 112;
 
   return (
@@ -146,30 +158,30 @@ export function InventoryQuantityMatrixTable({
               colSpan={5}
               className="sticky top-0 z-30 border-b border-r bg-muted/95 px-3 text-left text-xs font-semibold text-muted-foreground backdrop-blur"
             >
-              상품 구분
+              {t("columns.product")}
             </th>
             <th
               colSpan={columns.length}
               className="sticky top-0 z-30 border-b bg-muted/95 px-3 text-left text-xs font-semibold text-muted-foreground backdrop-blur"
             >
-              {presetLabel} 수량
+              {t("columns.quantity", { preset: presetLabel })}
             </th>
           </tr>
           <tr className="h-10">
             <th className="sticky left-0 top-9 z-40 w-11 border-b border-r bg-muted px-2 text-center text-xs font-medium">
-              <span className="sr-only">기종 펼치기</span>
+              <span className="sr-only">{t("columns.expandModel")}</span>
             </th>
             <th className="sticky left-11 top-9 z-40 w-[210px] border-b border-r bg-muted px-3 text-left text-xs font-medium">
-              재고 SKU
+              {t("columns.sku")}
             </th>
             <th className="sticky top-9 z-20 w-[105px] border-b border-r bg-muted px-3 text-left text-xs font-medium">
-              용량
+              {t("columns.storage")}
             </th>
             <th className="sticky top-9 z-20 w-[135px] border-b border-r bg-muted px-3 text-left text-xs font-medium">
-              색상
+              {t("columns.color")}
             </th>
             <th className="sticky top-9 z-20 w-[90px] border-b border-r bg-muted px-3 text-left text-xs font-medium">
-              등급
+              {t("columns.grade")}
             </th>
             {columns.map((column) => (
               <th
@@ -200,9 +212,12 @@ export function InventoryQuantityMatrixTable({
                         type="button"
                         className="inline-flex size-8 shrink-0 items-center justify-center rounded hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         aria-expanded={expanded}
-                        aria-label={`${group.model} 하위 재고 ${
-                          expanded ? "접기" : "펼치기"
-                        }`}
+                        aria-label={t("groupAria", {
+                          action: expanded
+                            ? t("actions.collapse")
+                            : t("actions.expand"),
+                          model: group.model,
+                        })}
                         onClick={() => onToggleGroup(group.groupKey)}
                       >
                         {expanded ? (
@@ -213,16 +228,16 @@ export function InventoryQuantityMatrixTable({
                       </button>
                       <span className="truncate font-semibold">{group.model}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">
-                        {group.rows.length.toLocaleString("ko-KR")}개 구성
+                        {t("groupCount", { count: group.rows.length })}
                       </span>
                       {group.inactiveSkuCount > 0 ? (
                         <Badge variant="neutral">
-                          비활성 {group.inactiveSkuCount}
+                          {t("badges.inactive", { count: group.inactiveSkuCount })}
                         </Badge>
                       ) : null}
                       {group.unclassifiedRowCount > 0 ? (
                         <Badge variant="warning">
-                          미분류 {group.unclassifiedRowCount}
+                          {t("badges.unclassified", { count: group.unclassifiedRowCount })}
                         </Badge>
                       ) : null}
                     </div>
@@ -240,7 +255,7 @@ export function InventoryQuantityMatrixTable({
                       >
                         {metric.displayQuantity === null
                           ? "–"
-                          : quantityText(metric.displayQuantity)}
+                          : quantityText(metric.displayQuantity, locale)}
                       </td>
                     );
                   })}
@@ -258,12 +273,16 @@ export function InventoryQuantityMatrixTable({
                         <td className="sticky left-11 z-10 border-b border-r bg-inherit px-3">
                           <div className="flex min-w-0 items-center gap-2">
                             <span className="truncate font-mono text-xs">
-                              {row.skuCode ?? "SKU 미지정"}
+                              {row.skuCode ?? t("missingSku")}
                             </span>
                             {row.rowKind === "UNCLASSIFIED_INBOUND" ? (
-                              <Badge variant="warning">미분류</Badge>
+                              <Badge variant="warning">
+                                {t("badges.unclassifiedSingle")}
+                              </Badge>
                             ) : row.skuActive === false ? (
-                              <Badge variant="neutral">비활성</Badge>
+                              <Badge variant="neutral">
+                                {t("badges.inactiveSingle")}
+                              </Badge>
                             ) : null}
                           </div>
                         </td>

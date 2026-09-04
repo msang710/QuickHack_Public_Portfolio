@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { CheckCircle2 } from "lucide-react";
 import { useUnsavedForm } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -38,11 +39,12 @@ export function RecoveryCodeResult({
   acknowledged: boolean;
   onAcknowledge: () => void;
 }) {
+  const t = useTranslations("common.recoveryCodes");
   if (codes.length === 0) return null;
   return (
     <div className="grid gap-2 border-t border-amber-200 bg-amber-50 p-3 text-amber-900">
       <div className="text-xs font-semibold">
-        복구코드는 지금 한 번만 표시됩니다. 안전한 장소에 보관하세요.
+        {t("warning")}
       </div>
       <div className="grid grid-cols-2 gap-1 font-mono text-xs sm:grid-cols-4">
         {codes.map((code) => (
@@ -58,7 +60,7 @@ export function RecoveryCodeResult({
         onClick={onAcknowledge}
       >
         <CheckCircle2 className="size-4" />
-        {acknowledged ? "보관 완료됨" : "보관 완료"}
+        {acknowledged ? t("stored") : t("store")}
       </Button>
     </div>
   );

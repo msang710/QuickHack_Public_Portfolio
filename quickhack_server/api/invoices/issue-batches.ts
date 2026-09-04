@@ -61,13 +61,13 @@ export async function GET(request: NextRequest) {
       const user = await getAuthUserFromRequest(request);
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "Login is required." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
       if (!canAccessRole(user.role, "STAFF")) {
         return NextResponse.json(
-          { ok: false, message: "You do not have permission to view invoices." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
@@ -91,7 +91,6 @@ export async function GET(request: NextRequest) {
           return apiFailureResponse({
             status: error.code.endsWith("NOT_FOUND") ? 404 : error.code === "INVALID_ID" ? 400 : 409,
             code: error.code,
-            message: error.message,
             cause: error,
           });
         }
@@ -124,13 +123,13 @@ export async function POST(request: NextRequest) {
       const user = await getAuthUserFromRequest(request);
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "Login is required." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
       if (!canAccessRole(user.role, "STAFF")) {
         return NextResponse.json(
-          { ok: false, message: "You do not have permission to issue invoices." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
@@ -139,7 +138,7 @@ export async function POST(request: NextRequest) {
       const body = parseJsonObject(bodyText);
       if (!body) {
         return NextResponse.json(
-          { ok: false, message: "The request body must be a JSON object." },
+          { ok: false, code: "INVALID_BODY" },
           { status: 400 }
         );
       }
@@ -180,7 +179,6 @@ export async function POST(request: NextRequest) {
             channelSubmission = {
               status: "FAILED",
               errorCode: "COUPANG_INVOICE_SUBMIT_FAILED",
-              errorMessage: "쿠팡 송장 등록을 완료하지 못했습니다.",
             };
           }
         }
@@ -223,7 +221,7 @@ export async function POST(request: NextRequest) {
             requestIds: outcome.requestIds,
             issueBatch: result,
             channelSubmission,
-            message: outcome.message,
+            resultCode: outcome.resultCode,
             receipt: settledReceipt,
           },
           { status: outcome.status }
@@ -233,7 +231,6 @@ export async function POST(request: NextRequest) {
           return apiFailureResponse({
             status: 409,
             code: error.code,
-            message: error.message,
             extra: { conflicts: error.conflicts },
             cause: error,
           });
@@ -244,7 +241,6 @@ export async function POST(request: NextRequest) {
           return apiFailureResponse({
             status,
             code: error.code,
-            message: error.message,
             cause: error,
           });
         }

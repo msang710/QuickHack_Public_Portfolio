@@ -61,7 +61,7 @@ async function requireSensitiveManager(
       response: apiFailureResponse({
         status: 401,
         code: "AUTHENTICATION_REQUIRED",
-        message: "로그인이 필요합니다.",
+
       }),
     };
   }
@@ -73,7 +73,8 @@ async function requireSensitiveManager(
       response: apiFailureResponse({
         status: 403,
         code: "PERMISSION_DENIED",
-        message: `${permissionLabel} 권한이 없습니다.`,
+
+        details: { permission: permissionLabel },
       }),
     };
   }
@@ -83,7 +84,8 @@ async function requireSensitiveManager(
       response: apiFailureResponse({
         status: 403,
         code: "SENSITIVE_AUTH_REQUIRED",
-        message: `${permissionLabel} 작업은 2차 인증이 필요합니다.`,
+
+        details: { permission: permissionLabel },
         extra: {
           sensitiveAuthRequired: true,
           sensitiveAction,
@@ -123,21 +125,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return apiFailureResponse({
           status: 401,
           code: "AUTHENTICATION_REQUIRED",
-          message: "로그인이 필요합니다.",
+
         });
       }
       if (!canAccessRole(user.role, "VIEWER")) {
         return apiFailureResponse({
           status: 403,
           code: "PERMISSION_DENIED",
-          message: "기기 상세 조회 권한이 없습니다.",
+
         });
       }
       if (!pgNo) {
         return apiFailureResponse({
           status: 400,
           code: "PG_NO_REQUIRED",
-          message: "PG 번호가 필요합니다.",
+
         });
       }
       setOperationTraceUserId(user.userId);
@@ -153,7 +155,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           return apiFailureResponse({
             status: 404,
             code: "DEVICE_NOT_FOUND",
-            message: "기기를 찾을 수 없습니다.",
+
           });
         }
         return NextResponse.json({ ok: true, data });
@@ -201,7 +203,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
 
@@ -217,7 +219,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: "재고를 추가했습니다.",
+      resultCode: "INVENTORY_CREATED",
       result,
     });
   } catch (error) {
@@ -265,7 +267,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
 
@@ -281,7 +283,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       ok: true,
-      message: "기존 재고 수정 내역을 저장했습니다.",
+      resultCode: "INVENTORY_UPDATED",
       result,
     });
   } catch (error) {
@@ -329,7 +331,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
 
@@ -345,7 +347,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       ok: true,
-      message: "재고를 삭제했습니다.",
+      resultCode: "INVENTORY_DELETED",
       result,
     });
   } catch (error) {

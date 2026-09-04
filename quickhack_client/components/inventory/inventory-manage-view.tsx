@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import { PackagePlus, Save, Trash2 } from "lucide-react";
 import type { StatusTone } from "@/quickhack_shared/device/types";
 import type { DeviceListRow } from "@/quickhack_shared/device/device-list-query";
@@ -15,7 +17,6 @@ import { GRADE_OPTIONS } from "@/quickhack_shared/inspection/inspection-schema";
 import { INBOUND_STATUS } from "@/quickhack_shared/inbound/inbound-status";
 import {
   INVENTORY_STATUS,
-  INVENTORY_STATUS_LABELS,
   type InventoryStatusCode,
 } from "@/quickhack_shared/inventory/inventory-status";
 import { MANUAL_INVENTORY_INITIAL_STATUSES } from "@/quickhack_shared/inventory/inventory-write-rules";
@@ -39,7 +40,8 @@ import {
 import { buildInventoryCorrectionOptionSets } from "@/quickhack_client/components/inventory/inventory-correction-records";
 import {
   statusBadge,
-  statusMap,
+  statusLabel,
+  type DeviceStatusMessageKey,
 } from "@/quickhack_client/components/shared/device-detail-sheet";
 import {
   DangerousConfirmDialog,
@@ -50,7 +52,7 @@ import {
   useUnsavedForm,
 } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { unsavedFormSnapshotsEqual } from "@/quickhack_client/lib/unsaved-changes";
-import { POST_WRITE_REFRESH_WARNING } from "@/quickhack_client/lib/post-write-refresh";
+import { POST_WRITE_REFRESH_WARNING_KEY } from "@/quickhack_client/lib/post-write-refresh";
 import { useDeviceListQuery } from "@/quickhack_client/components/shared/device-list-query-client";
 
 type InventoryManageApiResponse = {
@@ -120,11 +122,6 @@ const INVENTORY_DELETE_FORM_ID = "inventory.manage-delete";
 const SALE_GRADE_EDIT_OPTIONS = optionList(SALE_GRADE_OPTIONS);
 const APPEARANCE_GRADE_EDIT_OPTIONS = optionList(GRADE_OPTIONS);
 const WARRANTY_EDIT_OPTIONS = optionList(DEVICE_WARRANTY_OPTIONS);
-const INVENTORY_STATUS_EDIT_OPTIONS = Object.entries(INVENTORY_STATUS_LABELS)
-  .filter(([value]) =>
-    MANUAL_INVENTORY_INITIAL_STATUSES.has(value as InventoryStatusCode)
-  )
-  .map(([value, label]) => ({ value, label }));
 const RETURN_YN_OPTIONS = [
   { value: "N", label: "N" },
   { value: "Y", label: "Y" },
@@ -136,7 +133,8 @@ function optionList(values: readonly string[]): InventoryEditOption[] {
 
 function criteriaOptionList(
   criteria: ProductCriteriaPayload | null,
-  category: ProductCriteriaCategory
+  category: ProductCriteriaCategory,
+  locale: string
 ): InventoryEditOption[] {
   if (!criteria) {
     return [];
@@ -151,7 +149,7 @@ function criteriaOptionList(
     )
     .map((option) => option.label.trim())
     .filter((value, index, list) => list.indexOf(value) === index)
-    .sort((a, b) => a.localeCompare(b, "ko-KR"))
+    .sort((a, b) => a.localeCompare(b, locale))
     .map((value) => ({ value, label: value }));
 }
 
@@ -193,7 +191,7 @@ function emptyCreateForm(): InventoryCreateForm {
   };
 }
 
-function deleteColumnText(device: DeviceListRow, key: DeleteColumnKey) {
+function deleteColumnText(device: DeviceListRow, key: DeleteColumnKey, translateStatus: (key: DeviceStatusMessageKey) => string) {
   switch (key) {
     case "pgNo":
       return device.pgNo;
@@ -206,7 +204,7 @@ function deleteColumnText(device: DeviceListRow, key: DeleteColumnKey) {
     case "saleGrade":
       return device.saleGrade;
     case "status":
-      return statusMap[device.displayStatus]?.label ?? device.displayStatus;
+      return statusLabel(device.displayStatus, translateStatus);
     case "batchNo":
       return device.inbound?.batchNo;
     case "supplierName":
@@ -222,15 +220,30 @@ function formValue(value: unknown) {
   return String(value ?? "").trim();
 }
 
-function requiredCreateFields(form: InventoryCreateForm) {
+function requiredCreateFields(
+  form: InventoryCreateForm,
+  labels: { model: string; reason: string }
+) {
   return [
     ["PG", form.pgNo],
-    ["모델", form.model],
-    ["추가 사유", form.reason],
+    [labels.model, form.model],
+    [labels.reason, form.reason],
   ] as const;
 }
 
 export function InventoryManageView() {
+  const feedbackT = useTranslations("common.feedback");
+  const t = useTranslations("inventory.manage");
+  const detailT = useTranslations("common.deviceDetail");
+  const inventoryStatusEditOptions = React.useMemo(
+    () => Object.values(INVENTORY_STATUS)
+      .filter((value) =>
+        MANUAL_INVENTORY_INITIAL_STATUSES.has(value as InventoryStatusCode)
+      )
+      .map((value) => ({ value, label: statusLabel(value, detailT) })),
+    [detailT]
+  );
+  const locale = useLocale();
   const [activeTab, setActiveTab] = React.useState("add");
   const [criteria, setCriteria] = React.useState<ProductCriteriaPayload | null>(
     null
@@ -285,14 +298,16 @@ export function InventoryManageView() {
 
   useUnsavedForm({
     id: INVENTORY_CREATE_FORM_ID,
-    label: "재고 추가",
+    label: t("unsaved.create"),
     isDirty: !unsavedFormSnapshotsEqual(emptyCreateForm(), createForm),
     isBusy: savingAction === "create",
     discard: discardCreateDraft,
   });
   useUnsavedForm({
     id: INVENTORY_DELETE_FORM_ID,
-    label: deleteTarget ? `${deleteTarget.pgNo} 재고 삭제` : "재고 삭제",
+    label: deleteTarget
+      ? t("unsaved.deleteTarget", { pg: deleteTarget.pgNo })
+      : t("unsaved.delete"),
     enabled: Boolean(deleteTarget),
     isDirty: deleteReason.trim().length > 0,
     isBusy: savingAction === "delete",
@@ -333,16 +348,16 @@ export function InventoryManageView() {
     [criteria, devices]
   );
   const appearanceDefectOptions = React.useMemo(
-    () => criteriaOptionList(criteria, "APPEARANCE_DEFECT"),
-    [criteria]
+    () => criteriaOptionList(criteria, "APPEARANCE_DEFECT", locale),
+    [criteria, locale]
   );
   const functionDefectOptions = React.useMemo(
-    () => criteriaOptionList(criteria, "FUNCTION_DEFECT"),
-    [criteria]
+    () => criteriaOptionList(criteria, "FUNCTION_DEFECT", locale),
+    [criteria, locale]
   );
   const carrierOptions = React.useMemo(
-    () => criteriaOptionList(criteria, "CARRIER"),
-    [criteria]
+    () => criteriaOptionList(criteria, "CARRIER", locale),
+    [criteria, locale]
   );
   const filteredDeleteRows = devices;
 
@@ -354,17 +369,17 @@ export function InventoryManageView() {
         key: "pgNo",
         label: "PG",
         width: "150px",
-        placeholder: "PG 검색",
-        text: (device) => deleteColumnText(device, "pgNo"),
+        placeholder: t("placeholders.pg"),
+        text: (device) => deleteColumnText(device, "pgNo", detailT),
         cellClassName: "flex items-center px-3 font-semibold",
         render: (device) => device.pgNo,
       },
       {
         key: "model",
-        label: "모델",
+        label: t("columns.model"),
         width: "minmax(240px,1fr)",
-        placeholder: "기종/용량/색상",
-        text: (device) => deleteColumnText(device, "model"),
+        placeholder: t("placeholders.model"),
+        text: (device) => deleteColumnText(device, "model", detailT),
         cellClassName: "min-w-0 px-3 py-2",
         render: (device) => (
           <>
@@ -378,10 +393,10 @@ export function InventoryManageView() {
       },
       {
         key: "modelSeq",
-        label: "고유번호",
+        label: t("columns.modelSequence"),
         width: "130px",
         placeholder: "S24-345",
-        text: (device) => deleteColumnText(device, "modelSeq"),
+        text: (device) => deleteColumnText(device, "modelSeq", detailT),
         cellClassName: "flex items-center px-3",
         render: (device) => formatModelSeqLabel(device.model, device.modelSeq),
       },
@@ -389,59 +404,59 @@ export function InventoryManageView() {
         key: "imei",
         label: "IMEI",
         width: "170px",
-        placeholder: "IMEI 검색",
-        text: (device) => deleteColumnText(device, "imei"),
+        placeholder: t("placeholders.imei"),
+        text: (device) => deleteColumnText(device, "imei", detailT),
         cellClassName: "flex items-center px-3 font-mono text-xs",
         render: (device) => device.imei || "-",
       },
       {
         key: "saleGrade",
-        label: "판매등급",
+        label: t("columns.saleGrade"),
         width: "110px",
         placeholder: "A",
-        text: (device) => deleteColumnText(device, "saleGrade"),
+        text: (device) => deleteColumnText(device, "saleGrade", detailT),
         cellClassName: "flex items-center px-3",
         render: (device) => <SaleGradeBadge value={device.saleGrade} />,
       },
       {
         key: "status",
-        label: "상태",
+        label: t("columns.status"),
         width: "120px",
-        placeholder: "판매가능",
-        text: (device) => deleteColumnText(device, "status"),
+        placeholder: t("placeholders.sellable"),
+        text: (device) => deleteColumnText(device, "status", detailT),
         cellClassName: "flex items-center px-3",
-        render: (device) => statusBadge(device.displayStatus),
+        render: (device) => statusBadge(device.displayStatus, detailT),
       },
       {
         key: "batchNo",
-        label: "차수",
+        label: t("columns.batch"),
         width: "100px",
-        placeholder: "차수",
-        text: (device) => deleteColumnText(device, "batchNo"),
+        placeholder: t("columns.batch"),
+        text: (device) => deleteColumnText(device, "batchNo", detailT),
         cellClassName: "flex items-center px-3",
         render: (device) => device.inbound?.batchNo ?? "-",
       },
       {
         key: "supplierName",
-        label: "매입처",
+        label: t("columns.supplier"),
         width: "140px",
-        placeholder: "매입처",
-        text: (device) => deleteColumnText(device, "supplierName"),
+        placeholder: t("columns.supplier"),
+        text: (device) => deleteColumnText(device, "supplierName", detailT),
         cellClassName: "flex items-center px-3",
         render: (device) => device.inbound?.supplierName || "-",
       },
       {
         key: "location",
-        label: "위치",
+        label: t("columns.location"),
         width: "130px",
-        placeholder: "위치",
-        text: (device) => deleteColumnText(device, "location"),
+        placeholder: t("columns.location"),
+        text: (device) => deleteColumnText(device, "location", detailT),
         cellClassName: "flex items-center px-3",
         render: (device) => device.inventory?.location || "-",
       },
       {
         key: "delete",
-        label: "삭제",
+        label: t("columns.delete"),
         width: "110px",
         sortable: false,
         filterable: false,
@@ -459,12 +474,12 @@ export function InventoryManageView() {
             }}
           >
             <Trash2 className="size-4" />
-            삭제
+            {t("actions.delete")}
           </Button>
         ),
       },
     ],
-    []
+    [detailT, t]
   );
 
   function updateCreateForm(key: keyof InventoryCreateForm, value: string) {
@@ -502,12 +517,15 @@ export function InventoryManageView() {
       return;
     }
 
-    const missingField = requiredCreateFields(createForm).find(
+    const missingField = requiredCreateFields(createForm, {
+      model: t("fields.model"),
+      reason: t("fields.reason"),
+    }).find(
       ([, value]) => !formValue(value)
     );
 
     if (missingField) {
-      setMessage(`${missingField[0]} 값을 입력해야 재고를 추가할 수 있습니다.`);
+      setMessage(t("message.required", { field: missingField[0] }));
       setMessageTone("warning");
       setActiveTab("add");
       return;
@@ -528,17 +546,17 @@ export function InventoryManageView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "재고를 추가하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.createFailed")));
       }
 
       setCreateForm(emptyCreateForm());
-      setMessage(payload.message || "재고를 추가했습니다.");
+      setMessage(t("message.created"));
       setMessageTone("success");
 
       try {
         await deviceList.reload();
       } catch {
-        setPostWriteRefreshWarning(POST_WRITE_REFRESH_WARNING);
+        setPostWriteRefreshWarning(feedbackT(POST_WRITE_REFRESH_WARNING_KEY));
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -554,7 +572,7 @@ export function InventoryManageView() {
     }
 
     if (!deleteReason.trim()) {
-      setMessage("삭제 사유를 입력해야 재고를 삭제할 수 있습니다.");
+      setMessage(t("message.deleteReasonRequired"));
       setMessageTone("warning");
       return;
     }
@@ -580,18 +598,18 @@ export function InventoryManageView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "재고를 삭제하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.deleteFailed")));
       }
 
       setDeleteTarget(null);
       setDeleteReason("");
-      setMessage(payload.message || "재고를 삭제했습니다.");
+      setMessage(t("message.deleted"));
       setMessageTone("success");
 
       try {
         await deviceList.reload();
       } catch {
-        setPostWriteRefreshWarning(POST_WRITE_REFRESH_WARNING);
+        setPostWriteRefreshWarning(feedbackT(POST_WRITE_REFRESH_WARNING_KEY));
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -606,8 +624,8 @@ export function InventoryManageView() {
       intent: "dialog-close",
       formIds: [INVENTORY_DELETE_FORM_ID],
       targetLabel: deleteTarget
-        ? `${deleteTarget.pgNo} 재고 삭제 창 닫기`
-        : "재고 삭제 창 닫기",
+        ? t("dialog.closeDeleteTarget", { pg: deleteTarget.pgNo })
+        : t("dialog.closeDelete"),
       action: discardDeleteDraft,
     });
   }
@@ -616,9 +634,9 @@ export function InventoryManageView() {
     <WorkspacePageFrame className="px-5 py-4">
       <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h2 className="text-sm font-semibold">재고 추가 / 삭제</h2>
+          <h2 className="text-sm font-semibold">{t("title")}</h2>
           <p className="text-xs text-muted-foreground">
-            실무 예외 상황에서 재고 데이터를 수동으로 추가하거나 삭제합니다.
+            {t("description")}
           </p>
         </div>
         {message ? (
@@ -646,7 +664,7 @@ export function InventoryManageView() {
         <FeedbackBanner tone="danger">{deviceList.error}</FeedbackBanner>
       ) : null}
       {deviceList.isLoading ? (
-        <FeedbackBanner tone="info">재고 목록을 불러오는 중입니다.</FeedbackBanner>
+        <FeedbackBanner tone="info">{t("loading")}</FeedbackBanner>
       ) : null}
 
       <Tabs
@@ -655,8 +673,8 @@ export function InventoryManageView() {
         className="flex min-h-0 flex-1 flex-col"
       >
         <TabsList className="w-fit">
-          <TabsTrigger value="add">추가</TabsTrigger>
-          <TabsTrigger value="delete">삭제</TabsTrigger>
+          <TabsTrigger value="add">{t("actions.add")}</TabsTrigger>
+          <TabsTrigger value="delete">{t("actions.delete")}</TabsTrigger>
         </TabsList>
 
         <TabsContent
@@ -664,126 +682,126 @@ export function InventoryManageView() {
           className="min-h-0 flex-1 overflow-auto pb-8"
         >
           <div className="grid gap-4">
-            <InventoryEditSection title="기기 기본 정보">
+            <InventoryEditSection title={t("sections.device")}>
               {field("pgNo", "PG", { placeholder: "AA0000000000" })}
-              {field("imei", "IMEI", { placeholder: "숫자 15자리" })}
-              {field("adbSerial", "ADB Serial", { placeholder: "선택 입력" })}
-              {field("model", "모델", {
+              {field("imei", "IMEI", { placeholder: t("placeholders.digits15") })}
+              {field("adbSerial", "ADB Serial", { placeholder: t("placeholders.optional") })}
+              {field("model", t("fields.model"), {
                 mode: "datalist",
                 choices: optionSets.models,
                 allowEmpty: false,
-                placeholder: "상품 기준값에서 선택",
+                placeholder: t("placeholders.criteria"),
               })}
-              {field("modelCode", "모델 코드", {
+              {field("modelCode", t("fields.modelCode"), {
                 mode: "datalist",
                 choices: optionSets.modelCodes,
-                placeholder: "상품 기준값에서 선택",
+                placeholder: t("placeholders.criteria"),
               })}
-              {field("modelSeq", "고유번호", { placeholder: "S24-345" })}
-              {field("storage", "저장공간", {
+              {field("modelSeq", t("fields.modelSequence"), { placeholder: "S24-345" })}
+              {field("storage", t("fields.storage"), {
                 mode: "datalist",
                 choices: optionSets.storages,
-                placeholder: "상품 기준값에서 선택",
+                placeholder: t("placeholders.criteria"),
               })}
-              {field("color", "공식 색상명", {
+              {field("color", t("fields.color"), {
                 mode: "datalist",
                 choices: optionSets.colors,
-                placeholder: "상품 기준값에서 선택",
+                placeholder: t("placeholders.criteria"),
               })}
-              {field("saleGrade", "판매등급", {
+              {field("saleGrade", t("fields.saleGrade"), {
                 mode: "select",
                 choices: SALE_GRADE_EDIT_OPTIONS,
               })}
-              {field("warranty", "보증서", {
+              {field("warranty", t("fields.warranty"), {
                 mode: "select",
                 choices: WARRANTY_EDIT_OPTIONS,
               })}
             </InventoryEditSection>
 
-            <InventoryEditSection title="입고 기록">
-              {field("batchNo", "차수", { placeholder: "숫자" })}
-              {field("supplierName", "매입처")}
-              {field("purchasePrice", "매입가", { placeholder: "숫자" })}
-              {field("receivedAt", "입고일시", {
+            <InventoryEditSection title={t("sections.inbound")}>
+              {field("batchNo", t("fields.batch"), { placeholder: t("placeholders.number") })}
+              {field("supplierName", t("fields.supplier"))}
+              {field("purchasePrice", t("fields.purchasePrice"), { placeholder: t("placeholders.number") })}
+              {field("receivedAt", t("fields.receivedAt"), {
                 mode: "datetime-local",
-                placeholder: "비우면 현재 시각",
+                placeholder: t("placeholders.nowIfEmpty"),
               })}
-              {field("priceAgreedAt", "가격협의일시", {
+              {field("priceAgreedAt", t("fields.priceAgreedAt"), {
                 mode: "datetime-local",
               })}
               <InventoryEditField
-                label="입고상태"
-                value="매입 완료"
+                label={t("fields.inboundStatus")}
+                value={t("value.purchased")}
                 readOnly
                 onChange={() => undefined}
               />
-              {field("inboundNote", "입고 메모")}
+              {field("inboundNote", t("fields.inboundNote"))}
             </InventoryEditSection>
 
-            <InventoryEditSection title="외관검수 기록">
-              {field("appearanceGrade", "외관등급", {
+            <InventoryEditSection title={t("sections.appearance")}>
+              {field("appearanceGrade", t("fields.appearanceGrade"), {
                 mode: "select",
                 choices: APPEARANCE_GRADE_EDIT_OPTIONS,
               })}
-              {field("appearanceDefect", "외관하자", {
+              {field("appearanceDefect", t("fields.appearanceDefect"), {
                 mode: "datalist",
                 choices: appearanceDefectOptions,
-                placeholder: "하자 없음 또는 기준값에서 선택",
+                placeholder: t("placeholders.defect"),
               })}
-              {field("appearanceReturnYn", "매입처 반품 여부", {
+              {field("appearanceReturnYn", t("fields.supplierReturn"), {
                 mode: "select",
                 choices: RETURN_YN_OPTIONS,
                 allowEmpty: false,
               })}
-              {field("appearanceWorker", "외관 작업자")}
-              {field("appearanceCheckedAt", "외관 검수일시", {
+              {field("appearanceWorker", t("fields.appearanceWorker"))}
+              {field("appearanceCheckedAt", t("fields.appearanceCheckedAt"), {
                 mode: "datetime-local",
-                placeholder: "비우면 현재 시각",
+                placeholder: t("placeholders.nowIfEmpty"),
               })}
-              {field("appearanceNote", "외관 비고")}
+              {field("appearanceNote", t("fields.appearanceNote"))}
             </InventoryEditSection>
 
-            <InventoryEditSection title="기능검수 기록">
-              {field("functionDefect", "기능하자", {
+            <InventoryEditSection title={t("sections.function")}>
+              {field("functionDefect", t("fields.functionDefect"), {
                 mode: "datalist",
                 choices: functionDefectOptions,
-                placeholder: "하자 없음 또는 기준값에서 선택",
+                placeholder: t("placeholders.defect"),
               })}
-              {field("functionReturnYn", "매입처 반품 여부", {
+              {field("functionReturnYn", t("fields.supplierReturn"), {
                 mode: "select",
                 choices: RETURN_YN_OPTIONS,
                 allowEmpty: false,
               })}
-              {field("csc", "통신사", {
+              {field("csc", t("fields.carrier"), {
                 mode: "datalist",
                 choices: carrierOptions,
-                placeholder: "자급제 / SKT / KT / LG U+",
+                placeholder: t("placeholders.carrier"),
               })}
-              {field("firstCallDate", "최초통화일", {
+              {field("firstCallDate", t("fields.firstCallDate"), {
                 mode: "date",
-                placeholder: "YYYY-MM-DD 또는 0000-00-00",
+                placeholder: t("placeholders.date"),
               })}
-              {field("functionWorker", "기능 작업자")}
-              {field("functionCheckedAt", "기능 검수일시", {
+              {field("functionWorker", t("fields.functionWorker"))}
+              {field("functionCheckedAt", t("fields.functionCheckedAt"), {
                 mode: "datetime-local",
-                placeholder: "비우면 현재 시각",
+                placeholder: t("placeholders.nowIfEmpty"),
               })}
-              {field("functionNote", "기능 비고")}
+              {field("functionNote", t("fields.functionNote"))}
             </InventoryEditSection>
 
-            <InventoryEditSection title="재고 상태">
-              {field("inventoryStatus", "재고상태", {
+            <InventoryEditSection title={t("sections.inventory")}>
+              {field("inventoryStatus", t("fields.inventoryStatus"), {
                 mode: "select",
-                choices: INVENTORY_STATUS_EDIT_OPTIONS,
+                choices: inventoryStatusEditOptions,
                 allowEmpty: false,
               })}
-              {field("location", "위치")}
-              {field("stockedAt", "재고등록일시", {
+              {field("location", t("fields.location"))}
+              {field("stockedAt", t("fields.stockedAt"), {
                 mode: "datetime-local",
-                placeholder: "비우면 현재 시각",
+                placeholder: t("placeholders.nowIfEmpty"),
               })}
-              {field("reason", "추가 사유", {
-                placeholder: "수동 추가가 필요한 이유",
+              {field("reason", t("fields.reason"), {
+                placeholder: t("placeholders.reason"),
               })}
             </InventoryEditSection>
 
@@ -794,7 +812,7 @@ export function InventoryManageView() {
                 ) : (
                   <PackagePlus className="size-4" />
                 )}
-                {isSaving ? "저장중" : "재고 추가"}
+                {isSaving ? t("actions.saving") : t("actions.create")}
               </Button>
             </div>
           </div>
@@ -804,15 +822,15 @@ export function InventoryManageView() {
           <div className="flex h-full min-h-0 flex-col gap-3">
             <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h3 className="text-sm font-semibold">삭제 대상 재고</h3>
+                <h3 className="text-sm font-semibold">{t("delete.target")}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {filteredDeleteRows.length.toLocaleString("ko-KR")}건 표시
+                  {t("delete.result", { count: filteredDeleteRows.length })}
                 </p>
               </div>
               <SearchInput
                 value={deleteQuery}
                 onValueChange={setDeleteQuery}
-                placeholder="PG, IMEI, 모델, 위치 검색"
+                placeholder={t("delete.search")}
                 wrapperClassName="w-full xl:w-[420px]"
               />
             </div>
@@ -821,7 +839,7 @@ export function InventoryManageView() {
               rows={filteredDeleteRows}
               columns={deleteColumns}
               rowKey={(device) => device.pgNo}
-              emptyMessage="삭제할 재고가 없습니다."
+              emptyMessage={t("delete.empty")}
               minWidth="1410px"
             />
           </div>
@@ -831,10 +849,10 @@ export function InventoryManageView() {
 
       <DangerousConfirmDialog
         open={Boolean(deleteTarget)}
-        title="재고 삭제"
-        description="이 작업은 기기, 입고, 검수, 재고 기록을 삭제합니다. 주문/출고/반품/채널 매칭 이력이 있으면 서버에서 삭제를 차단합니다."
-        confirmLabel="삭제 실행"
-        busyLabel="삭제중"
+        title={t("delete.title")}
+        description={t("delete.description")}
+        confirmLabel={t("actions.deleteExecute")}
+        busyLabel={t("actions.deleting")}
         isBusy={savingAction === "delete"}
         onCancel={requestCloseDeleteDialog}
         onConfirm={() => void deleteInventory()}
@@ -845,12 +863,12 @@ export function InventoryManageView() {
                 {deleteTarget.pgNo} / {deleteTarget.model}
               </div>
               <label className="grid gap-1">
-                <span>삭제 사유</span>
+                <span>{t("delete.reason")}</span>
                 <Input
                   value={deleteReason}
                   autoComplete="off"
                   className="bg-background text-foreground"
-                  placeholder="삭제 사유를 입력하세요"
+                  placeholder={t("delete.reasonPlaceholder")}
                   onChange={(event) => setDeleteReason(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {

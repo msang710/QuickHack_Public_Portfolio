@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -130,47 +132,6 @@ type WorkerGroupKey =
   | "cafe24-api";
 
 const workerTableCellClassName = "flex h-full min-w-0 items-center px-3";
-const WORKER_GROUPS: Array<{
-  key: WorkerGroupKey;
-  label: string;
-}> = [
-  { key: "all", label: "전체" },
-  { key: "quickhack-internal", label: "QuickHack 내부 시스템" },
-  { key: "coupang-api", label: "쿠팡 API" },
-  { key: "naver-api", label: "네이버 API" },
-  { key: "elevenstreet-api", label: "11번가 API" },
-  { key: "esm-api", label: "ESM API" },
-  { key: "cafe24-api", label: "자사몰 API" },
-];
-
-const WORKER_TYPE_LABELS: Record<string, string> = {
-  COUPANG_SYNC: "쿠팡 동기화",
-  ORDER_MATCHING: "주문 매칭",
-  INVOICE: "송장",
-  RETURN_SYNC: "반품 동기화",
-  DATABASE_BACKUP: "DB 백업",
-  BACKUP_MAINTENANCE: "백업 점검",
-  SECURITY_MAINTENANCE: "보안 점검",
-  OBSERVABILITY_MAINTENANCE: "관측 데이터 정리",
-  INVENTORY_AUDIT: "재고 점검",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  IDLE: "대기",
-  RUNNING: "실행 중",
-  SUCCESS: "성공",
-  FAILED: "실패",
-  RETRY_WAITING: "재시도 대기",
-  DISABLED: "비활성",
-};
-
-function workerTypeLabel(value: string) {
-  return WORKER_TYPE_LABELS[value] ?? value;
-}
-
-function statusLabel(value: string) {
-  return STATUS_LABELS[value] ?? (value || "-");
-}
 
 function statusVariant(value: string) {
   if (value === "SUCCESS" || value === "IDLE") {
@@ -188,44 +149,25 @@ function statusVariant(value: string) {
   return "neutral" as const;
 }
 
-function progressText(worker: WorkerJobDto) {
+function progressText(worker: WorkerJobDto, locale: string) {
   if (worker.progressTotal && worker.progressTotal > 0) {
-    return `${worker.progressCurrent.toLocaleString()} / ${worker.progressTotal.toLocaleString()}`;
+    return `${worker.progressCurrent.toLocaleString(locale)} / ${worker.progressTotal.toLocaleString(locale)}`;
   }
 
   if (worker.progressCurrent > 0) {
-    return worker.progressCurrent.toLocaleString();
+    return worker.progressCurrent.toLocaleString(locale);
   }
 
   return "-";
 }
 
-function intervalText(seconds: number | null) {
-  if (!seconds) {
-    return "-";
-  }
-
-  if (seconds < 60) {
-    return `${seconds}초`;
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (remainingSeconds === 0) {
-    return `${minutes}분`;
-  }
-
-  return `${minutes}분 ${remainingSeconds}초`;
-}
-
-function workerSearchText(worker: WorkerJobDto) {
+function workerSearchText(worker: WorkerJobDto, typeLabel: (value: string) => string, stateLabel: (value: string) => string) {
   return [
     worker.workerKey,
     worker.workerName,
-    workerTypeLabel(worker.workerType),
+    typeLabel(worker.workerType),
     worker.workerType,
-    statusLabel(worker.status),
+    stateLabel(worker.status),
     worker.status,
     worker.lastErrorCode,
     worker.lastErrorMessage,
@@ -315,6 +257,16 @@ function SummaryCard({
 }
 
 export function SystemStatusView() {
+  const t = useTranslations("admin.systemStatus");
+  const locale = useLocale();
+  const workerGroups: Array<{ key: WorkerGroupKey; label: string }> = React.useMemo(() => [
+    { key: "all", label: t("group.all") }, { key: "quickhack-internal", label: t("group.internal") }, { key: "coupang-api", label: t("group.coupang") }, { key: "naver-api", label: t("group.naver") }, { key: "elevenstreet-api", label: t("group.eleven") }, { key: "esm-api", label: t("group.esm") }, { key: "cafe24-api", label: t("group.cafe24") },
+  ], [t]);
+  const workerTypeLabels: Record<string, string> = React.useMemo(() => ({ COUPANG_SYNC: t("type.coupangSync"), ORDER_MATCHING: t("type.orderMatching"), INVOICE: t("type.invoice"), RETURN_SYNC: t("type.returnSync"), DATABASE_BACKUP: t("type.databaseBackup"), BACKUP_MAINTENANCE: t("type.backupMaintenance"), SECURITY_MAINTENANCE: t("type.securityMaintenance"), OBSERVABILITY_MAINTENANCE: t("type.observabilityMaintenance"), INVENTORY_AUDIT: t("type.inventoryAudit") }), [t]);
+  const statusLabels: Record<string, string> = React.useMemo(() => ({ IDLE: t("status.idle"), RUNNING: t("status.running"), SUCCESS: t("status.success"), FAILED: t("status.failed"), RETRY_WAITING: t("status.retry"), DISABLED: t("status.disabled") }), [t]);
+  const workerTypeLabel = React.useCallback((value: string) => workerTypeLabels[value] ?? value, [workerTypeLabels]);
+  const statusLabel = React.useCallback((value: string) => statusLabels[value] ?? (value || "-"), [statusLabels]);
+  const intervalText = React.useCallback((seconds: number | null) => !seconds ? "-" : seconds < 60 ? t("interval.seconds", { seconds }) : seconds % 60 === 0 ? t("interval.minutes", { minutes: Math.floor(seconds / 60) }) : t("interval.minutesSeconds", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 }), [t]);
   const [workers, setWorkers] = React.useState<WorkerJobDto[]>([]);
   const [manager, setManager] = React.useState<WorkerManagerDto | null>(null);
   const [readSyncHealth, setReadSyncHealth] =
@@ -326,7 +278,8 @@ export function SystemStatusView() {
   const [loading, setLoading] = React.useState(false);
   const [pendingAction, setPendingAction] =
     React.useState<PendingWorkerAction>(null);
-  const [message, setMessage] = React.useState("worker 상태를 불러오는 중입니다.");
+  const [message, setMessage] = React.useState(() => t("message.initial"));
+  const [messageTone, setMessageTone] = React.useState<"neutral" | "warning">("neutral");
   const runningKey = pendingAction?.workerKey ?? "";
 
   const workerGroupCounts = React.useMemo(() => {
@@ -344,7 +297,7 @@ export function SystemStatusView() {
   }, [workers]);
 
   const visibleWorkerGroups = React.useMemo(() => {
-    return WORKER_GROUPS.filter((group) => {
+    return workerGroups.filter((group) => {
       if (group.key === "all" || group.key === "quickhack-internal") {
         return true;
       }
@@ -354,7 +307,7 @@ export function SystemStatusView() {
         (workerGroupCounts.get(group.key) ?? 0) > 0
       );
     });
-  }, [activeWorkerGroup, workerGroupCounts]);
+  }, [activeWorkerGroup, workerGroupCounts, workerGroups]);
 
   const filteredWorkers = React.useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -368,9 +321,9 @@ export function SystemStatusView() {
     }
 
     return groupedWorkers.filter((worker) =>
-      workerSearchText(worker).includes(normalizedQuery)
+      workerSearchText(worker, workerTypeLabel, statusLabel).includes(normalizedQuery)
     );
-  }, [activeWorkerGroup, query, workers]);
+  }, [activeWorkerGroup, query, statusLabel, workerTypeLabel, workers]);
 
   const selectedWorker =
     filteredWorkers.find((worker) => worker.workerKey === selectedWorkerKey) ??
@@ -386,7 +339,7 @@ export function SystemStatusView() {
     };
   }, [workers]);
 
-  async function loadWorkers() {
+  const loadWorkers = React.useCallback(async () => {
     setLoading(true);
 
     try {
@@ -396,7 +349,7 @@ export function SystemStatusView() {
       const payload = (await response.json()) as WorkerJobsApiResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || "worker 상태를 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("fallback.loadFailed")));
       }
 
       const items = payload.items ?? [];
@@ -408,13 +361,15 @@ export function SystemStatusView() {
           ? current
           : items[0]?.workerKey ?? ""
       );
-      setMessage(`worker ${items.length}개 상태를 갱신했습니다.`);
+      setMessage(t("message.refreshed", { count: items.length }));
+      setMessageTone("neutral");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageTone("warning");
     } finally {
       setLoading(false);
     }
-  }
+  }, [t]);
 
   async function postWorkerAction(body: Record<string, unknown>) {
     const response = await fetch("/api/admin/worker-jobs", {
@@ -425,7 +380,7 @@ export function SystemStatusView() {
     const payload = (await response.json()) as WorkerJobsApiResponse;
 
     if (!response.ok || !payload.ok) {
-      throw new Error(payload.message || "worker 작업에 실패했습니다.");
+      throw new Error(legacyApiMessage(payload, t("fallback.actionFailed")));
     }
 
     return payload;
@@ -433,14 +388,16 @@ export function SystemStatusView() {
 
   async function runWorker(workerKey: string) {
     setPendingAction({ workerKey, kind: "run" });
-    setMessage(`${workerKey} worker 실행 중입니다.`);
+    setMessage(t("message.running", { key: workerKey }));
+    setMessageTone("neutral");
 
     try {
       await postWorkerAction({ action: "runWorker", workerKey });
-      setMessage(`${workerKey} worker 실행 요청이 완료되었습니다.`);
+      setMessage(t("message.runComplete", { key: workerKey }));
       await loadWorkers();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageTone("warning");
     } finally {
       setPendingAction(null);
     }
@@ -448,16 +405,18 @@ export function SystemStatusView() {
 
   async function runDueWorkers() {
     setPendingAction({ workerKey: "__due__", kind: "due" });
-    setMessage("실행 시점이 된 일반 worker를 확인하는 중입니다.");
+    setMessage(t("message.dueRunning"));
+    setMessageTone("neutral");
 
     try {
       await postWorkerAction({ action: "runDue" });
       setMessage(
-        "실행 시점이 된 일반 worker 확인을 완료했습니다. 백업 작업은 서버 콘솔에서 관리합니다."
+        t("message.dueComplete")
       );
       await loadWorkers();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageTone("warning");
     } finally {
       setPendingAction(null);
     }
@@ -465,7 +424,8 @@ export function SystemStatusView() {
 
   async function updateSchedule(worker: WorkerJobDto, enabled: boolean) {
     setPendingAction({ workerKey: worker.workerKey, kind: "schedule" });
-    setMessage(`${worker.workerKey} worker 스케줄을 변경하는 중입니다.`);
+    setMessage(t("message.scheduleChanging", { key: worker.workerKey }));
+    setMessageTone("neutral");
 
     try {
       await postWorkerAction({
@@ -475,11 +435,12 @@ export function SystemStatusView() {
         intervalSeconds: worker.intervalSeconds,
       });
       setMessage(
-        `${worker.workerKey} worker 스케줄을 ${enabled ? "활성화" : "비활성화"}했습니다.`
+        t("message.scheduleChanged", { key: worker.workerKey, state: enabled ? t("columns.active") : t("columns.inactive") })
       );
       await loadWorkers();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageTone("warning");
     } finally {
       setPendingAction(null);
     }
@@ -491,7 +452,7 @@ export function SystemStatusView() {
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [loadWorkers]);
 
   const columns: DataGridColumn<WorkerColumnKey, WorkerJobDto>[] = [
       {
@@ -499,7 +460,7 @@ export function SystemStatusView() {
         label: "worker",
         width: "minmax(260px, 1.4fr)",
         cellClassName: workerTableCellClassName,
-        placeholder: "worker 검색",
+        placeholder: t("columns.search"),
         text: (worker) =>
           `${worker.workerName} ${worker.workerKey} ${workerTypeLabel(worker.workerType)}`,
         render: (worker) => (
@@ -513,7 +474,7 @@ export function SystemStatusView() {
       },
       {
         key: "status",
-        label: "상태",
+        label: t("columns.status"),
         width: "150px",
         cellClassName: workerTableCellClassName,
         text: (worker) => `${statusLabel(worker.status)} ${worker.status}`,
@@ -525,40 +486,38 @@ export function SystemStatusView() {
       },
       {
         key: "schedule",
-        label: "스케줄",
+        label: t("columns.schedule"),
         width: "180px",
         cellClassName: workerTableCellClassName,
         text: (worker) =>
-          `${worker.schedulable ? (worker.scheduleEnabled ? "활성" : "비활성") : "수동 전용"} ${worker.scheduleLabel || intervalText(worker.intervalSeconds)} ${worker.nextRunAt}`,
+          `${worker.schedulable ? (worker.scheduleEnabled ? t("columns.active") : t("columns.inactive")) : t("columns.manual")} ${worker.scheduleLabel || intervalText(worker.intervalSeconds)} ${worker.nextRunAt}`,
         render: (worker) => (
           <div className="min-w-0 text-xs">
             <p className="font-medium">
               {worker.schedulable
-                ? worker.scheduleEnabled
-                  ? "활성"
-                  : "비활성"
-                : "수동 전용"}
+                ? worker.scheduleEnabled ? t("columns.active") : t("columns.inactive")
+                : t("columns.manual")}
             </p>
             <p className="truncate text-muted-foreground">
               {worker.scheduleLabel ||
-                `주기 ${intervalText(worker.intervalSeconds)}`}
+                t("columns.interval", { value: intervalText(worker.intervalSeconds) })}
             </p>
           </div>
         ),
       },
       {
         key: "progress",
-        label: "진행",
+        label: t("columns.progress"),
         width: "120px",
         cellClassName: workerTableCellClassName,
-        text: progressText,
+        text: (worker) => progressText(worker, locale),
         render: (worker) => (
-          <span className="text-sm">{progressText(worker)}</span>
+          <span className="text-sm">{progressText(worker, locale)}</span>
         ),
       },
       {
         key: "lastRun",
-        label: "최근 실행",
+        label: t("columns.lastRun"),
         width: "180px",
         cellClassName: workerTableCellClassName,
         text: (worker) => worker.lastRunAt || worker.finishedAt || worker.startedAt,
@@ -578,7 +537,7 @@ export function SystemStatusView() {
         filterable: false,
         render: (worker) => {
           if (worker.managementSurface === "SERVER_CONSOLE") {
-            return <Badge variant="neutral">서버 콘솔에서 관리</Badge>;
+            return <Badge variant="neutral">{t("columns.serverConsole")}</Badge>;
           }
 
           const isRunning =
@@ -604,14 +563,14 @@ export function SystemStatusView() {
                 }}
               >
                 {!worker.schedulable
-                  ? "수동 전용"
+                  ? t("columns.manual")
                   : worker.scheduleRequired
-                    ? "필수 스케줄"
+                    ? t("columns.required")
                   : isScheduleUpdating
-                  ? "변경 중"
+                  ? t("columns.changing")
                   : worker.scheduleEnabled
-                    ? "스케줄 끄기"
-                    : "스케줄 켜기"}
+                    ? t("columns.disableSchedule")
+                    : t("columns.enableSchedule")}
               </Button>
               <Button
                 type="button"
@@ -623,7 +582,7 @@ export function SystemStatusView() {
                 }}
               >
                 <Play className="size-3.5" />
-                {isRunning ? "실행 중" : "실행"}
+                {isRunning ? t("status.running") : t("columns.run")}
               </Button>
             </>
           );
@@ -632,21 +591,21 @@ export function SystemStatusView() {
   ];
 
   const managerStatus = manager?.started
-    ? "실행 중"
+    ? t("status.running")
     : manager?.starting
-      ? "시작 중"
+      ? t("status.starting")
       : manager?.disabledReason
-        ? "중지"
+        ? t("status.stopped")
         : "-";
 
   return (
     <WorkspacePageFrame className="gap-4 p-5">
       <section className="grid gap-3 md:grid-cols-5">
         <SummaryCard icon={ServerCog} label="worker manager" value={managerStatus} />
-        <SummaryCard icon={ServerCog} label="등록 worker" value={summary.total} />
-        <SummaryCard icon={Clock3} label="실행 중" value={summary.running} />
-        <SummaryCard icon={TimerReset} label="스케줄 활성" value={summary.scheduled} />
-        <SummaryCard icon={AlertTriangle} label="실패" value={summary.failed} />
+        <SummaryCard icon={ServerCog} label={t("summary.registered")} value={summary.total} />
+        <SummaryCard icon={Clock3} label={t("summary.running")} value={summary.running} />
+        <SummaryCard icon={TimerReset} label={t("summary.scheduled")} value={summary.scheduled} />
+        <SummaryCard icon={AlertTriangle} label={t("summary.failed")} value={summary.failed} />
       </section>
 
       {readSyncHealth && readSyncHealth.interruptedCount > 0 ? (
@@ -657,15 +616,15 @@ export function SystemStatusView() {
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <div className="min-w-0 text-sm">
             <p className="font-medium">
-              최근 {readSyncHealth.lookbackHours}시간 동안 중단된 쿠팡 조회가 {readSyncHealth.interruptedCount.toLocaleString("ko-KR")}건 있습니다.
+              {t("health.interrupted", { hours: readSyncHealth.lookbackHours, count: readSyncHealth.interruptedCount })}
             </p>
             {readSyncHealth.latestInterrupted ? (
               <p className="mt-1 truncate text-xs text-amber-800">
-                최근: {readSyncHealth.latestInterrupted.apiName}
+                {t("health.latest")} {readSyncHealth.latestInterrupted.apiName}
                 {readSyncHealth.latestInterrupted.statusFilter
                   ? ` / ${readSyncHealth.latestInterrupted.statusFilter}`
                   : ""}
-                {` / ${readSyncHealth.latestInterrupted.interruptedStage} 단계 / ${formatDate(readSyncHealth.latestInterrupted.processedAt)}`}
+                {t("health.latestDetail", { stage: readSyncHealth.latestInterrupted.interruptedStage, date: formatDate(readSyncHealth.latestInterrupted.processedAt) })}
               </p>
             ) : null}
           </div>
@@ -679,11 +638,11 @@ export function SystemStatusView() {
         <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border bg-card">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold">worker 상태</h2>
+              <h2 className="text-sm font-semibold">{t("toolbar.title")}</h2>
               <p
                 className={cn(
                   "mt-1 truncate text-xs",
-                  message.includes("실패") || message.includes("못했습니다")
+                  messageTone === "warning"
                     ? "text-amber-700"
                     : "text-muted-foreground"
                 )}
@@ -695,8 +654,8 @@ export function SystemStatusView() {
               <SearchInput
                 value={query}
                 onValueChange={setQuery}
-                placeholder="worker, 상태, 오류 검색"
-                aria-label="worker 검색"
+                placeholder={t("toolbar.search")}
+                aria-label={t("columns.search")}
               />
               <Button
                 type="button"
@@ -705,17 +664,17 @@ export function SystemStatusView() {
                 onClick={() => void loadWorkers()}
               >
                 <RefreshCcw className="size-4" />
-                새로고침
+                {t("toolbar.refresh")}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 disabled={loading || Boolean(runningKey)}
-                title="서버 콘솔에서 관리하는 백업 작업은 제외합니다."
+                title={t("toolbar.dueTitle")}
                 onClick={() => void runDueWorkers()}
               >
                 <CheckCircle2 className="size-4" />
-                예정 작업 실행
+                {t("toolbar.runDue")}
               </Button>
             </div>
           </div>
@@ -732,7 +691,7 @@ export function SystemStatusView() {
                   <TabsTrigger key={group.key} value={group.key}>
                     <span>{group.label}</span>
                     <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                      {(workerGroupCounts.get(group.key) ?? 0).toLocaleString("ko-KR")}
+                      {(workerGroupCounts.get(group.key) ?? 0).toLocaleString(locale)}
                     </span>
                   </TabsTrigger>
                 ))}
@@ -747,7 +706,7 @@ export function SystemStatusView() {
             selectedRowKey={selectedWorker?.workerKey ?? null}
             onRowClick={(worker) => setSelectedWorkerKey(worker.workerKey)}
             emptyMessage={
-              loading ? "worker 상태를 불러오는 중입니다." : "등록된 worker가 없습니다."
+              loading ? t("toolbar.loading") : t("toolbar.empty")
             }
             minWidth="1180px"
             rowHeight={58}
@@ -756,9 +715,9 @@ export function SystemStatusView() {
 
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-md border bg-card">
           <div className="border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">worker 상세</h2>
+            <h2 className="text-sm font-semibold">{t("detail.title")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              선택한 worker의 lock, 스케줄, 마지막 실행 결과를 확인합니다.
+              {t("detail.subtitle")}
             </p>
           </div>
 
@@ -766,67 +725,70 @@ export function SystemStatusView() {
             <div className="min-h-0 flex-1 overflow-auto p-4 pb-6">
               <div className="grid gap-2">
                 <DetailRow label="worker" value={selectedWorker.workerName} />
-                <DetailRow label="키" value={selectedWorker.workerKey} />
+                <DetailRow label={t("detail.key")} value={selectedWorker.workerKey} />
                 <DetailRow
-                  label="분류"
+                  label={t("detail.type")}
                   value={`${workerTypeLabel(selectedWorker.workerType)} / ${selectedWorker.workerType}`}
                 />
                 <DetailRow
-                  label="관리 위치"
+                  label={t("detail.management")}
                   value={
                     selectedWorker.managementSurface === "SERVER_CONSOLE"
-                      ? "서버 콘솔 · DB 백업 관리"
-                      : "QuickHack · 시스템 상태"
+                      ? t("detail.serverManagement")
+                      : t("detail.clientManagement")
                   }
                 />
                 <DetailRow
-                  label="상태"
+                  label={t("detail.status")}
                   value={statusLabel(selectedWorker.status)}
                 />
                 <DetailRow
-                  label="스케줄"
+                  label={t("detail.schedule")}
                   value={
                     selectedWorker.schedulable
                       ? `${
                           selectedWorker.scheduleEnabled
-                            ? "활성"
-                            : "비활성"
+                            ? t("columns.active")
+                            : t("columns.inactive")
                         } / ${
                           selectedWorker.scheduleLabel ||
                           intervalText(selectedWorker.intervalSeconds)
                         }`
-                      : "수동 전용"
+                      : t("columns.manual")
                   }
                 />
                 <DetailRow
-                  label="다음 실행"
+                  label={t("detail.nextRun")}
                   value={formatDate(selectedWorker.nextRunAt)}
                 />
                 <DetailRow
-                  label="최근 실행"
+                  label={t("detail.lastRun")}
                   value={formatDate(selectedWorker.lastRunAt)}
                 />
                 <DetailRow
-                  label="시작"
+                  label={t("detail.started")}
                   value={formatDate(selectedWorker.startedAt)}
                 />
                 <DetailRow
-                  label="종료"
+                  label={t("detail.finished")}
                   value={formatDate(selectedWorker.finishedAt)}
                 />
-                <DetailRow label="진행률" value={progressText(selectedWorker)} />
                 <DetailRow
-                  label="manager 주기"
+                  label={t("detail.progress")}
+                  value={progressText(selectedWorker, locale)}
+                />
+                <DetailRow
+                  label={t("detail.managerInterval")}
                   value={
-                    manager ? `${manager.pollSeconds}초` : ""
+                    manager ? t("interval.seconds", { seconds: manager.pollSeconds }) : ""
                   }
                 />
                 <DetailRow
-                  label="manager 최근 확인"
+                  label={t("detail.managerLastCheck")}
                   value={formatDate(manager?.lastTickAt ?? "")}
                 />
                 <DetailRow
-                  label="manager 상태"
+                  label={t("detail.managerStatus")}
                   value={
                     manager?.disabledReason ||
                     manager?.lastErrorMessage ||
@@ -834,28 +796,28 @@ export function SystemStatusView() {
                   }
                 />
                 <DetailRow
-                  label="조회 중단 점검"
+                  label={t("detail.recovery")}
                   value={formatDate(manager?.lastReadSyncRecoveryAt ?? "")}
                 />
                 <DetailRow
-                  label="조회 중단 점검 오류"
+                  label={t("detail.recoveryError")}
                   value={manager?.lastReadSyncRecoveryError ?? ""}
                 />
                 <DetailRow
-                  label="시도 횟수"
+                  label={t("detail.attempts")}
                   value={`${selectedWorker.attemptCount} / ${selectedWorker.maxAttempts}`}
                 />
-                <DetailRow label="lock 소유" value={selectedWorker.lockedBy} />
+                <DetailRow label={t("detail.lockOwner")} value={selectedWorker.lockedBy} />
                 <DetailRow
-                  label="lock 만료"
+                  label={t("detail.lockExpiry")}
                   value={formatDate(selectedWorker.lockedUntil)}
                 />
                 <DetailRow
-                  label="마지막 실행자"
+                  label={t("detail.lastActor")}
                   value={selectedWorker.displayName || selectedWorker.username}
                 />
                 <DetailRow
-                  label="마지막 오류"
+                  label={t("detail.lastError")}
                   value={
                     selectedWorker.lastErrorMessage
                       ? `${selectedWorker.lastErrorCode} ${selectedWorker.lastErrorMessage}`
@@ -866,47 +828,47 @@ export function SystemStatusView() {
 
               <div className="mt-4 grid gap-2">
                 <h3 className="text-xs font-semibold text-muted-foreground">
-                  마지막 결과
+                  {t("detail.lastResult")}
                 </h3>
                 <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
                   <DetailRow
-                    label="결과 요약"
+                    label={t("detail.resultSummary")}
                     value={selectedWorker.resultSummaryText}
                   />
                   <DetailRow
-                    label="처리"
-                    value={selectedWorker.resultProcessedCount?.toLocaleString("ko-KR") ?? ""}
+                    label={t("detail.processed")}
+                    value={selectedWorker.resultProcessedCount?.toLocaleString(locale) ?? ""}
                   />
                   <DetailRow
-                    label="성공"
-                    value={selectedWorker.resultSucceededCount?.toLocaleString("ko-KR") ?? ""}
+                    label={t("detail.success")}
+                    value={selectedWorker.resultSucceededCount?.toLocaleString(locale) ?? ""}
                   />
                   <DetailRow
-                    label="실패"
-                    value={selectedWorker.resultFailedCount?.toLocaleString("ko-KR") ?? ""}
+                    label={t("detail.failed")}
+                    value={selectedWorker.resultFailedCount?.toLocaleString(locale) ?? ""}
                   />
                   <DetailRow
-                    label="건너뜀"
-                    value={selectedWorker.resultSkippedCount?.toLocaleString("ko-KR") ?? ""}
+                    label={t("detail.skipped")}
+                    value={selectedWorker.resultSkippedCount?.toLocaleString(locale) ?? ""}
                   />
                   <DetailRow
-                    label="생성"
-                    value={selectedWorker.resultCreatedCount?.toLocaleString("ko-KR") ?? ""}
+                    label={t("detail.created")}
+                    value={selectedWorker.resultCreatedCount?.toLocaleString(locale) ?? ""}
                   />
                   <DetailRow
-                    label="수정"
-                    value={selectedWorker.resultUpdatedCount?.toLocaleString("ko-KR") ?? ""}
+                    label={t("detail.updated")}
+                    value={selectedWorker.resultUpdatedCount?.toLocaleString(locale) ?? ""}
                   />
                   <DetailRow
-                    label="주의"
-                    value={selectedWorker.resultWarningCount?.toLocaleString("ko-KR") ?? ""}
+                    label={t("detail.warning")}
+                    value={selectedWorker.resultWarningCount?.toLocaleString(locale) ?? ""}
                   />
                 </div>
               </div>
             </div>
           ) : (
             <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
-              왼쪽 표에서 worker를 선택하세요.
+              {t("detail.select")}
             </div>
           )}
         </aside>

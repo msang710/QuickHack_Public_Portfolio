@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { Input } from "@/quickhack_client/components/ui/input";
 import { SuggestInput } from "@/quickhack_client/components/ui/search-select";
 import { TableSelectCheckbox } from "@/quickhack_client/components/ui/table-select-checkbox";
@@ -68,22 +69,31 @@ type PurchasePriceMatrixTableProps = {
 
 export const SALE_PRODUCT_GRADE_OPTIONS = ["A", "A-", "B+", "B"];
 
-export function formatPrice(value: number | null) {
+export function formatPrice(value: number | null, locale: string) {
   if (value === null || value === undefined) {
     return "-";
   }
 
-  return `${value.toLocaleString("ko-KR")}원`;
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "KRW",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-export function formatPriceWithWonSymbol(value: number) {
-  return `₩ ${value.toLocaleString("ko-KR")}`;
+export function formatPriceWithWonSymbol(value: number, locale: string) {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "KRW",
+    currencyDisplay: "narrowSymbol",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-export function formatPriceInput(value: string) {
+export function formatPriceInput(value: string, locale: string) {
   const digitsOnly = value.replace(/[^\d]/g, "");
 
-  return digitsOnly ? Number(digitsOnly).toLocaleString("ko-KR") : "";
+  return digitsOnly ? Number(digitsOnly).toLocaleString(locale) : "";
 }
 
 export function parsePriceInput(value: string) {
@@ -125,13 +135,15 @@ export function PurchaseConditionNoteInput({
   options: string[];
   onChange: (value: string) => void;
 }) {
+  const t = useTranslations("inbound.purchasePrice.note");
+
   return (
     <SuggestInput
-      label="매입 조건 메모"
+      label={t("label")}
       value={value}
       options={options}
-      placeholder="기본, 잔상특가 등"
-      emptyLabel="기본"
+      placeholder={t("placeholder")}
+      emptyLabel={t("default")}
       className="min-w-[220px]"
       onValueChange={onChange}
     />
@@ -173,6 +185,9 @@ export function PurchasePriceMatrixTable({
   applyPreviousPriceDrafts,
   updateRateDraft,
 }: PurchasePriceMatrixTableProps) {
+  const t = useTranslations("inbound.purchasePrice");
+  const locale = useLocale();
+
   function previousPriceTargetsForRow(row: PurchasePriceMatrixRow) {
     return visibleGradeOptions.flatMap((grade) => {
       const cell = row.cells.find(
@@ -195,7 +210,7 @@ export function PurchasePriceMatrixTable({
     targets: PurchasePreviousPriceDraftTarget[]
   ) {
     const checkedCount = targets.filter((target) => {
-      const previousPriceText = target.previousPrice.toLocaleString("ko-KR");
+      const previousPriceText = target.previousPrice.toLocaleString(locale);
 
       return draftForCell(target.key).purchasePrice === previousPriceText;
     }).length;
@@ -217,14 +232,14 @@ export function PurchasePriceMatrixTable({
       <Table className="min-w-[1060px]">
         <TableHeader className="sticky top-0 z-10 bg-secondary">
           <TableRow>
-            <TableHead className="min-w-[240px]">기종</TableHead>
-            <TableHead className="w-[110px]">용량</TableHead>
+            <TableHead className="min-w-[240px]">{t("columns.model")}</TableHead>
+            <TableHead className="w-[110px]">{t("columns.storage")}</TableHead>
             <TableHead className="w-[78px] text-center">
               <TableSelectCheckbox
                 checked={allPreviousPriceSelectionState.checked}
                 indeterminate={allPreviousPriceSelectionState.indeterminate}
                 disabled={allPreviousPriceSelectionState.disabled}
-                ariaLabel="현재 표시된 모든 행 전일가 변동없음 적용 또는 해제"
+                ariaLabel={t("previous.allAria")}
                 onCheckedChange={(checked) =>
                   applyPreviousPriceDrafts(allPreviousPriceTargets, checked)
                 }
@@ -244,7 +259,7 @@ export function PurchasePriceMatrixTable({
                 colSpan={3 + visibleGradeOptions.length}
                 className="h-64 text-center text-sm text-muted-foreground"
               >
-                표시할 기종/용량 조합이 없습니다.
+                {t("empty")}
               </TableCell>
             </TableRow>
           ) : (
@@ -266,7 +281,10 @@ export function PurchasePriceMatrixTable({
                             rowPreviousPriceSelectionState.indeterminate
                           }
                           disabled={rowPreviousPriceSelectionState.disabled}
-                          ariaLabel={`${row.model} ${row.storage} 전일가 변동없음 일괄 적용 또는 해제`}
+                          ariaLabel={t("previous.rowAria", {
+                            model: row.model,
+                            storage: row.storage,
+                          })}
                           onCheckedChange={(checked) =>
                             applyPreviousPriceDrafts(
                               rowPreviousPriceTargets,
@@ -296,7 +314,7 @@ export function PurchasePriceMatrixTable({
                   const rate = ratesByKey.get(cell.key);
                   const previousRate = previousRatesByKey.get(cell.key);
                   const previousPriceText = previousRate
-                    ? previousRate.purchasePrice.toLocaleString("ko-KR")
+                    ? previousRate.purchasePrice.toLocaleString(locale)
                     : "";
                   const isPreviousPriceChecked =
                     Boolean(previousRate) &&
@@ -307,7 +325,7 @@ export function PurchasePriceMatrixTable({
                       <div className="grid gap-1.5">
                         {rate ? (
                           <span className="text-xs font-medium tabular-nums">
-                            {formatPrice(rate.purchasePrice)}
+                            {formatPrice(rate.purchasePrice, locale)}
                           </span>
                         ) : null}
                         {previousRate ? (
@@ -316,14 +334,11 @@ export function PurchasePriceMatrixTable({
                               type="checkbox"
                               className="size-3.5 rounded border-input"
                               checked={isPreviousPriceChecked}
-                              aria-label={
-                                row.model +
-                                " " +
-                                row.storage +
-                                " " +
-                                grade.label +
-                                " 전일가 변동없음"
-                              }
+                              aria-label={t("previous.cellAria", {
+                                grade: grade.label,
+                                model: row.model,
+                                storage: row.storage,
+                              })}
                               onChange={(event) =>
                                 applyPreviousPriceDraft(
                                   cell.key,
@@ -333,26 +348,32 @@ export function PurchasePriceMatrixTable({
                               }
                             />
                             <span>
-                              전일가{" "}
-                              {formatPriceWithWonSymbol(
-                                previousRate.purchasePrice
-                              )}{" "}
-                              에서 변동없음
+                              {t("previous.unchanged", {
+                                price: formatPriceWithWonSymbol(
+                                  previousRate.purchasePrice,
+                                  locale
+                                ),
+                              })}
                             </span>
                           </label>
                         ) : (
                           <div className="text-[11px] text-muted-foreground">
-                            전일가 없음
+                            {t("previous.none")}
                           </div>
                         )}
                         <Input
                           inputMode="numeric"
                           value={draft.purchasePrice}
-                          placeholder={rate ? formatPrice(rate.purchasePrice) : "0"}
+                          placeholder={
+                            rate ? formatPrice(rate.purchasePrice, locale) : "0"
+                          }
                           onChange={(event) =>
                             updateRateDraft(cell.key, (current) => ({
                               ...current,
-                              purchasePrice: formatPriceInput(event.target.value),
+                              purchasePrice: formatPriceInput(
+                                event.target.value,
+                                locale
+                              ),
                             }))
                           }
                         />

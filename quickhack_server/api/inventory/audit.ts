@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 401,
       code: "AUTHENTICATION_REQUIRED",
-      message: "로그인이 필요합니다.",
+
     });
   }
 
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 403,
       code: "PERMISSION_DENIED",
-      message: "재고 실사 저장 권한이 없습니다.",
+
     });
   }
   setOperationTraceUserId(user.userId);
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
 
@@ -98,7 +98,13 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json({
       ok: true,
-      message: `재고 실사 기준일 ${result.auditBaseDate} 기준으로 ${result.changedCount}건을 저장했습니다. 포장 완료 비품 소모 ${result.packingSupplyConsumption.eventCount}건을 반영했습니다.`,
+      resultCode: "INVENTORY_AUDIT_SAVED",
+      messageArguments: {
+        auditBaseDate: result.auditBaseDate,
+        changedCount: result.changedCount,
+        packingSupplyConsumptionCount:
+          result.packingSupplyConsumption.eventCount,
+      },
       changedCount: result.changedCount,
       auditBaseDate: result.auditBaseDate,
       auditPeriodFrom: result.auditPeriodFrom,

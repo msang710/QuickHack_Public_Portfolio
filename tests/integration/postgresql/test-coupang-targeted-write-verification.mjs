@@ -630,8 +630,9 @@ async function assertCompletedReceiptWithoutStoppedReleaseStaysUnknown(
     "Unknown return verification did not retain the complete receipt target group."
   );
   assert(
-    result.message.includes("접수 RETURNS_COMPLETED / 출고중지 N"),
-    "The return mismatch message omitted the observed statuses."
+    result.messageArguments.receiptStatus === "RETURNS_COMPLETED" &&
+      result.messageArguments.releaseStatus === "N",
+    "The return mismatch message arguments omitted the observed statuses."
   );
   assert(
     (await prisma.coupang_return_raw.findUnique({

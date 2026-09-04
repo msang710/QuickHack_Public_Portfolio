@@ -1,0 +1,20 @@
+import type { MessageShape } from "@/quickhack_shared/i18n/message-contract";
+import type { QuickHackMessages } from "../ko/index.ts";
+import { adminEn } from "./admin.ts";
+import { authEn } from "./auth.ts";
+import { commonEn } from "./common.ts";
+import { catalogEn } from "./catalog.ts";
+import { desktopEn } from "./desktop.ts";
+import { developerEn } from "./developer.ts";
+import { navigationEn } from "./navigation.ts";
+import { settingsEn } from "./settings.ts";
+import { salesChannelEn } from "./sales-channel.ts";
+import { inspectionEn } from "./inspection.ts";
+import { inboundEn } from "./inbound.ts";
+import { inventoryEn } from "./inventory.ts";
+import { shipmentEn } from "./shipment.ts";
+import { returnsEn } from "./returns.ts";
+import { suppliesEn } from "./supplies.ts";
+import { statisticsEn } from "./statistics.ts";
+
+export const enMessages = { admin: adminEn, auth: authEn, catalog: catalogEn, common: commonEn, desktop: desktopEn, developer: developerEn, inbound: inboundEn, inspection: inspectionEn, inventory: inventoryEn, navigation: navigationEn, returns: returnsEn, salesChannel: salesChannelEn, settings: settingsEn, shipment: shipmentEn, statistics: statisticsEn, supplies: suppliesEn } as const satisfies MessageShape<QuickHackMessages>;

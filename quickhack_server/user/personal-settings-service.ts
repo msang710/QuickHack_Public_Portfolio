@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
-import { nowKstSqlDateTime } from "@/quickhack_shared/core/time";
+import { databaseNow } from "@/quickhack_server/core/database/time-boundary";
+import { normalizeQuickHackLocale } from "@/quickhack_shared/i18n/locales";
 import {
   DEFAULT_USER_PREFERENCES,
   DEFAULT_USER_SHORTCUT_BINDINGS,
@@ -82,6 +83,10 @@ function preferencesToDatabase(preferences: UserPreferences) {
   };
 }
 
+function localeFromRow(row: PreferenceRow) {
+  return normalizeQuickHackLocale(row?.locale);
+}
+
 function shortcutBindingsFromRows(rows: ShortcutRow[]): UserShortcutBinding[] {
   const rowByAction = new Map(
     rows
@@ -120,7 +125,7 @@ function parsePreferences(value: unknown): UserPreferences {
   for (const key of USER_PREFERENCE_KEYS) {
     if (typeof input[key] !== "boolean") {
       throw new PersonalSettingsValidationError(
-        `개인 설정 '${key}' 값은 켜짐 또는 꺼짐이어야 합니다.`
+        "PERSONAL_SETTINGS_VALIDATION_FAILED"
       );
     }
     preferences[key] = input[key];
@@ -132,13 +137,13 @@ function parsePreferences(value: unknown): UserPreferences {
 function parseShortcutBindings(value: unknown): UserShortcutBinding[] {
   if (!Array.isArray(value)) {
     throw new PersonalSettingsValidationError(
-      "단축키 설정 목록이 올바르지 않습니다."
+      "PERSONAL_SETTINGS_VALIDATION_FAILED"
     );
   }
 
   if (value.length !== SHORTCUT_ACTION_CODES.length) {
     throw new PersonalSettingsValidationError(
-      "모든 단축키 항목을 포함해서 저장해야 합니다."
+      "PERSONAL_SETTINGS_VALIDATION_FAILED"
     );
   }
 
@@ -154,18 +159,18 @@ function parseShortcutBindings(value: unknown): UserShortcutBinding[] {
 
     if (!isShortcutActionCode(input.actionCode)) {
       throw new PersonalSettingsValidationError(
-        "지원하지 않는 단축키 동작입니다."
+        "PERSONAL_SETTINGS_VALIDATION_FAILED"
       );
     }
     if (actionCodes.has(input.actionCode)) {
       throw new PersonalSettingsValidationError(
-        "같은 단축키 동작이 두 번 포함되어 있습니다.",
+        "PERSONAL_SETTINGS_VALIDATION_FAILED",
         { actionCode: input.actionCode }
       );
     }
     if (!isShortcutModifier(input.modifier)) {
       throw new PersonalSettingsValidationError(
-        "단축키 보조키 값이 올바르지 않습니다.",
+        "PERSONAL_SETTINGS_VALIDATION_FAILED",
         { actionCode: input.actionCode }
       );
     }
@@ -174,7 +179,7 @@ function parseShortcutBindings(value: unknown): UserShortcutBinding[] {
       !isSupportedShortcutKeyCode(input.keyCode)
     ) {
       throw new PersonalSettingsValidationError(
-        "지원하지 않는 키입니다.",
+        "PERSONAL_SETTINGS_VALIDATION_FAILED",
         { actionCode: input.actionCode }
       );
     }
@@ -183,7 +188,7 @@ function parseShortcutBindings(value: unknown): UserShortcutBinding[] {
       isReservedShortcut(input.modifier, input.keyCode)
     ) {
       throw new PersonalSettingsValidationError(
-        "Windows 또는 브라우저에서 사용하는 위험한 단축키는 지정할 수 없습니다.",
+        "PERSONAL_SETTINGS_VALIDATION_FAILED",
         { actionCode: input.actionCode }
       );
     }
@@ -205,7 +210,7 @@ function parseShortcutBindings(value: unknown): UserShortcutBinding[] {
 
       if (duplicateAction) {
         throw new PersonalSettingsValidationError(
-          "이미 다른 동작에 지정된 단축키 조합입니다.",
+          "PERSONAL_SETTINGS_VALIDATION_FAILED",
           { actionCode: binding.actionCode, status: 409 }
         );
       }
@@ -217,7 +222,7 @@ function parseShortcutBindings(value: unknown): UserShortcutBinding[] {
 
   if (SHORTCUT_ACTION_CODES.some((actionCode) => !actionCodes.has(actionCode))) {
     throw new PersonalSettingsValidationError(
-      "필수 단축키 동작이 누락되어 있습니다."
+      "PERSONAL_SETTINGS_VALIDATION_FAILED"
     );
   }
 
@@ -229,7 +234,7 @@ function parseSaveInput(value: unknown) {
   const input = objectValue(value, "개인 설정 저장 요청이 올바르지 않습니다.");
   assertOnlyKeys(
     input,
-    ["expectedRevision", "preferences", "shortcutBindings"],
+    ["expectedRevision", "locale", "preferences", "shortcutBindings"],
     "지원하지 않는 개인 설정 저장 값이 포함되어 있습니다."
   );
 
@@ -238,12 +243,19 @@ function parseSaveInput(value: unknown) {
     Number(input.expectedRevision) < 0
   ) {
     throw new PersonalSettingsValidationError(
-      "개인 설정 버전 정보가 올바르지 않습니다."
+      "PERSONAL_SETTINGS_VALIDATION_FAILED"
     );
   }
 
   return {
     expectedRevision: Number(input.expectedRevision),
+    locale: (() => {
+      const locale = normalizeQuickHackLocale(input.locale);
+      if (locale !== input.locale) {
+        throw new PersonalSettingsValidationError("PERSONAL_SETTINGS_VALIDATION_FAILED");
+      }
+      return locale;
+    })(),
     preferences: parsePreferences(input.preferences),
     shortcutBindings: parseShortcutBindings(input.shortcutBindings),
   };
@@ -257,6 +269,7 @@ export async function getPersonalSettings(client: PrismaClient, userId: number) 
 
   return {
     revision: preferenceRow?.settings_revision ?? 0,
+    locale: localeFromRow(preferenceRow),
     preferences: preferencesFromRow(preferenceRow),
     shortcutBindings: shortcutBindingsFromRows(shortcutRows),
   } satisfies PersonalSettings;
@@ -269,13 +282,13 @@ export async function savePersonalSettings(
 ) {
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new PersonalSettingsValidationError(
-      "로그인 계정 정보가 올바르지 않습니다.",
+      "PERSONAL_SETTINGS_VALIDATION_FAILED",
       { status: 401 }
     );
   }
 
   const input = parseSaveInput(value);
-  const timestamp = nowKstSqlDateTime();
+  const timestamp = databaseNow();
 
   return client.$transaction(async (tx) => {
     const preferenceRow = await tx.user_preferences.findUnique({
@@ -285,7 +298,7 @@ export async function savePersonalSettings(
 
     if (currentRevision !== input.expectedRevision) {
       throw new PersonalSettingsValidationError(
-        "다른 창에서 개인 설정이 먼저 변경되었습니다. 새로고침 후 다시 저장하세요.",
+        "PERSONAL_SETTINGS_VALIDATION_FAILED",
         { status: 409 }
       );
     }
@@ -298,6 +311,7 @@ export async function savePersonalSettings(
         ? await tx.user_preferences.createMany({
             data: {
               user_id: userId,
+              locale: input.locale,
               ...preferenceData,
               settings_revision: nextRevision,
               created_at: timestamp,
@@ -311,6 +325,7 @@ export async function savePersonalSettings(
               settings_revision: input.expectedRevision,
             },
             data: {
+              locale: input.locale,
               ...preferenceData,
               settings_revision: nextRevision,
               updated_at: timestamp,
@@ -319,7 +334,7 @@ export async function savePersonalSettings(
 
     if (claimed.count !== 1) {
       throw new PersonalSettingsValidationError(
-        "다른 창에서 개인 설정이 먼저 변경되었습니다. 새로고침한 뒤 다시 저장하세요.",
+        "PERSONAL_SETTINGS_VALIDATION_FAILED",
         { status: 409 }
       );
     }
@@ -338,6 +353,7 @@ export async function savePersonalSettings(
 
     return {
       revision: nextRevision,
+      locale: input.locale,
       preferences: { ...input.preferences },
       shortcutBindings: input.shortcutBindings.map((binding) => ({
         ...binding,

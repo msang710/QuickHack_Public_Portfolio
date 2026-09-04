@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -12,7 +14,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/quickhack_client/components/ui/sheet";
-import { inboundStatusLabel } from "@/quickhack_shared/inbound/inbound-status";
+import { statusLabel } from "@/quickhack_client/components/shared/device-detail-sheet";
 import type {
   InboundBatchReconciliationDto,
   InboundReconciliationDetailDto,
@@ -31,52 +33,32 @@ type DetailApiResponse = {
   data?: InboundReconciliationDetailDto;
 };
 
-const SCOPE_LABELS: Record<
-  InboundReconciliationDetailScope,
-  {
-    title: string;
-    empty: string;
-    quantityLabel: string;
-  }
-> = {
-  UNASSIGNED: {
-    title: "미지정 PG 상세",
-    empty: "현재 미지정 PG가 없습니다.",
-    quantityLabel: "PG",
-  },
-  MISMATCHED: {
-    title: "불일치 차수 상세",
-    empty: "현재 기대 수량과 연결 수량이 다른 차수가 없습니다.",
-    quantityLabel: "차수",
-  },
-  SHORTAGE: {
-    title: "부족 수량 상세",
-    empty: "현재 부족 수량이 있는 차수가 없습니다.",
-    quantityLabel: "대",
-  },
-  EXCESS: {
-    title: "초과 수량 상세",
-    empty: "현재 초과 수량이 있는 차수가 없습니다.",
-    quantityLabel: "대",
-  },
-};
+const SCOPE_KEYS = {
+  UNASSIGNED: "unassigned",
+  MISMATCHED: "mismatched",
+  SHORTAGE: "shortage",
+  EXCESS: "excess",
+} as const satisfies Record<InboundReconciliationDetailScope, string>;
 
-function quantityText(value: number) {
-  return value.toLocaleString("ko-KR");
+function quantityText(value: number, locale: string) {
+  return value.toLocaleString(locale);
 }
 
-function differenceText(value: number) {
+function differenceText(value: number, locale: string) {
   return value > 0
-    ? `+${quantityText(value)}`
-    : quantityText(value);
+    ? `+${quantityText(value, locale)}`
+    : quantityText(value, locale);
 }
 
-function deviceDescription(device: LatestInboundDeviceDto) {
+function deviceDescription(
+  device: LatestInboundDeviceDto,
+  fallback: { model: string; storage: string; color: string; grade: string }
+) {
   return [
-    device.model || "기종 미정",
-    device.storage || "용량 미정",
-    device.color || "색상 미정",
-    device.saleGrade || "등급 미정",
+    device.model || fallback.model,
+    device.storage || fallback.storage,
+    device.color || fallback.color,
+    device.saleGrade || fallback.grade,
   ].join(" · ");
 }
 
@@ -89,6 +71,7 @@ export function InboundReconciliationDetailSheet({
   onOpenChange: (open: boolean) => void;
   onOpenInventoryEdit: (pgNo: string) => void;
 }) {
+  const t = useTranslations("inventory.reconciliationDetail");
   const open = selection !== null;
   const [data, setData] =
     React.useState<InboundReconciliationDetailDto | null>(null);
@@ -126,7 +109,7 @@ export function InboundReconciliationDetailSheet({
 
         if (!response.ok || !payload?.ok || !payload.data) {
           throw new Error(
-            payload?.message || "입고 대조 상세를 불러오지 못했습니다."
+            legacyApiMessage(payload, t("fallback.loadFailed"))
           );
         }
 
@@ -150,7 +133,7 @@ export function InboundReconciliationDetailSheet({
         }
       }
     },
-    []
+    [t]
   );
 
   React.useEffect(() => {
@@ -186,7 +169,7 @@ export function InboundReconciliationDetailSheet({
     return null;
   }
 
-  const scopeDefinition = SCOPE_LABELS[selection.scope];
+  const scopeKey = SCOPE_KEYS[selection.scope];
   const isEmpty =
     data !== null &&
     data.devices.length === 0 &&
@@ -201,10 +184,9 @@ export function InboundReconciliationDetailSheet({
     <Sheet open={open} onOpenChange={closeSheet}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>{scopeDefinition.title}</SheetTitle>
+          <SheetTitle>{t(`scopes.${scopeKey}.title`)}</SheetTitle>
           <SheetDescription>
-            {selection.businessDate} · 상세는 창을 열 때의 최신 DB 상태로
-            다시 조회합니다.
+            {t("description", { date: selection.businessDate })}
           </SheetDescription>
         </SheetHeader>
 
@@ -212,7 +194,7 @@ export function InboundReconciliationDetailSheet({
           {loading ? (
             <div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
               <RefreshCw className="size-4 animate-spin" />
-              입고 대조 상세를 불러오는 중입니다.
+              {t("loading")}
             </div>
           ) : error ? (
             <div className="grid gap-3">
@@ -223,18 +205,20 @@ export function InboundReconciliationDetailSheet({
                 onClick={() => void load(selection)}
               >
                 <RefreshCw />
-                다시 시도
+                {t("actions.retry")}
               </Button>
             </div>
           ) : data ? (
             <div className="grid gap-4">
               <div className="flex items-center justify-between rounded-md border bg-muted/25 px-3 py-2">
                 <span className="text-sm text-muted-foreground">
-                  현재 상세 합계
+                  {t("total")}
                 </span>
                 <strong className="tabular-nums">
-                  {quantityText(data.scopeQuantity)}
-                  {scopeDefinition.quantityLabel}
+                  {t("totalValue", {
+                    quantity: data.scopeQuantity,
+                    unit: t(`scopes.${scopeKey}.unit`),
+                  })}
                 </strong>
               </div>
 
@@ -264,8 +248,9 @@ export function InboundReconciliationDetailSheet({
 
               {isEmpty ? (
                 <FeedbackBanner tone="neutral">
-                  {scopeDefinition.empty} 상단 지표를 새로고침하면 현재
-                  결과와 맞춰집니다.
+                  {t("emptyRefresh", {
+                    message: t(`scopes.${scopeKey}.empty`),
+                  })}
                 </FeedbackBanner>
               ) : null}
             </div>
@@ -283,16 +268,18 @@ function InboundBatchCard({
   batch: InboundBatchReconciliationDto;
   onOpenInventoryEdit: (pgNo: string) => void;
 }) {
+  const t = useTranslations("inventory.reconciliationDetail");
+  const locale = useLocale();
   return (
     <section className="overflow-hidden rounded-md border">
       <div className="grid gap-3 bg-muted/25 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold">
-              {batch.batchDate} · {batch.batchNo}차
+              {t("batch.title", { batch: batch.batchNo, date: batch.batchDate })}
             </h3>
             <p className="text-xs text-muted-foreground">
-              {batch.note || "비고 없음"}
+              {batch.note || t("batch.noNote")}
             </p>
           </div>
           <Badge
@@ -304,18 +291,20 @@ function InboundBatchCard({
                   : "danger"
             }
           >
-            차이 {differenceText(batch.arrivalDifference)}
+            {t("batch.difference", {
+              value: differenceText(batch.arrivalDifference, locale),
+            })}
           </Badge>
         </div>
         <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-          <BatchMetric label="기대" value={batch.expectedQuantity} />
-          <BatchMetric label="현재 연결" value={batch.linkedQuantity} />
+          <BatchMetric label={t("batch.expected")} value={batch.expectedQuantity} />
+          <BatchMetric label={t("batch.connected")} value={batch.linkedQuantity} />
           <BatchMetric
-            label="매입처 반품"
+            label={t("batch.supplierReturn")}
             value={batch.supplierReturnQuantity}
           />
           <BatchMetric
-            label="정상 입고 대상"
+            label={t("batch.normalTarget")}
             value={batch.normalInboundTargetQuantity}
           />
         </dl>
@@ -323,7 +312,7 @@ function InboundBatchCard({
 
       <div className="grid gap-2 border-t p-3">
         <h4 className="text-xs font-semibold text-muted-foreground">
-          현재 연결 PG {quantityText(batch.devices.length)}개
+          {t("batch.connectedPg", { count: batch.devices.length })}
         </h4>
         {batch.devices.map((device) => (
           <InboundDeviceRow
@@ -334,7 +323,7 @@ function InboundBatchCard({
         ))}
         {batch.devices.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            현재 이 차수에 연결된 PG가 없습니다.
+            {t("batch.empty")}
           </p>
         ) : null}
       </div>
@@ -349,11 +338,12 @@ function BatchMetric({
   label: string;
   value: number;
 }) {
+  const locale = useLocale();
   return (
     <div className="rounded border bg-background px-2 py-1.5">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 font-semibold tabular-nums">
-        {quantityText(value)}
+        {quantityText(value, locale)}
       </dd>
     </div>
   );
@@ -366,11 +356,20 @@ function InboundDeviceRow({
   device: LatestInboundDeviceDto;
   onOpenInventoryEdit: (pgNo: string) => void;
 }) {
+  const t = useTranslations("inventory.reconciliationDetail");
+  const detailT = useTranslations("common.deviceDetail");
+  const description = deviceDescription(device, {
+    color: t("device.colorUnknown"),
+    grade: t("device.gradeUnknown"),
+    model: t("device.modelUnknown"),
+    storage: t("device.storageUnknown"),
+  });
+
   return (
     <button
       type="button"
       className="flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={`${device.pgNo} 재고 수정에서 열기`}
+      aria-label={t("device.openAria", { pg: device.pgNo })}
       onClick={() => onOpenInventoryEdit(device.pgNo)}
     >
       <div className="min-w-0 flex-1">
@@ -378,15 +377,17 @@ function InboundDeviceRow({
           {device.pgNo}
         </div>
         <div className="truncate text-xs text-muted-foreground">
-          {deviceDescription(device)}
+          {description}
         </div>
         <div className="truncate text-[11px] text-muted-foreground">
-          최신 상태 {inboundStatusLabel(device.inboundStatus)} ·{" "}
-          {device.updatedAt}
+          {t("device.latest", {
+            status: statusLabel(device.inboundStatus, detailT),
+            updatedAt: device.updatedAt,
+          })}
         </div>
       </div>
       <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
-        재고 수정
+        {t("actions.editInventory")}
         <ArrowRight className="size-3.5" />
       </span>
     </button>

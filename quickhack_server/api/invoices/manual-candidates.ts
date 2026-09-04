@@ -29,7 +29,7 @@ async function authorize(request: NextRequest) {
     return {
       user: null,
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -38,7 +38,7 @@ async function authorize(request: NextRequest) {
     return {
       user: null,
       response: NextResponse.json(
-        { ok: false, message: "수동 송장 발급 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_JSON_BODY",
-      message: "요청 본문이 올바른 JSON 객체 형식이 아닙니다.",
+
       cause: error,
     });
   }
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       return apiFailureResponse({
         status: 400,
         code: "INVALID_MANUAL_INVOICE_ACTION",
-        message: "지원하지 않는 수동 송장 발급 작업입니다.",
+
       });
     }
 
@@ -132,7 +132,6 @@ export async function POST(request: NextRequest) {
         channelSubmission = {
           status: "FAILED",
           errorCode: "COUPANG_INVOICE_SUBMIT_FAILED",
-          errorMessage: "쿠팡 송장 등록을 완료하지 못했습니다.",
         };
       }
     }
@@ -170,7 +169,7 @@ export async function POST(request: NextRequest) {
         requestIds: outcome.requestIds,
         issueBatch,
         channelSubmission,
-        message: outcome.message,
+        resultCode: outcome.resultCode,
         receipt: settledReceipt,
       },
       { status: outcome.status }
@@ -184,7 +183,6 @@ export async function POST(request: NextRequest) {
             ? 400
             : 409,
         code: error.code,
-        message: error.message,
         cause: error,
       });
     }

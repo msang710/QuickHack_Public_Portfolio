@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   CalendarDays,
   ClipboardList,
@@ -104,10 +106,10 @@ function createNewForm(
   };
 }
 
-function batchSearchText(batch: InboundBatchPlanRowDto) {
+function batchSearchText(batch: InboundBatchPlanRowDto, batchLabel: string) {
   return [
     batch.batchDate,
-    `${batch.batchNo}차`,
+    batchLabel,
     batch.expectedQuantity,
     batch.linkedQuantity,
     batch.supplierReturnQuantity,
@@ -179,12 +181,12 @@ function hasColumnFilters(filters: InboundBatchColumnFilters) {
   return Object.values(filters).some((value) => value.trim() !== "");
 }
 
-function arrivalDifferenceText(value: number) {
+function arrivalDifferenceText(value: number, locale: string) {
   if (value > 0) {
-    return `+${value.toLocaleString("ko-KR")}`;
+    return `+${value.toLocaleString(locale)}`;
   }
 
-  return value.toLocaleString("ko-KR");
+  return value.toLocaleString(locale);
 }
 
 function BatchSummaryCell({
@@ -196,6 +198,7 @@ function BatchSummaryCell({
   label: string;
   value: number;
 }) {
+  const locale = useLocale();
   return (
     <div className="flex items-center gap-3 border-r px-4 py-3 last:border-r-0">
       <div className="flex size-10 items-center justify-center rounded bg-secondary text-primary">
@@ -204,7 +207,7 @@ function BatchSummaryCell({
       <div>
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="text-lg font-semibold tabular-nums">
-          {value.toLocaleString("ko-KR")}
+          {value.toLocaleString(locale)}
         </div>
       </div>
     </div>
@@ -212,6 +215,8 @@ function BatchSummaryCell({
 }
 
 export function SimpleInboundBatchPlanView() {
+  const t = useTranslations("inbound.batchPlan");
+  const locale = useLocale();
   const [batches, setBatches] = React.useState<
     InboundBatchPlanRowDto[]
   >([]);
@@ -250,7 +255,10 @@ export function SimpleInboundBatchPlanView() {
       .filter(([, value]) => value !== "");
 
     const rows = batches.filter((batch) => {
-      if (normalizedQuery && !batchSearchText(batch).includes(normalizedQuery)) {
+      if (
+        normalizedQuery &&
+        !batchSearchText(batch, t("units.batch", { count: batch.batchNo })).includes(normalizedQuery)
+      ) {
         return false;
       }
 
@@ -260,7 +268,7 @@ export function SimpleInboundBatchPlanView() {
     });
 
     return sortBatches(rows, sort);
-  }, [batches, deferredColumnFilters, deferredQuery, sort]);
+  }, [batches, deferredColumnFilters, deferredQuery, sort, t]);
   const hasActiveFilters =
     query.trim() !== "" || hasColumnFilters(columnFilters) || sort !== null;
 
@@ -273,8 +281,11 @@ export function SimpleInboundBatchPlanView() {
     id: INBOUND_BATCH_FORM_ID,
     label:
       editingBatchId === null
-        ? "입고 차수 등록"
-        : `${formBaseline.batchDate} ${formBaseline.batchNo}차 수정`,
+        ? t("unsaved.create")
+        : t("unsaved.edit", {
+            batch: Number(formBaseline.batchNo),
+            date: formBaseline.batchDate,
+          }),
     isDirty: !unsavedFormSnapshotsEqual(formBaseline, form),
     isBusy: isSaving,
     discard: discardBatchDraft,
@@ -290,7 +301,7 @@ export function SimpleInboundBatchPlanView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "차수 목록을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("fallback.loadFailed")));
       }
 
       const nextBatches = payload.batches ?? [];
@@ -309,7 +320,7 @@ export function SimpleInboundBatchPlanView() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => void loadBatches(), 0);
@@ -353,7 +364,7 @@ export function SimpleInboundBatchPlanView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [INBOUND_BATCH_FORM_ID],
-      targetLabel: "새 입고 차수 작성",
+      targetLabel: t("unsaved.newTarget"),
       action: () => applyNewForm(batchDate),
     });
   }
@@ -369,7 +380,7 @@ export function SimpleInboundBatchPlanView() {
     setEditingBatchRevision(batch.revision);
     setFormBaseline(nextForm);
     setForm(nextForm);
-    setMessage(`${batch.batchDate} ${batch.batchNo}차 수정 중`);
+    setMessage(t("message.editing", { date: batch.batchDate, batch: batch.batchNo }));
     setMessageTone("neutral");
   }
 
@@ -381,7 +392,7 @@ export function SimpleInboundBatchPlanView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [INBOUND_BATCH_FORM_ID],
-      targetLabel: `${batch.batchDate} ${batch.batchNo}차 수정`,
+      targetLabel: t("navigation.editTarget", { date: batch.batchDate, batch: batch.batchNo }),
       action: () => applyEdit(batch),
     });
   }
@@ -390,7 +401,7 @@ export function SimpleInboundBatchPlanView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [INBOUND_BATCH_FORM_ID],
-      targetLabel: "입고 차수 목록 새로고침",
+      targetLabel: t("navigation.reload"),
       action: () => {
         void loadBatches();
       },
@@ -407,13 +418,13 @@ export function SimpleInboundBatchPlanView() {
     if (isSaving) return;
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.batchDate)) {
-      setMessage("입고일자를 선택하세요.");
+      setMessage(t("message.dateRequired"));
       setMessageTone("warning");
       return;
     }
 
     if (!/^\d+$/.test(form.batchNo.trim()) || Number(form.batchNo) <= 0) {
-      setMessage("차수 번호는 1 이상의 숫자로 입력하세요.");
+      setMessage(t("message.batchInvalid"));
       setMessageTone("warning");
       return;
     }
@@ -422,7 +433,7 @@ export function SimpleInboundBatchPlanView() {
       !/^\d+$/.test(form.expectedQuantity.trim()) ||
       Number(form.expectedQuantity) <= 0
     ) {
-      setMessage("예정 수량은 1 이상의 숫자로 입력하세요.");
+      setMessage(t("message.quantityInvalid"));
       setMessageTone("warning");
       return;
     }
@@ -448,7 +459,7 @@ export function SimpleInboundBatchPlanView() {
         | null;
 
       if (!response.ok || !payload?.ok || !payload.batch) {
-        throw new Error(payload?.message || "차수 저장에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.saveFailed")));
       }
 
       const refreshed = payload.batches
@@ -475,8 +486,8 @@ export function SimpleInboundBatchPlanView() {
       }
       setMessage(
         refreshed
-          ? payload.message || "차수 정보를 저장했습니다."
-          : `${payload.message || "차수 정보를 저장했습니다."} 목록 새로고침이 필요합니다.`
+          ? t("message.saved")
+          : t("message.refreshRequired", { message: t("message.saved") })
       );
       setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
@@ -490,7 +501,7 @@ export function SimpleInboundBatchPlanView() {
   async function deleteInboundBatchPlan(batch: InboundBatchPlanRowDto) {
     if (isSaving || batch.historicalInboundQuantity > 0) return;
 
-    if (!window.confirm(`${batch.batchDate} ${batch.batchNo}차를 삭제할까요?`)) {
+    if (!window.confirm(t("message.deleteConfirm", { date: batch.batchDate, batch: batch.batchNo }))) {
       return;
     }
 
@@ -508,7 +519,7 @@ export function SimpleInboundBatchPlanView() {
         | null;
 
       if (!response.ok || !payload?.ok || !payload.batch) {
-        throw new Error(payload?.message || "차수 삭제에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.deleteFailed")));
       }
 
       const refreshed = payload.batches
@@ -538,8 +549,8 @@ export function SimpleInboundBatchPlanView() {
       }
       setMessage(
         refreshed
-          ? payload.message || "차수 정보를 삭제했습니다."
-          : `${payload.message || "차수 정보를 삭제했습니다."} 목록 새로고침이 필요합니다.`
+          ? t("message.deleted")
+          : t("message.refreshRequired", { message: t("message.deleted") })
       );
       setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
@@ -559,7 +570,7 @@ export function SimpleInboundBatchPlanView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [INBOUND_BATCH_FORM_ID],
-      targetLabel: `${batch.batchDate} ${batch.batchNo}차 삭제`,
+      targetLabel: t("message.deleteTarget", { date: batch.batchDate, batch: batch.batchNo }),
       action: () => {
         void deleteInboundBatchPlan(batch);
       },
@@ -572,7 +583,7 @@ export function SimpleInboundBatchPlanView() {
   >[] = [
     {
       key: "batchDate",
-      label: "입고일자",
+      label: t("columns.batchDate"),
       width: "150px",
       placeholder: "YYYY-MM-DD",
       cellClassName: "flex items-center px-3 tabular-nums",
@@ -580,51 +591,51 @@ export function SimpleInboundBatchPlanView() {
     },
     {
       key: "batchNo",
-      label: "차수",
+      label: t("columns.batchNo"),
       width: "100px",
-      placeholder: "차수",
+      placeholder: t("placeholders.batch"),
       cellClassName: "flex items-center px-3 font-semibold",
-      render: (batch) => `${batch.batchNo}차`,
+      render: (batch) => t("units.batch", { count: batch.batchNo }),
     },
     {
       key: "expectedQuantity",
-      label: "예정 수량",
+      label: t("columns.expected"),
       width: "120px",
-      placeholder: "예정",
+      placeholder: t("placeholders.expected"),
       cellClassName: "flex items-center px-3 tabular-nums",
-      render: (batch) => `${batch.expectedQuantity.toLocaleString("ko-KR")}대`,
+      render: (batch) => t("units.device", { count: batch.expectedQuantity }),
     },
     {
       key: "linkedQuantity",
-      label: "현재 연결",
+      label: t("columns.linked"),
       width: "120px",
-      placeholder: "연결",
+      placeholder: t("placeholders.linked"),
       cellClassName: "flex items-center px-3 tabular-nums",
-      render: (batch) => `${batch.linkedQuantity.toLocaleString("ko-KR")}대`,
+      render: (batch) => t("units.device", { count: batch.linkedQuantity }),
     },
     {
       key: "supplierReturnQuantity",
-      label: "매입처 반품",
+      label: t("columns.supplierReturn"),
       width: "130px",
-      placeholder: "반품",
+      placeholder: t("placeholders.supplierReturn"),
       cellClassName: "flex items-center px-3 tabular-nums",
       render: (batch) =>
-        `${batch.supplierReturnQuantity.toLocaleString("ko-KR")}대`,
+        t("units.device", { count: batch.supplierReturnQuantity }),
     },
     {
       key: "normalInboundTargetQuantity",
-      label: "정상 입고 대상",
+      label: t("columns.normalTarget"),
       width: "150px",
-      placeholder: "정상 대상",
+      placeholder: t("placeholders.normalTarget"),
       cellClassName: "flex items-center px-3 tabular-nums",
       render: (batch) =>
-        `${batch.normalInboundTargetQuantity.toLocaleString("ko-KR")}대`,
+        t("units.device", { count: batch.normalInboundTargetQuantity }),
     },
     {
       key: "arrivalDifference",
-      label: "차이",
+      label: t("columns.difference"),
       width: "100px",
-      placeholder: "차이",
+      placeholder: t("placeholders.difference"),
       cellClassName: "flex items-center px-3 tabular-nums",
       render: (batch) => (
         <span
@@ -635,27 +646,29 @@ export function SimpleInboundBatchPlanView() {
           }
           title={
             batch.arrivalDifference < 0
-              ? `예정보다 ${Math.abs(batch.arrivalDifference).toLocaleString("ko-KR")}대 부족`
+              ? t("tooltips.differenceShort", { count: Math.abs(batch.arrivalDifference) })
               : batch.arrivalDifference > 0
-                ? `예정보다 ${batch.arrivalDifference.toLocaleString("ko-KR")}대 초과`
-                : "예정 수량과 현재 연결 수량이 일치합니다."
+                ? t("tooltips.differenceExtra", { count: batch.arrivalDifference })
+                : t("tooltips.differenceEqual")
           }
         >
-          {arrivalDifferenceText(batch.arrivalDifference)}대
+          {t("units.signedDevice", {
+            value: arrivalDifferenceText(batch.arrivalDifference, locale),
+          })}
         </span>
       ),
     },
     {
       key: "note",
-      label: "비고",
+      label: t("columns.note"),
       width: "minmax(260px,1fr)",
-      placeholder: "비고",
+      placeholder: t("placeholders.note"),
       cellClassName: "min-w-0 px-3 py-2",
       render: (batch) => <div className="truncate">{batch.note || "-"}</div>,
     },
     {
       key: "actions",
-      label: "작업",
+      label: t("columns.actions"),
       width: "112px",
       sortable: false,
       filterable: false,
@@ -667,7 +680,7 @@ export function SimpleInboundBatchPlanView() {
             size="icon"
             variant="ghost"
             disabled={isSaving}
-            title="수정"
+            title={t("actions.edit")}
             onClick={(event) => {
               event.stopPropagation();
               startEdit(batch);
@@ -683,8 +696,8 @@ export function SimpleInboundBatchPlanView() {
             }
             title={
               batch.historicalInboundQuantity > 0
-                ? `현재 연결 여부와 관계없이 과거 입고 기록 ${batch.historicalInboundQuantity.toLocaleString("ko-KR")}건이 있어 삭제할 수 없습니다.`
-                : "삭제"
+                ? t("tooltips.deleteBlocked", { count: batch.historicalInboundQuantity })
+                : t("actions.delete")
             }
             onClick={(event) => {
               event.stopPropagation();
@@ -701,37 +714,35 @@ export function SimpleInboundBatchPlanView() {
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col gap-4 overflow-hidden p-5">
       <div className="grid shrink-0 grid-cols-3 overflow-hidden rounded-md border bg-popover">
-        <BatchSummaryCell icon={ClipboardList} label="등록 차수" value={batches.length} />
-        <BatchSummaryCell icon={PackagePlus} label="예정 수량" value={totalExpectedQuantity} />
-        <BatchSummaryCell icon={PackageCheck} label="현재 연결" value={totalLinkedQuantity} />
+        <BatchSummaryCell icon={ClipboardList} label={t("summary.batches")} value={batches.length} />
+        <BatchSummaryCell icon={PackagePlus} label={t("summary.expected")} value={totalExpectedQuantity} />
+        <BatchSummaryCell icon={PackageCheck} label={t("summary.linked")} value={totalLinkedQuantity} />
       </div>
 
       <section className="grid shrink-0 gap-4 rounded-md border bg-popover p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">
-              {editingBatchId === null ? "차수 지정" : "차수 수정"}
+              {editingBatchId === null ? t("title.create") : t("title.edit")}
             </h2>
             <p className="text-xs text-muted-foreground">
-              입고일자별로 차수를 등록합니다. 현재 연결은 PG별 최신 입고
-              상태를 기준으로 계산하며, 같은 차수 번호는 날짜가 다르면 다시
-              사용할 수 있습니다.
+              {t("description")}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => startNewForm()}>
-              <Plus className="size-4" />새 차수
+              <Plus className="size-4" />{t("actions.new")}
             </Button>
             <Button onClick={saveInboundBatchPlan} disabled={isSaving}>
               <Save className="size-4" />
-              {isSaving ? "저장중" : editingBatchId === null ? "등록" : "수정 저장"}
+              {isSaving ? t("actions.saving") : editingBatchId === null ? t("actions.create") : t("actions.save")}
             </Button>
           </div>
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[170px_120px_140px_minmax(240px,1fr)]">
           <label className="grid gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">입고일자</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("fields.batchDate")}</span>
             <div className="relative">
               <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -743,28 +754,28 @@ export function SimpleInboundBatchPlanView() {
             </div>
           </label>
           <label className="grid gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">차수 번호</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("fields.batchNo")}</span>
             <Input
               inputMode="numeric"
               value={form.batchNo}
-              placeholder="예: 1"
+              placeholder={t("fields.batchNoPlaceholder")}
               onChange={(event) => updateForm("batchNo", event.target.value)}
             />
           </label>
           <label className="grid gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">예정 수량</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("fields.expected")}</span>
             <Input
               inputMode="numeric"
               value={form.expectedQuantity}
-              placeholder="예: 80"
+              placeholder={t("fields.expectedPlaceholder")}
               onChange={(event) => updateForm("expectedQuantity", event.target.value)}
             />
           </label>
           <label className="grid gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">비고</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("fields.note")}</span>
             <Input
               value={form.note}
-              placeholder="선택 입력"
+              placeholder={t("fields.notePlaceholder")}
               onChange={(event) => updateForm("note", event.target.value)}
             />
           </label>
@@ -789,30 +800,30 @@ export function SimpleInboundBatchPlanView() {
       <section className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="flex flex-wrap items-end gap-3">
           <SearchInput
-            label="차수 검색"
+            label={t("filters.search")}
             wrapperClassName="min-w-[280px] flex-1"
-            placeholder="입고일자, 차수, 수량, 반품, 차이, 비고 검색"
+            placeholder={t("filters.placeholder")}
             value={query}
             onValueChange={setQuery}
           />
           <Button variant="outline" onClick={resetFilters} disabled={!hasActiveFilters}>
-            <RefreshCcw className="size-4" />초기화
+            <RefreshCcw className="size-4" />{t("actions.reset")}
           </Button>
           <Button variant="outline" onClick={requestReload} disabled={isLoading}>
             <RefreshCcw className="size-4" />
-            {isLoading ? "조회중" : "목록 새로고침"}
+            {isLoading ? t("actions.refreshing") : t("actions.refresh")}
           </Button>
         </div>
 
         <div className="shrink-0 text-xs text-muted-foreground">
-          {filteredBatches.length.toLocaleString("ko-KR")}건 표시
+          {t("filters.count", { count: filteredBatches.length })}
         </div>
 
         <VirtualizedDataGrid
           rows={filteredBatches}
           columns={columns}
           rowKey={(batch) => batch.id}
-          emptyMessage="등록된 차수가 없습니다."
+          emptyMessage={t("empty")}
           filters={columnFilters}
           sort={sort}
           onFilterChange={(key, value) => {

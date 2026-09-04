@@ -43,14 +43,14 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "검수 내역 저장 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
 
   if (!isObject(body) || !Array.isArray(body.records)) {
     return NextResponse.json(
-      { ok: false, message: "저장할 검수 내역이 없습니다." },
+      { ok: false, code: "INSPECTION_RECORDS_REQUIRED" },
       { status: 400 }
     );
   }
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
         savedResults.push({
           ok: false,
           label: "-",
-          error: "검수 내역 형식이 올바르지 않습니다.",
+          errorCode: "INSPECTION_RECORD_INVALID",
         });
         continue;
       }
@@ -107,10 +107,10 @@ export async function POST(request: NextRequest) {
         savedResults.push({
           ok: false,
           label,
-          error:
+          errorCode:
             error instanceof PublicError
-              ? error.message
-              : "검수 기록을 저장하지 못했습니다.",
+              ? error.code
+              : "INSPECTION_RECORD_SAVE_FAILED",
         });
       }
     }

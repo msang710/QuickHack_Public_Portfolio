@@ -69,6 +69,7 @@ const crossPlatformContractScripts = Object.freeze([
   "test:postgresql-service-runtime-contract",
   "test:postgresql-staging-runtime-contract",
   "test:android-runtime-contract",
+  "test:i18n-contracts",
   "test:platform-composition-roots",
   "test:runtime-directories",
   "test:process-execution-boundary",

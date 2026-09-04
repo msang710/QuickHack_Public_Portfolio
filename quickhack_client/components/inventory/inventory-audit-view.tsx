@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import { ClipboardCheck, PackageCheck, Printer, RefreshCcw, Save } from "lucide-react";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -28,7 +30,7 @@ import type { DeviceListRow } from "@/quickhack_shared/device/device-list-query"
 import { formatModelSeqLabel } from "@/quickhack_shared/device/types";
 import { cn } from "@/quickhack_shared/core/utils";
 import { useUnsavedForm } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
-import { POST_WRITE_REFRESH_WARNING } from "@/quickhack_client/lib/post-write-refresh";
+import { POST_WRITE_REFRESH_WARNING_KEY } from "@/quickhack_client/lib/post-write-refresh";
 import { useDeviceListQuery } from "@/quickhack_client/components/shared/device-list-query-client";
 
 type InventoryAuditApiResponse = {
@@ -53,14 +55,14 @@ type InventoryAuditColumnKey =
 
 const INVENTORY_AUDIT_LOCATIONS: Array<{
   key: Extract<InventoryAuditColumnKey, "packed" | "packingWaiting" | "productWaiting">;
-  label: InventoryAuditLocation;
+  value: InventoryAuditLocation;
 }> = [
-  { key: "packed", label: "포장 완료" },
-  { key: "packingWaiting", label: "포장 대기" },
-  { key: "productWaiting", label: "상품화 대기" },
+  { key: "packed", value: "포장 완료" },
+  { key: "packingWaiting", value: "포장 대기" },
+  { key: "productWaiting", value: "상품화 대기" },
 ];
 const DEFAULT_INVENTORY_AUDIT_SCOPE = INVENTORY_AUDIT_LOCATIONS.slice(0, 2).map(
-  (location) => location.label
+  (location) => location.value
 );
 
 const auditTableCellClassName = "flex h-full min-w-0 items-center px-3";
@@ -77,7 +79,7 @@ function normalizeScanValue(value: string) {
 }
 
 function todayKstDate() {
-  const parts = new Intl.DateTimeFormat("ko-KR", {
+  const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
@@ -92,19 +94,23 @@ function deviceModelText(device: DeviceListRow) {
   return [device.model, device.storage, device.color].filter(Boolean).join(" ");
 }
 
-function compareAuditDevices(left: DeviceListRow, right: DeviceListRow) {
+function compareAuditDevices(
+  left: DeviceListRow,
+  right: DeviceListRow,
+  locale: string
+) {
   return (
-    String(left.model || "").localeCompare(String(right.model || ""), "ko-KR", {
+    String(left.model || "").localeCompare(String(right.model || ""), locale, {
       numeric: true,
       sensitivity: "base",
     }) ||
-    String(left.saleGrade || "").localeCompare(String(right.saleGrade || ""), "ko-KR", {
+    String(left.saleGrade || "").localeCompare(String(right.saleGrade || ""), locale, {
       numeric: true,
       sensitivity: "base",
     }) ||
     Number(left.modelSeq ?? Number.MAX_SAFE_INTEGER) -
       Number(right.modelSeq ?? Number.MAX_SAFE_INTEGER) ||
-    left.pgNo.localeCompare(right.pgNo, "ko-KR", {
+    left.pgNo.localeCompare(right.pgNo, locale, {
       numeric: true,
       sensitivity: "base",
     })
@@ -263,6 +269,10 @@ function printCheckBox(currentLocation: string, targetLocation: InventoryAuditLo
 
 
 export function InventoryAuditView() {
+  const feedbackT = useTranslations("common.feedback");
+  const t = useTranslations("inventory.audit");
+  const printT = useTranslations("common.printing");
+  const locale = useLocale();
   const deviceList = useDeviceListQuery({
     endpoint: "/api/inventory/audit-candidates",
     queryString: "limit=100",
@@ -274,7 +284,7 @@ export function InventoryAuditView() {
     Record<string, string>
   >({});
   const [selectedLocation, setSelectedLocation] =
-    React.useState<InventoryAuditLocation>(INVENTORY_AUDIT_LOCATIONS[0].label);
+    React.useState<InventoryAuditLocation>(INVENTORY_AUDIT_LOCATIONS[0].value);
   const [auditScopeLocations, setAuditScopeLocations] = React.useState<
     InventoryAuditLocation[]
   >(() => DEFAULT_INVENTORY_AUDIT_SCOPE);
@@ -288,7 +298,10 @@ export function InventoryAuditView() {
   const [showOnlyUnassigned, setShowOnlyUnassigned] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [auditBaseDate, setAuditBaseDate] = React.useState(todayKstDate);
-  const [message, setMessage] = React.useState("판매 가능 재고의 실사 위치를 확인합니다.");
+  const [message, setMessage] = React.useState(() => t("status.idle"));
+  const [messageTone, setMessageTone] = React.useState<
+    "neutral" | "warning" | "success"
+  >("neutral");
   const [postWriteRefreshWarning, setPostWriteRefreshWarning] =
     React.useState("");
 
@@ -301,8 +314,8 @@ export function InventoryAuditView() {
     () =>
       devices
         .filter((device) => device.inventory?.status === INVENTORY_STATUS.sellable)
-        .sort(compareAuditDevices),
-    [devices]
+        .sort((left, right) => compareAuditDevices(left, right, locale)),
+    [devices, locale]
   );
 
   const sellableDeviceByScanValue = React.useMemo(() => {
@@ -361,12 +374,13 @@ export function InventoryAuditView() {
     setLastScannedPgNo(null);
     setScannedPgNos(new Set());
     setShowOnlyUnassigned(false);
-    setMessage("판매 가능 재고의 실사 위치를 확인합니다.");
-  }, []);
+    setMessage(t("status.idle"));
+    setMessageTone("neutral");
+  }, [t]);
 
   useUnsavedForm({
     id: INVENTORY_AUDIT_FORM_ID,
-    label: "재고 실사",
+    label: t("unsaved"),
     isDirty: changedItems.length > 0,
     isBusy: isSaving,
     discard: discardAuditDraft,
@@ -444,8 +458,8 @@ export function InventoryAuditView() {
         next.add(location);
 
         return INVENTORY_AUDIT_LOCATIONS.filter((item) =>
-          next.has(item.label)
-        ).map((item) => item.label);
+          next.has(item.value)
+        ).map((item) => item.value);
       });
     },
     []
@@ -487,8 +501,8 @@ export function InventoryAuditView() {
       }
 
       return INVENTORY_AUDIT_LOCATIONS.filter((item) =>
-        next.has(item.label)
-      ).map((item) => item.label);
+        next.has(item.value)
+      ).map((item) => item.value);
     });
   }
 
@@ -506,7 +520,8 @@ export function InventoryAuditView() {
     focusScanInput();
 
     if (!scannedValue) {
-      setMessage("스캔할 PG 또는 IMEI를 입력하세요.");
+      setMessage(t("status.scanRequired"));
+      setMessageTone("warning");
       return;
     }
 
@@ -517,9 +532,10 @@ export function InventoryAuditView() {
       setLastScannedPgNo(knownDevice?.pgNo ?? null);
       setMessage(
         knownDevice
-          ? `${knownDevice.pgNo}는 판매 가능 재고가 아니므로 실사 대상이 아닙니다.`
-          : `${scannedValue}와 일치하는 판매 가능 재고를 찾지 못했습니다.`
+          ? t("status.notSellable", { pg: knownDevice.pgNo })
+          : t("status.notFound", { value: scannedValue })
       );
+      setMessageTone("warning");
       return;
     }
 
@@ -528,7 +544,8 @@ export function InventoryAuditView() {
     setScannedPgNos((current) => new Set(current).add(device.pgNo));
 
     if (currentLocation === selectedLocation) {
-      setMessage(`${device.pgNo}는 이미 ${selectedLocation} 상태입니다.`);
+      setMessage(t("status.alreadyLocated", { pg: device.pgNo, location: t(`locations.${INVENTORY_AUDIT_LOCATIONS.find((item) => item.value === selectedLocation)?.key ?? "unassigned"}`) }));
+      setMessageTone("neutral");
       return;
     }
 
@@ -537,11 +554,12 @@ export function InventoryAuditView() {
       [device.pgNo]: selectedLocation,
     }));
     includeLocationInAuditScope(selectedLocation);
-    setMessage(`${device.pgNo}를 ${selectedLocation} 위치로 표시했습니다.`);
+    setMessage(t("status.locationMarked", { pg: device.pgNo, location: t(`locations.${INVENTORY_AUDIT_LOCATIONS.find((item) => item.value === selectedLocation)?.key ?? "unassigned"}`) }));
+    setMessageTone("success");
   }
 
   function printAuditList() {
-    const printedAt = new Intl.DateTimeFormat("ko-KR", {
+    const printedAt = new Intl.DateTimeFormat(locale, {
       timeZone: "Asia/Seoul",
       year: "numeric",
       month: "2-digit",
@@ -573,13 +591,13 @@ export function InventoryAuditView() {
         <header class="print-header">
           <div>
             <p class="eyebrow">QUICKHACK INVENTORY AUDIT</p>
-            <h1>재고 실사 목록</h1>
+            <h1>${escapePrintHtml(t("print.title"))}</h1>
           </div>
           <div class="meta">
-            <div>실사 기준일 ${escapePrintHtml(auditBaseDate)}</div>
-            <div>출력일시 ${escapePrintHtml(printedAt)}</div>
-            <div>출력 대상 ${sellableDevices.length.toLocaleString()}건</div>
-            <div>판매 가능 재고 ${sellableDevices.length.toLocaleString()}건</div>
+            <div>${escapePrintHtml(t("print.baseDate"))} ${escapePrintHtml(auditBaseDate)}</div>
+            <div>${escapePrintHtml(t("print.printedAt"))} ${escapePrintHtml(printedAt)}</div>
+            <div>${escapePrintHtml(t("print.targets", { count: sellableDevices.length }))}</div>
+            <div>${escapePrintHtml(t("print.sellable", { count: sellableDevices.length }))}</div>
           </div>
         </header>
 
@@ -596,29 +614,29 @@ export function InventoryAuditView() {
           </colgroup>
           <thead>
             <tr>
-              <th>순번</th>
-              <th>PG</th>
-              <th>고유번호</th>
-              <th>모델</th>
-              <th>판매등급</th>
-              <th>포장 완료</th>
-              <th>포장 대기</th>
-              <th>상품화 대기</th>
+              <th>${escapePrintHtml(t("print.sequence"))}</th>
+              <th>${escapePrintHtml(t("print.pg"))}</th>
+              <th>${escapePrintHtml(t("print.uniqueNo"))}</th>
+              <th>${escapePrintHtml(t("print.model"))}</th>
+              <th>${escapePrintHtml(t("print.saleGrade"))}</th>
+              <th>${escapePrintHtml(t("locations.packed"))}</th>
+              <th>${escapePrintHtml(t("locations.packingWaiting"))}</th>
+              <th>${escapePrintHtml(t("locations.productWaiting"))}</th>
             </tr>
           </thead>
           <tbody>
             ${
               rows ||
-              `<tr><td colspan="8" class="number-cell">출력할 판매 가능 재고가 없습니다.</td></tr>`
+              `<tr><td colspan="8" class="number-cell">${escapePrintHtml(t("print.empty"))}</td></tr>`
             }
           </tbody>
           <tfoot>
             <tr>
               <td colspan="8" class="footer-cell">
                 <section class="sign-row">
-                  <div class="sign-box">실사 담당자</div>
-                  <div class="sign-box">확인자</div>
-                  <div class="sign-box">비고</div>
+                  <div class="sign-box">${escapePrintHtml(t("print.auditor"))}</div>
+                  <div class="sign-box">${escapePrintHtml(t("print.reviewer"))}</div>
+                  <div class="sign-box">${escapePrintHtml(t("print.note"))}</div>
                 </section>
               </td>
             </tr>
@@ -628,14 +646,17 @@ export function InventoryAuditView() {
     `;
 
     void printHtmlDocument({
-      title: "재고 실사 목록",
+      title: t("print.title"),
       html: buildPrintHtmlDocument({
-        title: "재고 실사 목록",
+        title: t("print.title"),
+        locale,
         styles: inventoryAuditPrintStyles,
         body,
       }),
+      messages: { browserOnly: printT("browserOnly"), documentUnavailable: printT("documentUnavailable") },
     }).catch((error) => {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageTone("warning");
     });
   }
 
@@ -647,19 +668,22 @@ export function InventoryAuditView() {
     if (scopedUnassignedDevices.length > 0) {
       setShowOnlyUnassigned(true);
       setMessage(
-        `선택한 실사 범위 안에서 위치가 비워진 재고가 ${scopedUnassignedDevices.length.toLocaleString()}건 있습니다. 해당 기기를 확인한 뒤 위치를 등록하세요.`
+        t("status.unassignedBlocked", { count: scopedUnassignedDevices.length })
       );
+      setMessageTone("warning");
       focusScanInput();
       return;
     }
 
     if (scopedChangedItems.length === 0) {
-      setMessage("선택한 실사 범위에 저장할 변경사항이 없습니다.");
+      setMessage(t("status.noChanges"));
+      setMessageTone("neutral");
       return;
     }
 
     if (!auditBaseDate) {
-      setMessage("실사 기준일을 입력하세요.");
+      setMessage(t("status.baseDateRequired"));
+      setMessageTone("warning");
       return;
     }
 
@@ -689,7 +713,7 @@ export function InventoryAuditView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "재고 실사 결과를 저장하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("status.saveFailed")));
       }
 
       const savedPgNos = new Set(scopedChangedItems.map((item) => item.pgNo));
@@ -701,15 +725,17 @@ export function InventoryAuditView() {
       setLastScannedPgNo(null);
       setScannedPgNos(new Set());
       setShowOnlyUnassigned(false);
-      setMessage(payload.message || "재고 실사 결과를 저장했습니다.");
+      setMessage(t("status.saved"));
+      setMessageTone("success");
 
       try {
         await deviceList.reload();
       } catch {
-        setPostWriteRefreshWarning(POST_WRITE_REFRESH_WARNING);
+        setPostWriteRefreshWarning(feedbackT(POST_WRITE_REFRESH_WARNING_KEY));
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageTone("warning");
     } finally {
       setIsSaving(false);
     }
@@ -731,7 +757,7 @@ export function InventoryAuditView() {
       },
       {
         key: "modelSeq",
-        label: "고유번호",
+        label: t("columns.modelSequence"),
         width: "150px",
         cellClassName: auditTableCellClassName,
         text: (device) => formatModelSeqLabel(device.model, device.modelSeq),
@@ -743,7 +769,7 @@ export function InventoryAuditView() {
       },
       {
         key: "model",
-        label: "모델",
+        label: t("columns.model"),
         width: "minmax(260px, 1fr)",
         cellClassName: auditTableCellClassName,
         text: deviceModelText,
@@ -758,7 +784,7 @@ export function InventoryAuditView() {
       },
       {
         key: "saleGrade",
-        label: "판매등급",
+        label: t("columns.saleGrade"),
         width: "110px",
         cellClassName: auditTableCellClassName,
         text: (device) => device.saleGrade ?? "",
@@ -766,7 +792,7 @@ export function InventoryAuditView() {
       },
       {
         key: "location",
-        label: "위치",
+        label: t("columns.location"),
         width: "140px",
         cellClassName: auditTableCellClassName,
         text: (device) => getDraftLocation(device),
@@ -775,48 +801,50 @@ export function InventoryAuditView() {
 
           return (
             <Badge variant={location ? "success" : "warning"}>
-              {location || "미지정"}
+              {location
+                ? t(`locations.${INVENTORY_AUDIT_LOCATIONS.find((item) => item.value === location)?.key ?? "unassigned"}`)
+                : t("locations.unassigned")}
             </Badge>
           );
         },
       },
       ...INVENTORY_AUDIT_LOCATIONS.map((location) => ({
         key: location.key,
-        label: location.label,
+        label: t(`locations.${location.key}`),
         width: "120px",
         cellClassName: auditCheckboxCellClassName,
         sortable: false,
         filterable: false,
         render: (device: DeviceListRow) => (
           <TableSelectCheckbox
-            checked={getDraftLocation(device) === location.label}
-            ariaLabel={`${device.pgNo} ${location.label}`}
+            checked={getDraftLocation(device) === location.value}
+            ariaLabel={`${device.pgNo} ${t(`locations.${location.key}`)}`}
             onCheckedChange={(checked) =>
-              setDeviceLocation(device.pgNo, location.label, checked)
+              setDeviceLocation(device.pgNo, location.value, checked)
             }
           />
         ),
       })),
     ],
-    [getDraftLocation, setDeviceLocation]
+    [getDraftLocation, setDeviceLocation, t]
   );
 
   return (
     <WorkspacePageFrame className="gap-4 p-5">
       <SummaryStrip className="grid-cols-2 xl:grid-cols-5">
-        <SummaryCard icon={PackageCheck} label="판매 가능 재고" value={summary.total} />
-        <SummaryCard icon={ClipboardCheck} label="포장 완료" value={summary.packed} />
+        <SummaryCard icon={PackageCheck} label={t("summary.sellable")} value={summary.total} />
+        <SummaryCard icon={ClipboardCheck} label={t("locations.packed")} value={summary.packed} />
         <SummaryCard
           icon={ClipboardCheck}
-          label="포장 대기"
+          label={t("locations.packingWaiting")}
           value={summary.packingWaiting}
         />
         <SummaryCard
           icon={ClipboardCheck}
-          label="상품화 대기"
+          label={t("locations.productWaiting")}
           value={summary.productWaiting}
         />
-        <SummaryCard icon={RefreshCcw} label="미지정" value={summary.unassigned} />
+        <SummaryCard icon={RefreshCcw} label={t("locations.unassigned")} value={summary.unassigned} />
       </SummaryStrip>
 
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-popover">
@@ -827,11 +855,11 @@ export function InventoryAuditView() {
                 key={location.key}
                 type="button"
                 variant={
-                  selectedLocation === location.label ? "default" : "outline"
+                  selectedLocation === location.value ? "default" : "outline"
                 }
-                onClick={() => selectAuditLocation(location.label)}
+                onClick={() => selectAuditLocation(location.value)}
               >
-                {location.label}
+                {t(`locations.${location.key}`)}
               </Button>
             ))}
           </div>
@@ -841,18 +869,18 @@ export function InventoryAuditView() {
           >
             <Input
               ref={scanInputRef}
-              aria-label="재고 실사 스캔"
+              aria-label={t("fields.scanAria")}
               autoComplete="off"
               data-lpignore="true"
               inputMode="text"
-              placeholder="PG 또는 IMEI 스캔"
+              placeholder={t("fields.scanPlaceholder")}
               value={scanValue}
               onChange={(event) => setScanValue(event.target.value)}
             />
           </form>
           <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2">
             <span className="text-xs font-medium text-muted-foreground">
-              이번 실사 범위
+              {t("fields.scope")}
             </span>
             {INVENTORY_AUDIT_LOCATIONS.map((location) => (
               <label
@@ -860,19 +888,21 @@ export function InventoryAuditView() {
                 className="flex items-center gap-1.5 text-sm"
               >
                 <TableSelectCheckbox
-                  checked={auditScopeSet.has(location.label)}
-                  ariaLabel={`${location.label} 실사 범위 포함`}
+                  checked={auditScopeSet.has(location.value)}
+                  ariaLabel={t("fields.scopeAria", {
+                    location: t(`locations.${location.key}`),
+                  })}
                   onCheckedChange={(checked) =>
-                    toggleAuditScopeLocation(location.label, checked)
+                    toggleAuditScopeLocation(location.value, checked)
                   }
                 />
-                <span>{location.label}</span>
+                <span>{t(`locations.${location.key}`)}</span>
               </label>
             ))}
           </div>
           <div className="flex flex-wrap items-end justify-end gap-2">
             <label className="grid w-[160px] gap-1 text-xs font-medium text-muted-foreground">
-              실사 기준일
+              {t("fields.baseDate")}
               <Input
                 type="date"
                 value={auditBaseDate}
@@ -881,7 +911,7 @@ export function InventoryAuditView() {
             </label>
             <Button type="button" variant="outline" onClick={printAuditList}>
               <Printer className="size-4" />
-              실사 목록 출력
+              {t("actions.print")}
             </Button>
             <Button
               type="button"
@@ -889,7 +919,7 @@ export function InventoryAuditView() {
               onClick={() => void saveAuditResult()}
             >
               <Save className="size-4" />
-              실사 결과 저장
+              {t("actions.save")}
             </Button>
           </div>
         </div>
@@ -906,34 +936,36 @@ export function InventoryAuditView() {
         ) : null}
         {deviceList.isLoading ? (
           <FeedbackBanner tone="info" className="mx-4 my-2">
-            재고 실사 대상을 불러오는 중입니다.
+            {t("loading")}
           </FeedbackBanner>
         ) : null}
 
         <div
           className={cn(
             "shrink-0 border-b px-4 py-2 text-sm",
-            message.includes("못했습니다") || message.includes("없습니다")
+            messageTone === "warning"
               ? "text-amber-700"
-              : "text-muted-foreground"
+              : messageTone === "success"
+                ? "text-emerald-700"
+                : "text-muted-foreground"
           )}
         >
           {message}
           {scopedChangedItems.length > 0 ? (
             <span className="ml-2 font-medium text-primary">
-              저장 대상 {scopedChangedItems.length.toLocaleString()}건
+              {t("status.saveTarget", { count: scopedChangedItems.length })}
             </span>
           ) : null}
           {changedItems.length > scopedChangedItems.length ? (
             <span className="ml-2 font-medium text-muted-foreground">
-              범위 밖 변경 {(
-                changedItems.length - scopedChangedItems.length
-              ).toLocaleString()}건
+              {t("status.outOfScope", {
+                count: changedItems.length - scopedChangedItems.length,
+              })}
             </span>
           ) : null}
           {scannedPgNos.size > 0 ? (
             <span className="ml-2 font-medium text-sky-700">
-              스캔 {scannedPgNos.size.toLocaleString()}건
+              {t("status.scanned", { count: scannedPgNos.size })}
             </span>
           ) : null}
           {unassignedDevices.length > 0 ? (
@@ -944,7 +976,9 @@ export function InventoryAuditView() {
               className="ml-3"
               onClick={() => setShowOnlyUnassigned((current) => !current)}
             >
-              {showOnlyUnassigned ? "전체 보기" : "미지정만 보기"}
+              {showOnlyUnassigned
+                ? t("actions.showAll")
+                : t("actions.showUnassigned")}
             </Button>
           ) : null}
         </div>
@@ -955,8 +989,8 @@ export function InventoryAuditView() {
           rowKey={(device) => device.pgNo}
           emptyMessage={
             showOnlyUnassigned
-              ? "위치가 등록되지 않은 판매 가능 재고가 없습니다."
-              : "판매 가능 재고가 없습니다."
+              ? t("empty.unassigned")
+              : t("empty.sellable")
           }
           getRowClassName={(device) =>
             device.pgNo === lastScannedPgNo

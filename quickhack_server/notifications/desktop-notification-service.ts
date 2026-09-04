@@ -3,6 +3,7 @@ import {
   DESKTOP_NOTIFICATION_KIND,
   DESKTOP_NOTIFICATION_PAGE_LIMIT,
   type DesktopNotificationKind,
+  type DesktopNotificationMessageKey,
 } from "@/quickhack_shared/notifications/desktop-notifications";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -30,8 +31,8 @@ export async function publishDesktopNotification(
     sourceId: string;
     dedupeKey: string;
     menuId: string;
-    title: string;
-    body: string;
+    messageKey: DesktopNotificationMessageKey;
+    messageArguments?: Record<string, string | number>;
     occurredAt?: Date;
     resolvedAt?: Date | null;
   }
@@ -45,8 +46,10 @@ export async function publishDesktopNotification(
       source_id: input.sourceId,
       dedupe_key: input.dedupeKey,
       menu_id: input.menuId,
-      title: input.title,
-      body: input.body,
+      title: "",
+      body: "",
+      message_key: input.messageKey,
+      message_arguments: input.messageArguments ?? {},
       occurred_at: input.occurredAt,
       resolved_at: input.resolvedAt,
     },
@@ -111,19 +114,28 @@ export async function listDesktopNotifications(
     take: limit + 1,
     include: { event: true },
   });
-  const page = rows.slice(0, limit).map((row) => ({
+  const page = rows.slice(0, limit).map((row) => {
+    const rawArguments = row.event.message_arguments;
+    const messageArguments = rawArguments && typeof rawArguments === "object" && !Array.isArray(rawArguments)
+      ? Object.fromEntries(Object.entries(rawArguments).filter((entry): entry is [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number"))
+      : {};
+    return ({
     recipientId: row.notification_recipient_id.toString(),
     eventKind: row.event.event_kind as DesktopNotificationKind,
     menuId: row.event.menu_id,
     title: row.event.title,
     body: row.event.body,
+    messageKey: row.event.message_key as DesktopNotificationMessageKey | null,
+    messageArguments,
     occurredAt: row.event.occurred_at.toISOString(),
     readAt: row.read_at?.toISOString() ?? null,
     resolvedAt: row.event.resolved_at?.toISOString() ?? null,
-  }));
+    });
+  });
   const presentations = [] as Array<{
     presentationId: string; recipientIds: string[]; count: number;
     eventKind: DesktopNotificationKind; menuId: string; title: string; body: string;
+    messageKey: DesktopNotificationMessageKey | null; messageArguments: Record<string, string | number>;
     occurredAt: string; readAt: string | null; resolvedAt: string | null;
   }>;
   for (const item of page) {
@@ -134,14 +146,17 @@ export async function listDesktopNotifications(
     if (existing) {
       existing.recipientIds.push(item.recipientId);
       existing.count += 1;
-      existing.title = `검수 완료 ${existing.count}건`;
-      existing.body = `${existing.count}건의 검수 결과가 저장되었습니다.`;
+      existing.title = "";
+      existing.body = "";
+      existing.messageKey = "inspectionCompleteGrouped";
+      existing.messageArguments = { count: existing.count };
       existing.readAt = existing.readAt && item.readAt ? existing.readAt : null;
       existing.resolvedAt = existing.resolvedAt && item.resolvedAt ? existing.resolvedAt : null;
     } else presentations.push({
       presentationId: groupKey,
       recipientIds: [item.recipientId], count: 1,
       eventKind: item.eventKind, menuId: item.menuId, title: item.title, body: item.body,
+      messageKey: item.messageKey, messageArguments: item.messageArguments,
       occurredAt: item.occurredAt, readAt: item.readAt, resolvedAt: item.resolvedAt,
     });
   }

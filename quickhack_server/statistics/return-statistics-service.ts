@@ -306,14 +306,14 @@ function percentage(numerator: number, denominator: number) {
 function rateMetric(
   numerator: number,
   denominator: number,
-  unavailableReason = "집계 가능한 분모가 없습니다."
+  unavailableReasonCode: ReturnRateMetric["unavailableReasonCode"] = "NO_DENOMINATOR"
 ): ReturnRateMetric {
   if (denominator === 0) {
     return {
       value: null,
       numerator,
       denominator,
-      unavailableReason,
+      unavailableReasonCode,
     };
   }
 
@@ -937,7 +937,7 @@ function cohortMetric(
 ) {
   const mature = matureSales(sales, cutoffExclusive, days);
   const qualifying = qualifyingSaleIds(mature, claimsBySale, days);
-  return rateMetric(qualifying.size, mature.length, "아직 성숙한 판매가 없습니다.");
+  return rateMetric(qualifying.size, mature.length, "NO_MATURE_SALES");
 }
 
 function latestInspectionByReturnAllocation(
@@ -1166,7 +1166,7 @@ function faultShare(claims: PreparedReturnClaim[]) {
   return rateMetric(
     known.filter((claim) => claim.faultType === "VENDOR").length,
     known.length,
-    "귀책이 확인된 반품 접수가 없습니다."
+    "NO_CONFIRMED_RETURN_FAULT_SAMPLE"
   );
 }
 
@@ -1177,7 +1177,7 @@ function recoveryRate(rows: InspectionResultRow[]) {
         inspectionCategory(row.inspection.inspectionResult) === "RECOVERED"
     ).length,
     rows.length,
-    "확정된 반품 검수 표본이 없습니다."
+    "NO_CONFIRMED_RETURN_INSPECTION_SAMPLE"
   );
 }
 
@@ -1212,12 +1212,12 @@ function productRows(input: {
     const currentRate = rateMetric(
       currentReturned.size,
       current.length,
-      "현재 성숙 cohort 판매가 없습니다."
+      "NO_CURRENT_MATURE_COHORT"
     );
     const previousRate = rateMetric(
       previousReturned.size,
       previous.length,
-      "직전 성숙 cohort 판매가 없습니다."
+      "NO_PREVIOUS_MATURE_COHORT"
     );
     const returnedSales = uniqueSales(currentReturned, input.salesById);
     const returnedClaims = Array.from(currentReturned).flatMap(
@@ -1534,12 +1534,12 @@ export function aggregateReturnStatistics(
   const requestRate30Day = rateMetric(
     currentReturned.size,
     currentSales.length,
-    "아직 완전히 성숙한 최근 30일 판매 cohort가 없습니다."
+    "NO_CURRENT_30_DAY_MATURE_COHORT"
   );
   const previousRequestRate30Day = rateMetric(
     previousReturned.size,
     maturePreviousSales.length,
-    "비교할 직전 성숙 30일 판매 cohort가 없습니다."
+    "NO_PREVIOUS_30_DAY_MATURE_COHORT"
   );
   const linkedSales = uniqueSales(
     filteredReturns.flatMap((claim) =>
@@ -1772,12 +1772,12 @@ export function aggregateReturnStatistics(
       receiptLinkRate: rateMetric(
         linkedReceiptCount,
         filteredReturns.length,
-        "조회 조건에 해당하는 고객 반품 접수가 없습니다."
+        "NO_RETURN_RECEIPTS"
       ),
       withdrawalShare: rateMetric(
         withdrawnReceiptCount,
         filteredReturns.length,
-        "조회 조건에 해당하는 고객 반품 접수가 없습니다."
+        "NO_RETURN_RECEIPTS"
       ),
     },
     cohortTrend: cohortTrend(

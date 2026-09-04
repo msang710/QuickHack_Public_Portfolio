@@ -248,7 +248,7 @@ export function collectInventoryCorrectionChanges(
           fieldKey: field.key,
           originalValue,
           value,
-          label: `${originalRecord.title} / ${field.label}`,
+          label: `${originalRecord.title} / ${field.key}`,
           bulkApplicable: !BULK_EXCLUDED_FIELD_KEYS.has(field.key),
         });
       }
@@ -286,11 +286,12 @@ export function applyInventoryPendingTextDrafts(
 }
 
 export function inventoryCorrectionPatches(
-  changes: readonly InventoryCorrectionChange[]
+  changes: readonly InventoryCorrectionChange[],
+  missingRevisionMessage: string
 ): InventoryCorrectionPatch[] {
   return changes.map((change) => {
     if (change.recordId <= 0 || change.expectedRevision < 0) {
-      throw new Error("수정 대상의 레코드 ID 또는 revision이 없습니다. 목록을 새로 고쳐 주세요.");
+      throw new Error(missingRevisionMessage);
     }
     return {
       recordKind: change.recordKind,

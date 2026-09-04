@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   ChevronDown,
   ChevronRight,
@@ -24,13 +26,13 @@ import {
 import type { DeviceListItem } from "@/quickhack_shared/device/types";
 import {
   canAccessRole,
-  ROLE_LABELS,
   type AuthUser,
 } from "@/quickhack_shared/auth/auth-constants";
 import {
   findMenuItem,
   findShortcutMenuGroup,
   getAllowedMenuGroups,
+  localizeMenuGroups,
   menuGroups,
   sensitiveMenuIds,
   type MenuItem,
@@ -119,7 +121,11 @@ import { DesktopCapabilityProvider, useDesktopCapability } from "@/quickhack_cli
 import { DesktopCommandPalette } from "@/quickhack_client/components/desktop/desktop-command-palette";
 import { DesktopNotificationCenter } from "@/quickhack_client/components/desktop/desktop-notification-center";
 import { DesktopUpdateStatus } from "@/quickhack_client/components/desktop/desktop-update-status";
-import { menuWorkflowFamily } from "@/quickhack_shared/desktop/client-compatibility";
+import { menuWorkflowFamily } from "@/quickhack_shared/desktop/workflow-family";
+import {
+  publishLocale,
+} from "@/quickhack_client/i18n/locale-client";
+import type { QuickHackLocale } from "@/quickhack_shared/i18n/locales";
 
 // QuickHack object: 메인 ERP/WMS 화면은 로그인 사용자만 받고 메뉴 데이터는 필요할 때 조회합니다.
 type DeviceWorkspaceProps = {
@@ -221,7 +227,7 @@ function findVisibleSearchInput() {
     .at(-1);
 }
 
-function findVisibleListRefreshButton() {
+function findVisibleListRefreshButton(labels: readonly string[]) {
   const content = document.querySelector<HTMLElement>(
     '[data-quickhack-active-content="true"]'
   );
@@ -246,8 +252,7 @@ function findVisibleListRefreshButton() {
     ).trim();
 
   return (
-    buttons.find((button) => buttonLabel(button) === "목록 새로고침") ??
-    buttons.find((button) => buttonLabel(button) === "새로고침") ??
+    buttons.find((button) => labels.includes(buttonLabel(button))) ??
     null
   );
 }
@@ -297,10 +302,6 @@ function editableAccountProfilesEqual(
   return editableAccountProfileKeys.every((key) => left[key] === right[key]);
 }
 
-function accountRoleLabel(role: string) {
-  return ROLE_LABELS[role as AuthUser["role"]] ?? role;
-}
-
 function formatAccountDate(value: string | null | undefined) {
   const text = String(value ?? "").trim();
 
@@ -339,12 +340,13 @@ function DashboardProgressBar({
   total: number;
   tone: "primary" | "sky" | "warning";
 }) {
+  const locale = useLocale();
   return (
     <div className="grid gap-1.5">
       <div className="flex items-center justify-between gap-3 text-xs">
         <span className="min-w-0 truncate text-muted-foreground">{label}</span>
         <span className="shrink-0 tabular-nums">
-          {count.toLocaleString("ko-KR")} / {total.toLocaleString("ko-KR")} ·{" "}
+          {count.toLocaleString(locale)} / {total.toLocaleString(locale)} ·{" "}
           {value}%
         </span>
       </div>
@@ -364,24 +366,28 @@ function DashboardProgressBar({
 }
 
 function DashboardBatchCard({ batch }: { batch: DashboardBatchProgress }) {
+  const t = useTranslations("navigation.workspace");
+  const locale = useLocale();
   const differenceLabel =
     batch.arrivalDifference === 0
-      ? "일치"
+      ? t("dashboard.match")
       : batch.arrivalDifference < 0
-        ? `부족 ${batch.shortageQuantity.toLocaleString("ko-KR")}`
-        : `초과 ${batch.excessQuantity.toLocaleString("ko-KR")}`;
+        ? t("dashboard.shortage", { count: batch.shortageQuantity })
+        : t("dashboard.excess", { count: batch.excessQuantity });
 
   return (
     <article className="grid min-h-[220px] gap-4 rounded-md border bg-popover p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">
-            {batch.batchDate} · {batch.batchNo}차
+            {t("dashboard.batch", { date: batch.batchDate, batch: batch.batchNo })}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            예정 {batch.expectedQuantity.toLocaleString("ko-KR")}대 · 현재 연결{" "}
-            {batch.linkedQuantity.toLocaleString("ko-KR")}대 · 오늘 검수{" "}
-            {batch.inspectedToday.toLocaleString("ko-KR")}대
+            {t("dashboard.batchSummary", {
+              expected: batch.expectedQuantity,
+              linked: batch.linkedQuantity,
+              inspected: batch.inspectedToday,
+            })}
           </p>
         </div>
         <div
@@ -401,19 +407,19 @@ function DashboardBatchCard({ batch }: { batch: DashboardBatchProgress }) {
 
       <div className="grid grid-cols-3 overflow-hidden rounded-md border bg-background">
         <div className="border-r p-3">
-          <div className="text-xs text-muted-foreground">정상 입고 대상</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.normalInbound")}</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">
-            {batch.normalInboundTargetQuantity.toLocaleString("ko-KR")}
+            {batch.normalInboundTargetQuantity.toLocaleString(locale)}
           </div>
         </div>
         <div className="border-r p-3">
-          <div className="text-xs text-muted-foreground">매입처 반품</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.supplierReturn")}</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">
-            {batch.supplierReturnQuantity.toLocaleString("ko-KR")}
+            {batch.supplierReturnQuantity.toLocaleString(locale)}
           </div>
         </div>
         <div className="p-3">
-          <div className="text-xs text-muted-foreground">도착 차이</div>
+          <div className="text-xs text-muted-foreground">{t("dashboard.arrivalDifference")}</div>
           <div
             className={cn(
               "mt-1 text-2xl font-semibold tabular-nums",
@@ -422,28 +428,28 @@ function DashboardBatchCard({ batch }: { batch: DashboardBatchProgress }) {
             )}
           >
             {batch.arrivalDifference > 0 ? "+" : ""}
-            {batch.arrivalDifference.toLocaleString("ko-KR")}
+            {batch.arrivalDifference.toLocaleString(locale)}
           </div>
         </div>
       </div>
 
       <div className="grid gap-3">
         <DashboardProgressBar
-          label="외관검수 완료"
+          label={t("dashboard.appearanceComplete")}
           value={batch.appearancePercent}
           count={batch.appearanceCompletedCount}
           total={batch.expectedQuantity}
           tone="primary"
         />
         <DashboardProgressBar
-          label="기능검수 완료"
+          label={t("dashboard.functionComplete")}
           value={batch.functionPercent}
           count={batch.functionCompletedCount}
           total={batch.expectedQuantity}
           tone="sky"
         />
         <DashboardProgressBar
-          label="매입 대기"
+          label={t("dashboard.purchasePending")}
           value={batch.purchasePendingPercent}
           count={batch.purchasePendingCount}
           total={batch.expectedQuantity}
@@ -455,6 +461,7 @@ function DashboardBatchCard({ batch }: { batch: DashboardBatchProgress }) {
 }
 
 function DashboardView() {
+  const t = useTranslations("navigation.workspace");
   const [data, setData] = React.useState<DashboardStatisticsData | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState("");
@@ -476,7 +483,7 @@ function DashboardView() {
 
           if (!response.ok || !payload?.ok || !payload.data) {
             throw new Error(
-              payload?.message || "대쉬보드 통계를 불러오지 못했습니다."
+              t("dashboard.loadFailed")
             );
           }
 
@@ -502,36 +509,36 @@ function DashboardView() {
       window.clearTimeout(timerId);
       controller.abort();
     };
-  }, []);
+  }, [t]);
 
   return (
     <section className="flex h-full min-h-0 w-full flex-1 flex-col gap-4 overflow-auto p-5">
       <SummaryStrip className="grid-cols-2 md:grid-cols-4">
         <SummaryCell
           icon={Database}
-          label="오늘 예정"
+          label={t("dashboard.expectedToday")}
           value={data?.summary.expectedQuantity ?? "–"}
         />
         <SummaryCell
           icon={ClipboardCheck}
-          label="현재 연결"
+          label={t("dashboard.currentlyLinked")}
           value={data?.summary.linkedQuantity ?? "–"}
         />
         <SummaryCell
           icon={PackageCheck}
-          label="정상 입고 대상"
+          label={t("dashboard.normalInbound")}
           value={data?.summary.normalInboundTargetQuantity ?? "–"}
         />
         <SummaryCell
           icon={Undo2}
-          label="매입처 반품"
+          label={t("dashboard.supplierReturn")}
           value={data?.summary.supplierReturnQuantity ?? "–"}
         />
       </SummaryStrip>
 
       {isLoading ? (
         <FeedbackBanner tone="info">
-          오늘 차수별 검수 현황을 불러오는 중입니다.
+          {t("dashboard.loading")}
         </FeedbackBanner>
       ) : null}
 
@@ -543,9 +550,9 @@ function DashboardView() {
 
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">오늘 차수별 검수 현황</h2>
+          <h2 className="text-sm font-semibold">{t("dashboard.title")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {data?.today ?? "-"} 기준 · 차수 예정 대수 대비 진행률
+            {t("dashboard.basis", { date: data?.today ?? "-" })}
           </p>
         </div>
       </div>
@@ -561,7 +568,7 @@ function DashboardView() {
         </div>
       ) : !isLoading && !errorMessage && data ? (
         <div className="grid min-h-72 place-items-center rounded-md border border-dashed bg-background text-sm text-muted-foreground">
-          오늘 등록된 입고 차수가 없습니다.
+          {t("dashboard.empty")}
         </div>
       ) : null}
     </section>
@@ -569,6 +576,7 @@ function DashboardView() {
 }
 
 function PendingMenuView({ item }: { item: MenuItem }) {
+  const t = useTranslations("navigation.workspace");
   const Icon = item.icon;
 
   return (
@@ -584,7 +592,7 @@ function PendingMenuView({ item }: { item: MenuItem }) {
           </p>
         </div>
         <Badge className="mx-auto" variant="neutral">
-          화면 구성 대기
+          {t("pending")}
         </Badge>
       </div>
     </section>
@@ -607,6 +615,15 @@ export function DeviceWorkspace({
 function DeviceWorkspaceContent({
   currentUser,
 }: DeviceWorkspaceProps) {
+  const navigation = useTranslations("navigation");
+  const workspace = useTranslations("navigation.workspace");
+  const deviceQuery = useTranslations("common.deviceQuery");
+  const roleLabels: Record<string, string> = {
+    VIEWER: workspace("roles.viewer"),
+    STAFF: workspace("roles.staff"),
+    MANAGER: workspace("roles.manager"),
+    LEADER: workspace("roles.leader"),
+  };
   const { allowNextBeforeUnload, runGuardedAction } = useUnsavedChanges();
   const { api: desktopApi } = useDesktopCapability();
   const [selectedDevice, setSelectedDevice] =
@@ -695,9 +712,17 @@ function DeviceWorkspaceContent({
   const accountButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const accountCardRef = React.useRef<HTMLDivElement | null>(null);
   const deviceDetailAbortRef = React.useRef<AbortController | null>(null);
+  const closeWorkspaceWindowRef = React.useRef<() => void>(() => undefined);
+  const requestMenuChangeRef = React.useRef<
+    (nextMenuId: MenuItemId, onCommitted?: () => void) => void
+  >(() => undefined);
   const workspaceRefreshOperationCountRef = React.useRef(0);
   const activeMenuReloadInFlightRef = React.useRef(false);
   const menuNavigationRevisionRef = React.useRef(0);
+  const localeBroadcastSourceId = React.useId();
+  const localeBroadcastSourceRef = React.useRef(
+    `workspace-${localeBroadcastSourceId}`
+  );
 
   const personalSettingsDirty = React.useMemo(
     () =>
@@ -765,9 +790,13 @@ function DeviceWorkspaceContent({
     };
   }, [effectiveCurrentUser.role]);
 
+  const localizedMenuGroups = React.useMemo(
+    () => localizeMenuGroups((key) => navigation(key as never)),
+    [navigation]
+  );
   const allowedMenuGroups = React.useMemo(
-    () => getAllowedMenuGroups(effectiveCurrentUser),
-    [effectiveCurrentUser]
+    () => getAllowedMenuGroups(effectiveCurrentUser, localizedMenuGroups),
+    [effectiveCurrentUser, localizedMenuGroups]
   );
 
   const selectedMenuId =
@@ -778,11 +807,15 @@ function DeviceWorkspaceContent({
       ? activeMenuId
       : allowedMenuGroups[0]?.items[0]?.id ?? "dashboard";
   const selectedMenuIdRef = React.useRef(selectedMenuId);
-  const activeMenu = findMenuItem(selectedMenuId);
+  const activeMenu = findMenuItem(
+    selectedMenuId,
+    localizedMenuGroups,
+    (key) => navigation(key as never)
+  );
 
   useUnsavedForm({
     id: "personal-settings.account",
-    label: "계정 정보",
+    label: workspace("forms.account"),
     enabled: selectedMenuId === "personal-settings",
     isDirty: accountSettingsDirty,
     isBusy: isSavingAccountProfile,
@@ -790,7 +823,7 @@ function DeviceWorkspaceContent({
   });
   useUnsavedForm({
     id: "personal-settings.preferences",
-    label: "단축키·알림 설정",
+    label: workspace("forms.preferences"),
     enabled: selectedMenuId === "personal-settings",
     isDirty: personalSettingsDirty,
     isBusy: isSavingPersonalSettings,
@@ -862,7 +895,7 @@ function DeviceWorkspaceContent({
 
           if (!response.ok || !payload?.ok || !payload.authenticated) {
             throw new Error(
-              payload?.message || "계정 정보를 불러오지 못했습니다."
+              workspace("account.loadFailed")
             );
           }
 
@@ -897,7 +930,7 @@ function DeviceWorkspaceContent({
       window.clearTimeout(timerId);
       controller.abort();
     };
-  }, [accountProfile, currentUser]);
+  }, [accountProfile, currentUser, workspace]);
 
   React.useEffect(() => {
     function handleWorkspaceShortcut(event: KeyboardEvent) {
@@ -950,7 +983,7 @@ function DeviceWorkspaceContent({
 
         runGuardedAction({
           intent: "close-window",
-          action: closeWorkspaceWindow,
+          action: () => closeWorkspaceWindowRef.current(),
         });
         return;
       }
@@ -958,7 +991,7 @@ function DeviceWorkspaceContent({
       if (binding.actionCode === "REFRESH_LIST") {
         event.preventDefault();
         const refreshButton =
-          findVisibleListRefreshButton() ??
+          findVisibleListRefreshButton([workspace("header.listRefresh"), workspace("header.refresh")]) ??
           document.querySelector<HTMLButtonElement>(
             '[data-quickhack-global-refresh="true"]'
           );
@@ -968,7 +1001,7 @@ function DeviceWorkspaceContent({
 
       if (binding.actionCode === "OPEN_PERSONAL_SETTINGS") {
         event.preventDefault();
-        requestMenuChange("personal-settings", () => {
+        requestMenuChangeRef.current("personal-settings", () => {
           setAccountCardOpen(false);
         });
         return;
@@ -1008,7 +1041,7 @@ function DeviceWorkspaceContent({
         return;
       }
 
-      requestMenuChange(targetMenu.id, () => {
+      requestMenuChangeRef.current(targetMenu.id, () => {
         setOpenGroupIds((current) => {
           if (current.has(targetGroup.id)) {
             return current;
@@ -1035,6 +1068,7 @@ function DeviceWorkspaceContent({
     allowedMenuGroups,
     runGuardedAction,
     selectedMenuId,
+    workspace,
   ]);
 
   React.useEffect(() => {
@@ -1075,7 +1109,11 @@ function DeviceWorkspaceContent({
     setSheetOpen(true);
 
     try {
-      const detail = await requestDeviceDetail(normalizedPgNo, controller.signal);
+      const detail = await requestDeviceDetail(
+        normalizedPgNo,
+        deviceQuery("detailFailed"),
+        controller.signal
+      );
       if (!controller.signal.aborted) setSelectedDevice(detail);
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -1086,7 +1124,7 @@ function DeviceWorkspaceContent({
     } finally {
       if (!controller.signal.aborted) setIsDeviceDetailLoading(false);
     }
-  }, []);
+  }, [deviceQuery]);
 
   const beginWorkspaceRefresh = React.useCallback(() => {
     workspaceRefreshOperationCountRef.current += 1;
@@ -1188,12 +1226,12 @@ function DeviceWorkspaceContent({
     setWorkspaceError("");
 
     try {
-      await requestQuickHackLogout();
+      await requestQuickHackLogout(fetch, workspace("message.logoutFailed"));
       allowNextBeforeUnload();
       window.location.reload();
     } catch (error) {
       setWorkspaceError(
-        error instanceof Error ? error.message : "로그아웃하지 못했습니다."
+        error instanceof Error ? error.message : workspace("message.logoutFailed")
       );
       setIsLoggingOut(false);
     }
@@ -1208,7 +1246,7 @@ function DeviceWorkspaceContent({
     window.setTimeout(() => {
       if (!window.closed) {
         setWorkspaceError(
-          "현재 브라우저가 창 닫기를 차단했습니다. QuickHack 클라이언트 창에서 다시 시도하세요."
+          workspace("message.windowCloseBlocked")
         );
       }
     }, 100);
@@ -1222,6 +1260,13 @@ function DeviceWorkspaceContent({
         [key]: checked,
       },
     }));
+    setAccountPreferencesError("");
+    setAccountPreferencesErrorAction(undefined);
+    setAccountPreferencesMessage("");
+  }
+
+  function changePersonalLocale(locale: QuickHackLocale) {
+    setPersonalSettingsDraft((current) => ({ ...current, locale }));
     setAccountPreferencesError("");
     setAccountPreferencesErrorAction(undefined);
     setAccountPreferencesMessage("");
@@ -1307,7 +1352,11 @@ function DeviceWorkspaceContent({
 
     runGuardedAction({
       intent: "menu-change",
-      targetLabel: findMenuItem(nextMenuId).label,
+      targetLabel: findMenuItem(
+        nextMenuId,
+        localizedMenuGroups,
+        (key) => navigation(key as never)
+      ).label,
       action: () => {
         const workflowFamily = menuWorkflowFamily(nextMenuId);
         if (!workflowFamily) {
@@ -1326,7 +1375,7 @@ function DeviceWorkspaceContent({
               | null;
             if (!response.ok || !payload?.ok) {
               throw new Error(
-                payload?.message ?? "이 업무를 시작할 수 없습니다."
+                workspace("message.workflowBlocked")
               );
             }
             setWorkspaceError("");
@@ -1336,12 +1385,17 @@ function DeviceWorkspaceContent({
             setWorkspaceError(
               error instanceof Error
                 ? error.message
-                : "업무 시작 조건을 확인하지 못했습니다."
+                : workspace("message.workflowCheckFailed")
             );
           });
       },
     });
   }
+
+  React.useEffect(() => {
+    closeWorkspaceWindowRef.current = closeWorkspaceWindow;
+    requestMenuChangeRef.current = requestMenuChange;
+  });
 
   async function saveAccountProfile() {
     if (
@@ -1376,7 +1430,9 @@ function DeviceWorkspaceContent({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "계정 정보를 저장하지 못했습니다.");
+        throw new Error(
+          legacyApiMessage(payload, workspace("message.accountSaveFailed"))
+        );
       }
 
       let nextProfile = payload.profile;
@@ -1396,7 +1452,12 @@ function DeviceWorkspaceContent({
             !refreshPayload.authenticated ||
             !refreshPayload.profile
           ) {
-            throw new Error("계정 정보 새로고침이 지연되었습니다.");
+            throw new Error(
+              legacyApiMessage(
+                refreshPayload,
+                workspace("message.accountRefreshDeferred")
+              )
+            );
           }
           nextProfile = refreshPayload.profile;
         } catch {
@@ -1411,7 +1472,7 @@ function DeviceWorkspaceContent({
       }
 
       if (!nextProfile) {
-        throw new Error(payload.message || "저장된 계정 정보를 확인하지 못했습니다.");
+        throw new Error(workspace("message.accountVerifyFailed"));
       }
 
       setAccountProfile(nextProfile);
@@ -1419,8 +1480,8 @@ function DeviceWorkspaceContent({
       setAccountProfileError("");
       setAccountSettingsMessage(
         refreshDeferred
-          ? `${payload.message || "계정 정보를 저장했습니다."} 최신 보안 상태는 화면을 새로고침해 확인하세요.`
-          : payload.message || "계정 정보를 저장했습니다."
+          ? workspace("message.accountSavedRefresh", { message: workspace("message.accountSaved") })
+          : workspace("message.accountSaved")
       );
     } catch (error) {
       setAccountSettingsError(
@@ -1446,7 +1507,7 @@ function DeviceWorkspaceContent({
 
       if (permission !== "granted") {
         setAccountPreferencesError(
-          "Windows 알림 권한이 허용되지 않아 설정을 저장하지 않았습니다."
+          workspace("message.notificationPermissionDenied")
         );
         return;
       }
@@ -1463,6 +1524,7 @@ function DeviceWorkspaceContent({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           expectedRevision: accountPersonalSettings.revision,
+          locale: personalSettingsDraft.locale,
           preferences: personalSettingsDraft.preferences,
           shortcutBindings: personalSettingsDraft.shortcutBindings,
         }),
@@ -1473,14 +1535,21 @@ function DeviceWorkspaceContent({
 
       if (!response.ok || !payload?.ok || !payload.personalSettings) {
         setAccountPreferencesErrorAction(payload?.actionCode);
-        throw new Error(payload?.message || "개인 설정을 저장하지 못했습니다.");
+        throw new Error(
+          legacyApiMessage(payload, workspace("message.preferencesSaveFailed"))
+        );
       }
 
       const savedSettings = clonePersonalSettings(payload.personalSettings);
       setAccountPersonalSettings(savedSettings);
       setPersonalSettingsDraft(clonePersonalSettings(savedSettings));
       setAccountPreferencesLoaded(true);
-      setAccountPreferencesMessage(payload.message || "개인 설정을 저장했습니다.");
+      setAccountPreferencesMessage(workspace("message.preferencesSaved"));
+      publishLocale({
+        locale: savedSettings.locale,
+        revision: savedSettings.revision,
+        source: localeBroadcastSourceRef.current,
+      });
     } catch (error) {
       setAccountPreferencesError(
         error instanceof Error ? error.message : String(error)
@@ -1520,7 +1589,9 @@ function DeviceWorkspaceContent({
               </div>
             </div>
             <Badge variant={profile.isActive ? "success" : "neutral"}>
-              {profile.isActive ? "활성" : "비활성"}
+              {profile.isActive
+                ? workspace("account.active")
+                : workspace("account.inactive")}
             </Badge>
           </div>
         </div>
@@ -1528,7 +1599,7 @@ function DeviceWorkspaceContent({
         <div className="grid gap-3 p-4">
           {isAccountProfileLoading ? (
             <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-              계정 정보를 불러오는 중입니다.
+              {workspace("account.loading")}
             </div>
           ) : null}
 
@@ -1540,18 +1611,18 @@ function DeviceWorkspaceContent({
 
           <div className="grid gap-2">
             <AccountInfoRow
-              label="권한"
+              label={workspace("account.role")}
               value={
                 <div className="flex flex-wrap gap-1.5">
-                  <Badge variant="secondary">{accountRoleLabel(profile.role)}</Badge>
+                  <Badge variant="secondary">{roleLabels[profile.role] ?? profile.role}</Badge>
                   {profile.isDeveloper ? (
-                    <Badge variant="warning">개발자</Badge>
+                    <Badge variant="warning">{workspace("account.developer")}</Badge>
                   ) : null}
                 </div>
               }
             />
             <AccountInfoRow
-              label="연락처"
+              label={workspace("account.contact")}
               value={
                 <div className="grid gap-1">
                   <span className="flex min-w-0 items-center gap-1.5">
@@ -1566,38 +1637,40 @@ function DeviceWorkspaceContent({
               }
             />
             <AccountInfoRow
-              label="인사정보"
+              label={workspace("account.employment")}
               value={
                 <div className="grid gap-1">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span>생일 {formatAccountDate(profile.birthDate).slice(0, 10)}</span>
+                    <span>{workspace("account.birthday", { date: formatAccountDate(profile.birthDate).slice(0, 10) })}</span>
                   </span>
                   <span className="flex min-w-0 items-center gap-1.5">
                     <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span>입사 {formatAccountDate(profile.hireDate).slice(0, 10)}</span>
+                    <span>{workspace("account.hireDate", { date: formatAccountDate(profile.hireDate).slice(0, 10) })}</span>
                   </span>
                 </div>
               }
             />
             <AccountInfoRow
-              label="보안"
+              label={workspace("account.security")}
               value={
                 <div className="flex flex-wrap gap-1.5">
                   <Badge variant={profile.totpEnabled ? "success" : "neutral"}>
                     <ShieldCheck className="mr-1 size-3" />
-                    OTP {profile.totpEnabled ? "설정" : "미설정"}
+                    {profile.totpEnabled
+                      ? workspace("account.otpEnabled")
+                      : workspace("account.otpDisabled")}
                   </Badge>
                   {profile.totpEnabled ? (
                     <Badge variant="neutral">
-                      복구코드 {profile.recoveryCodeCount}
+                      {workspace("account.recoveryCodes", { count: profile.recoveryCodeCount })}
                     </Badge>
                   ) : null}
                 </div>
               }
             />
             <AccountInfoRow
-              label="모바일"
+              label={workspace("account.mobile")}
               value={
                 <div className="flex flex-wrap gap-1.5">
                   <Badge
@@ -1606,21 +1679,22 @@ function DeviceWorkspaceContent({
                     }
                   >
                     <Smartphone className="mr-1 size-3" />
-                    포장검수 앱{" "}
-                    {profile.mobilePackingEnabled ? "허용" : "미허용"}
+                    {profile.mobilePackingEnabled
+                      ? workspace("account.packingAllowed")
+                      : workspace("account.packingDenied")}
                   </Badge>
                   <Badge variant="neutral">
-                    등록기기 {profile.activeMobileDeviceCount}
+                    {workspace("account.registeredDevices", { count: profile.activeMobileDeviceCount })}
                   </Badge>
                 </div>
               }
             />
             <AccountInfoRow
-              label="계정생성"
+              label={workspace("account.created")}
               value={formatAccountDate(profile.createdAt)}
             />
             <AccountInfoRow
-              label="최근수정"
+              label={workspace("account.updated")}
               value={formatAccountDate(profile.updatedAt)}
             />
           </div>
@@ -1639,7 +1713,7 @@ function DeviceWorkspaceContent({
           >
             <span className="flex items-center gap-2">
               <Settings2 className="size-4 text-muted-foreground" />
-              개인 설정
+              {workspace("account.personalSettings")}
             </span>
             <ChevronRight className="size-4 text-muted-foreground" />
           </Button>
@@ -1699,6 +1773,7 @@ function DeviceWorkspaceContent({
           }
           errorActionCode={accountPreferencesErrorAction}
           onPreferenceChange={changePersonalPreference}
+          onLocaleChange={changePersonalLocale}
           onShortcutChange={changeShortcutBinding}
           onCancel={discardPersonalSettingsChanges}
           onResetDefaults={resetPersonalSettingsDefaults}
@@ -2093,8 +2168,8 @@ function DeviceWorkspaceContent({
   );
   const activeAreaLabel =
     selectedMenuId === "personal-settings"
-      ? "계정"
-      : activeGroup?.label ?? "메뉴";
+      ? workspace("area.account")
+      : activeGroup?.label ?? workspace("area.menu");
 
   return (
     <main className="flex h-screen min-h-screen overflow-hidden bg-background">
@@ -2125,9 +2200,9 @@ function DeviceWorkspaceContent({
             </div>
           ) : null}
           <Button
-            aria-label={sidebarCollapsed ? "메뉴 펼치기" : "메뉴 접기"}
+            aria-label={sidebarCollapsed ? workspace("sidebar.expand") : workspace("sidebar.collapse")}
             size="icon"
-            title={sidebarCollapsed ? "메뉴 펼치기" : "메뉴 접기"}
+            title={sidebarCollapsed ? workspace("sidebar.expand") : workspace("sidebar.collapse")}
             variant="ghost"
             onClick={() => setSidebarCollapsed((current) => !current)}
           >
@@ -2263,7 +2338,7 @@ function DeviceWorkspaceContent({
             />
             {accountProfile?.isBirthdayToday ? (
               <span className="whitespace-nowrap rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700">
-                생일을 축하합니다!{" "}
+                {workspace("header.birthday")}{" "}
                 <span aria-hidden="true">🥳🎉🎁</span>
               </span>
             ) : null}
@@ -2277,7 +2352,7 @@ function DeviceWorkspaceContent({
                 )}
                 aria-expanded={accountCardOpen}
                 aria-haspopup="dialog"
-                title="계정 정보"
+                title={workspace("header.account")}
                 onClick={() => setAccountCardOpen((open) => !open)}
               >
                 <UserRound className="size-4 text-muted-foreground" />
@@ -2286,10 +2361,10 @@ function DeviceWorkspaceContent({
                     {effectiveCurrentUser.displayName}
                   </div>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <span>{ROLE_LABELS[effectiveCurrentUser.role]}</span>
+                    <span>{roleLabels[effectiveCurrentUser.role]}</span>
                     {effectiveCurrentUser.isDeveloper ? (
                       <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-foreground">
-                        개발자
+                        {workspace("account.developer")}
                       </span>
                     ) : null}
                   </div>
@@ -2305,22 +2380,24 @@ function DeviceWorkspaceContent({
                 void reloadActiveMenuContent();
               }}
               disabled={isRefreshingWorkspace}
-              title="현재 메뉴를 처음부터 다시 불러옵니다"
+              title={workspace("header.refreshTitle")}
             >
               <RefreshCcw
                 className={cn("size-4", isRefreshingWorkspace && "animate-spin")}
               />
-              {isRefreshingWorkspace ? "화면 갱신중" : "새로고침"}
+              {isRefreshingWorkspace
+                ? workspace("header.refreshing")
+                : workspace("header.refresh")}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleLogout}
               disabled={isLoggingOut}
-              title="로그아웃"
+              title={workspace("header.logout")}
             >
               <LogOut className="size-4" />
-              로그아웃
+              {workspace("header.logout")}
             </Button>
           </div>
         </header>

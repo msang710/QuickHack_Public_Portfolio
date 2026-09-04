@@ -44,15 +44,6 @@ export const COUPANG_RETURN_CONFIRM_RECEIPT_STATUSES = [
   "RETURNS_COMPLETED",
 ] as const;
 
-export const COUPANG_ORDER_STATUS_LABELS = {
-  ACCEPT: "결제완료",
-  INSTRUCT: "상품준비중",
-  DEPARTURE: "배송지시",
-  DELIVERING: "배송중",
-  FINAL_DELIVERY: "배송완료",
-  NONE_TRACKING: "추적불가",
-} as const;
-
 export type CoupangApiMode = "mock" | "live";
 
 const COUPANG_REQUEST_TIMEOUT_MS = 90_000;
@@ -91,7 +82,6 @@ export function getCoupangRuntimeConfig() {
     returnConfirmReceiptStatuses: [
       ...COUPANG_RETURN_CONFIRM_RECEIPT_STATUSES,
     ],
-    orderStatusLabels: COUPANG_ORDER_STATUS_LABELS,
   };
 }
 

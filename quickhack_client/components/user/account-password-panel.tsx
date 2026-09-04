@@ -2,16 +2,25 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { Input } from "@/quickhack_client/components/ui/input";
 import {
   PASSWORD_MIN_LENGTH,
-  passwordChangeValidationError,
+  passwordChangeValidationIssue,
 } from "@/quickhack_shared/auth/password-policy";
 
 type PasswordChangeResponse = {
   ok: boolean;
+  code?:
+    | "CURRENT_PASSWORD_REQUIRED"
+    | "NEW_PASSWORD_TOO_SHORT"
+    | "NEW_PASSWORD_CONFIRM_MISMATCH"
+    | "NEW_PASSWORD_UNCHANGED"
+    | "CURRENT_PASSWORD_INVALID"
+    | "ACCOUNT_SECURITY_CHANGED";
   message?: string;
   mustChangePassword?: boolean;
 };
@@ -23,6 +32,7 @@ export function AccountPasswordPanel({
   forced?: boolean;
   onChanged?: () => void;
 }) {
+  const t = useTranslations("auth.passwordChange");
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = React.useState("");
@@ -39,15 +49,23 @@ export function AccountPasswordPanel({
       return;
     }
 
-    const validationError = passwordChangeValidationError({
+    const validationIssue = passwordChangeValidationIssue({
       currentPassword,
       newPassword,
       newPasswordConfirm,
     });
 
-    if (validationError) {
+    if (validationIssue) {
       setIsError(true);
-      setMessage(validationError);
+      setMessage(
+        validationIssue === "CURRENT_PASSWORD_REQUIRED"
+          ? t("validation.currentRequired")
+          : validationIssue === "NEW_PASSWORD_TOO_SHORT"
+            ? t("validation.tooShort", { count: PASSWORD_MIN_LENGTH })
+            : validationIssue === "NEW_PASSWORD_CONFIRM_MISMATCH"
+              ? t("validation.mismatch")
+              : t("validation.unchanged")
+      );
       return;
     }
 
@@ -70,8 +88,21 @@ export function AccountPasswordPanel({
         | null;
 
       if (!response.ok || !payload?.ok) {
+        const code = payload?.code;
         throw new Error(
-          payload?.message || "비밀번호를 변경하지 못했습니다."
+          code === "CURRENT_PASSWORD_REQUIRED"
+            ? t("validation.currentRequired")
+            : code === "NEW_PASSWORD_TOO_SHORT"
+              ? t("validation.tooShort", { count: PASSWORD_MIN_LENGTH })
+              : code === "NEW_PASSWORD_CONFIRM_MISMATCH"
+                ? t("validation.mismatch")
+                : code === "NEW_PASSWORD_UNCHANGED"
+                  ? t("validation.unchanged")
+                  : code === "CURRENT_PASSWORD_INVALID"
+                    ? t("validation.currentInvalid")
+                    : code === "ACCOUNT_SECURITY_CHANGED"
+                      ? t("validation.securityChanged")
+                      : legacyApiMessage(payload, t("failed"))
         );
       }
 
@@ -79,7 +110,7 @@ export function AccountPasswordPanel({
       setNewPassword("");
       setNewPasswordConfirm("");
       setIsError(false);
-      setMessage(payload.message || "비밀번호를 변경했습니다.");
+      setMessage(t("success"));
       onChanged?.();
     } catch (error) {
       setIsError(true);
@@ -93,18 +124,16 @@ export function AccountPasswordPanel({
     <section className="grid gap-3 rounded-md border bg-popover p-3">
       <div>
         <h2 className="text-sm font-semibold">
-          {forced ? "새 비밀번호 설정" : "비밀번호 변경"}
+          {forced ? t("forcedTitle") : t("title")}
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          {forced
-            ? "임시 비밀번호를 본인만 아는 새 비밀번호로 변경해야 업무 화면을 사용할 수 있습니다."
-            : "변경이 완료되면 다른 PC를 포함한 기존 로그인 세션이 모두 종료됩니다."}
+          {forced ? t("description.forced") : t("description.normal")}
         </p>
       </div>
 
       <form className="grid gap-3" onSubmit={submitPasswordChange}>
         <label className="grid gap-1.5 text-sm font-medium">
-          현재 비밀번호
+          {t("currentPassword")}
           <Input
             type="password"
             name="currentPassword"
@@ -117,7 +146,7 @@ export function AccountPasswordPanel({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium">
-            새 비밀번호
+            {t("nextPassword")}
             <Input
               type="password"
               name="newPassword"
@@ -129,7 +158,7 @@ export function AccountPasswordPanel({
           </label>
 
           <label className="grid gap-1.5 text-sm font-medium">
-            새 비밀번호 확인
+            {t("confirmPassword")}
             <Input
               type="password"
               name="newPasswordConfirm"
@@ -144,7 +173,7 @@ export function AccountPasswordPanel({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          새 비밀번호는 {PASSWORD_MIN_LENGTH}자 이상이어야 합니다.
+          {t("minimum", { count: PASSWORD_MIN_LENGTH })}
         </p>
 
         {message ? (
@@ -166,7 +195,7 @@ export function AccountPasswordPanel({
             ) : (
               <KeyRound className="size-4" />
             )}
-            {isSubmitting ? "변경 중" : "비밀번호 변경"}
+            {isSubmitting ? t("submitting") : t("title")}
           </Button>
         </div>
       </form>

@@ -1,8 +1,4 @@
-import {
-  INVENTORY_STATUS,
-  inventoryStatusLabel,
-  type InventoryStatusCode,
-} from "@/quickhack_shared/inventory/inventory-status";
+import { INVENTORY_STATUS, type InventoryStatusCode } from "@/quickhack_shared/inventory/inventory-status";
 import type {
   InventoryQuantityMatrixRowDto,
   InventoryQuantityMovementPageDto,
@@ -18,38 +14,26 @@ export type InventoryQuantityMatrixColumn =
   | {
       key: "SELLABLE_SUMMARY";
       kind: "SELLABLE";
-      label: string;
-      shortLabel: string;
     }
   | {
       key: "TODAY_ORDER";
       kind: "TODAY_ORDER";
-      label: string;
-      shortLabel: string;
     }
   | {
       key: "PRE_PURCHASE";
       kind: "PRE_PURCHASE";
-      label: string;
-      shortLabel: string;
     }
   | {
       key: "PRIMARY_TOTAL";
       kind: "PRIMARY_TOTAL";
-      label: string;
-      shortLabel: string;
     }
   | {
       key: `STATUS:${string}`;
       kind: "STATUS";
-      label: string;
-      shortLabel: string;
       inventoryStatus: string;
     };
 
 export type InventoryQuantityMatrixPresetDefinition = {
-  label: string;
-  description: string;
   columns: readonly InventoryQuantityMatrixColumn[];
 };
 
@@ -58,8 +42,6 @@ const statusColumn = (
 ): InventoryQuantityMatrixColumn => ({
   key: `STATUS:${inventoryStatus}`,
   kind: "STATUS",
-  label: inventoryStatusLabel(inventoryStatus),
-  shortLabel: inventoryStatusLabel(inventoryStatus),
   inventoryStatus,
 });
 
@@ -84,38 +66,26 @@ export const INVENTORY_QUANTITY_MATRIX_PRESETS: Record<
   InventoryQuantityMatrixPresetDefinition
 > = {
   SUMMARY: {
-    label: "기본",
-    description: "업무에서 가장 자주 확인하는 네 가지 합계",
     columns: [
       {
         key: "SELLABLE_SUMMARY",
         kind: "SELLABLE",
-        label: "판매가능",
-        shortLabel: "판매가능",
       },
       {
         key: "TODAY_ORDER",
         kind: "TODAY_ORDER",
-        label: "오늘 주문 전체 수량",
-        shortLabel: "오늘 주문",
       },
       {
         key: "PRE_PURCHASE",
         kind: "PRE_PURCHASE",
-        label: "매입 전",
-        shortLabel: "매입 전",
       },
       {
         key: "PRIMARY_TOTAL",
         kind: "PRIMARY_TOTAL",
-        label: "총합계",
-        shortLabel: "총합계",
       },
     ],
   },
   OUTBOUND: {
-    label: "출고",
-    description: "주문 확인부터 배송 완료까지의 출고 상태",
     columns: [
       INVENTORY_STATUS.reserved,
       INVENTORY_STATUS.packing,
@@ -126,8 +96,6 @@ export const INVENTORY_QUANTITY_MATRIX_PRESETS: Record<
     ].map(statusColumn),
   },
   EXCEPTIONS: {
-    label: "예외",
-    description: "보류·불량·반품·추적 불가 상태",
     columns: [
       INVENTORY_STATUS.hold,
       INVENTORY_STATUS.defective,
@@ -138,8 +106,6 @@ export const INVENTORY_QUANTITY_MATRIX_PRESETS: Record<
     ].map(statusColumn),
   },
   ALL: {
-    label: "전체",
-    description: "재고 원장의 모든 상태",
     columns: ALL_STATUS_COLUMNS,
   },
 };

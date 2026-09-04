@@ -21,15 +21,19 @@ const view = read(
 const detail = read(
   "quickhack_client/components/shipment/shipment-delivery-search-detail-sheet.tsx"
 );
+const koNavigation = read("quickhack_client/i18n/catalogs/ko/navigation.ts");
+const koShipment = read("quickhack_client/i18n/catalogs/ko/shipment.ts");
 
 assert(
   menu.includes('id: "shipment-in-transit"') &&
-    menu.includes('label: "현재 배송 중 목록"'),
+    menu.includes('label: "items.shipment-in-transit.label"') &&
+    koNavigation.includes('"label": "현재 배송 중 목록"'),
   "The active-delivery menu is not named 현재 배송 중 목록."
 );
 assert(
   menu.includes('id: "shipment-delivery-search"') &&
-    menu.includes('label: "전체 배송 건 검색"'),
+    menu.includes('label: "items.shipment-delivery-search.label"') &&
+    koNavigation.includes('"label": "전체 배송 건 검색"'),
   "The all-delivery search menu is missing."
 );
 assert(
@@ -54,7 +58,7 @@ for (const columnLabel of [
   "최근 처리",
 ]) {
   assert(
-    view.includes(`label: "${columnLabel}"`),
+    koShipment.includes(`${columnLabel}`),
     `The delivery search table is missing the ${columnLabel} column.`
   );
 }
@@ -69,11 +73,10 @@ assert(
   "The delivery search view unexpectedly contains column presets."
 );
 assert(
-  detail.includes("배송지 정보") &&
-    detail.includes("처리 진행 상태") &&
-    detail.includes("포장 구성") &&
-    detail.includes("송장 이력") &&
-    detail.includes("배송 추적 이력"),
+  detail.includes('useTranslations("shipment.deliverySearch")') &&
+    ["배송지 정보", "처리 진행 상태", "포장 구성", "송장 이력", "배송 추적 이력"].every(
+      (label) => koShipment.includes(label)
+    ),
   "The delivery detail sheet is missing a required information section."
 );
 

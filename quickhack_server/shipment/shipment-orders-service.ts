@@ -169,7 +169,7 @@ function shipmentPrintBatchPackageGroupIds(batch: ShipmentPrintBatch) {
   if (!snapshotMatches) {
     throw publicConflict(
       "SHIPMENT_PRINT_BATCH_SNAPSHOT_INVALID",
-      "출고 출력 차수의 합포장 스냅샷이 일치하지 않아 작업을 중단했습니다.",
+      "SHIPMENT_PRINT_BATCH_SNAPSHOT_INVALID",
       {
         batchId: batch.shipment_list_print_batch_id,
         expectedItemCount: batch.item_count,
@@ -191,9 +191,7 @@ function shipmentPrintBatchTerminalConflict(
 ) {
   return publicConflict(
     "SHIPMENT_PRINT_BATCH_STATE_CONFLICT",
-    currentStatus === SHIPMENT_PRINT_BATCH_STATUS.confirmed
-      ? "이미 확정된 출고 출력 차수는 폐기할 수 없습니다."
-      : "이미 폐기된 출고 출력 차수는 확정할 수 없습니다.",
+    "SHIPMENT_PRINT_BATCH_STATE_CONFLICT",
     { batchId, currentStatus, requestedStatus }
   );
 }
@@ -1797,7 +1795,7 @@ export async function confirmShipmentListPrintBatch(input: {
     if (exactQuantityAllocations.length !== confirmableItems.length) {
       throw publicConflict(
         "SHIPMENT_PRINT_QUANTITY_CHANGED",
-        "주문 가능 수량과 활성 PG 배정 수량이 달라 출고 목록 확정을 중단했습니다. 목록을 새로고침한 뒤 주문 동기화 상태를 확인하세요.",
+        "SHIPMENT_PRINT_QUANTITY_CHANGED",
         { batchId, refreshRequired: true }
       );
     }

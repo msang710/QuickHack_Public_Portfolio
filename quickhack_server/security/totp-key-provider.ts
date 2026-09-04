@@ -376,7 +376,7 @@ export class TotpKeyProvider {
     if (credentialCount !== 0) {
       throw publicConflict(
         "TOTP_CREDENTIALS_REMAIN",
-        "OTP 등록 정보가 남아 있어 서버 소유 키를 다시 만들 수 없습니다."
+        "TOTP_CREDENTIALS_REMAIN"
       );
     }
 
@@ -428,7 +428,7 @@ export class TotpKeyProvider {
     if (!initialized.status.configured || !initialized.key) {
       throw publicUnavailable(
         "TOTP_SERVICE_UNAVAILABLE",
-        "OTP 보안 서비스를 사용할 수 없어 보호된 작업을 진행할 수 없습니다."
+        "TOTP_SERVICE_UNAVAILABLE"
       );
     }
 

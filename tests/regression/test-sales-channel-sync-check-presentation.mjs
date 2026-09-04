@@ -3,9 +3,8 @@ import {
   formatSalesChannelDifference,
   formatSalesChannelInventoryOption,
   formatSalesChannelQuantity,
-  formatSalesChannelSyncCheckResultCount,
   isInventoryVerificationRecheckable,
-  salesChannelInventoryRecheckOutcomeMessage,
+  salesChannelInventoryRecheckOutcomeKey,
   salesChannelSyncCheckItemKey,
   salesChannelSyncCheckStatusOptions,
 } from "../../quickhack_client/components/admin/sales-channel-sync-check-presentation.ts";
@@ -45,25 +44,18 @@ assert(
   "The combined filter must expose inventory failure states."
 );
 
-assert.equal(formatSalesChannelInventoryOption("ANY", "256GB"), "전체");
-assert.equal(formatSalesChannelInventoryOption("RANDOM", "검정"), "무작위");
-assert.equal(formatSalesChannelInventoryOption("EXACT", "512GB"), "512GB");
-assert.equal(formatSalesChannelInventoryOption("EXACT", ""), "-");
+const formatOptions = { locale: "ko-KR", unknownLabel: "미확인", anyLabel: "전체", randomLabel: "무작위" };
+assert.equal(formatSalesChannelInventoryOption("ANY", "256GB", formatOptions), "전체");
+assert.equal(formatSalesChannelInventoryOption("RANDOM", "검정", formatOptions), "무작위");
+assert.equal(formatSalesChannelInventoryOption("EXACT", "512GB", formatOptions), "512GB");
+assert.equal(formatSalesChannelInventoryOption("EXACT", "", formatOptions), "-");
 
-assert.equal(formatSalesChannelQuantity(null), "미확인");
-assert.equal(formatSalesChannelQuantity(0), "0");
-assert.equal(formatSalesChannelDifference(null), "미확인");
-assert.equal(formatSalesChannelDifference(4), "+4");
-assert.equal(formatSalesChannelDifference(0), "0");
-assert.equal(formatSalesChannelDifference(-3), "-3");
-assert.equal(
-  formatSalesChannelSyncCheckResultCount(12, 300),
-  "조회 결과 12건"
-);
-assert.equal(
-  formatSalesChannelSyncCheckResultCount(300, 300),
-  "조회 결과 최대 300건"
-);
+assert.equal(formatSalesChannelQuantity(null, formatOptions), "미확인");
+assert.equal(formatSalesChannelQuantity(0, formatOptions), "0");
+assert.equal(formatSalesChannelDifference(null, formatOptions), "미확인");
+assert.equal(formatSalesChannelDifference(4, formatOptions), "+4");
+assert.equal(formatSalesChannelDifference(0, formatOptions), "0");
+assert.equal(formatSalesChannelDifference(-3, formatOptions), "-3");
 
 assert.equal(isInventoryVerificationRecheckable("MISMATCH"), true);
 assert.equal(isInventoryVerificationRecheckable("CHECK_FAILED"), true);
@@ -80,8 +72,8 @@ for (const outcome of [
   "CLAIM_LOST",
 ]) {
   assert(
-    salesChannelInventoryRecheckOutcomeMessage(outcome).length > 10,
-    `${outcome} must have a user-facing recheck result message.`
+    salesChannelInventoryRecheckOutcomeKey(outcome).length > 3,
+    `${outcome} must map to a localized recheck-result key.`
   );
 }
 

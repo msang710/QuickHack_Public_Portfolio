@@ -49,14 +49,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return apiFailureResponse({
           status: 401,
           code: "AUTHENTICATION_REQUIRED",
-          message: "로그인이 필요합니다.",
+
         });
       }
       if (!canAccessRole(user.role, "VIEWER")) {
         return apiFailureResponse({
           status: 403,
           code: "PERMISSION_DENIED",
-          message: "기기 이력 조회 권한이 없습니다.",
+
         });
       }
       const section = request.nextUrl.searchParams.get("section") ?? "";
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return apiFailureResponse({
           status: 400,
           code: "DEVICE_HISTORY_QUERY_INVALID",
-          message: "PG 번호와 올바른 이력 구분이 필요합니다.",
+
         });
       }
       setOperationTraceUserId(user.userId);
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           return apiFailureResponse({
             status: 404,
             code: "DEVICE_NOT_FOUND",
-            message: "기기를 찾을 수 없습니다.",
+
           });
         }
         return NextResponse.json({ ok: true, data });

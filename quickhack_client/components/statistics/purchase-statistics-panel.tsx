@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -11,15 +13,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import {
-  formatPurchaseAdjustmentAmount,
-  formatPurchaseAdjustmentPercent,
-  formatPurchaseAmount,
-  formatPurchaseAveragePrice,
-  formatPurchaseDuration,
-  formatPurchaseRate,
-  formatPurchaseStatisticsDate,
-  formatPurchaseStatisticsMonth,
-  purchasePricePolicyLabel,
+  usePurchaseStatisticsPresentation,
   type PurchaseMetricPresentation,
 } from "@/quickhack_client/components/statistics/purchase-statistics-presentation";
 import {
@@ -69,122 +63,86 @@ function PurchaseSourceCoverage({
 }: {
   data: PurchaseStatisticsData;
 }) {
+  const t = useTranslations("statistics.purchase");
+  const { formatDate } = usePurchaseStatisticsPresentation();
   const missingPolicyCount =
     data.source.purchaseCount - data.source.pricePolicyEvidenceCount;
   const warnings = [
     data.source.missingPurchasePriceCount > 0
-      ? `매입가가 기록되지 않은 확정 매입 ${formatNumber(
-          data.source.missingPurchasePriceCount
-        )}건`
+      ? t("coverage.missingPrice", { count: data.source.missingPurchasePriceCount })
       : null,
     data.source.missingSupplierOutcomeCount > 0
-      ? `매입처가 기록되지 않은 종결 회차 ${formatNumber(
-          data.source.missingSupplierOutcomeCount
-        )}건`
+      ? t("coverage.missingSupplier", { count: data.source.missingSupplierOutcomeCount })
       : null,
     data.source.missingInspectionOutcomeCount > 0
-      ? `입고 검수가 연결되지 않은 종결 회차 ${formatNumber(
-          data.source.missingInspectionOutcomeCount
-        )}건`
+      ? t("coverage.missingInspection", { count: data.source.missingInspectionOutcomeCount })
       : null,
     data.source.missingPurchaseGradeOutcomeCount > 0
-      ? `매입 등급을 확인할 수 없는 종결 회차 ${formatNumber(
-          data.source.missingPurchaseGradeOutcomeCount
-        )}건`
+      ? t("coverage.missingGrade", { count: data.source.missingPurchaseGradeOutcomeCount })
       : null,
     missingPolicyCount > 0
-      ? `가격 입력 방식을 확인할 수 없는 확정 매입 ${formatNumber(
-          missingPolicyCount
-        )}건`
+      ? t("coverage.missingPolicy", { count: missingPolicyCount })
       : null,
     data.source.missingPurchaseInboundSaleCount > 0
-      ? `원매입 회차가 연결되지 않은 판매 ${formatNumber(
-          data.source.missingPurchaseInboundSaleCount
-        )}건`
+      ? t("coverage.missingInboundSale", { count: data.source.missingPurchaseInboundSaleCount })
       : null,
     data.source.missingSupplierSnapshotSaleCount > 0
-      ? `판매 당시 원매입처가 기록되지 않은 판매 ${formatNumber(
-          data.source.missingSupplierSnapshotSaleCount
-        )}건`
+      ? t("coverage.missingSupplierSnapshot", { count: data.source.missingSupplierSnapshotSaleCount })
       : null,
     data.source.invalidTimestampCount > 0
-      ? `날짜를 해석할 수 없는 기록 ${formatNumber(
-          data.source.invalidTimestampCount
-        )}건`
+      ? t("coverage.invalidTimestamp", { count: data.source.invalidTimestampCount })
       : null,
     data.source.negativeDurationCount > 0
-      ? `시간 순서 이상으로 기간 계산에서 제외한 기록 ${formatNumber(
-          data.source.negativeDurationCount
-        )}건`
+      ? t("coverage.negativeDuration", { count: data.source.negativeDurationCount })
       : null,
   ].filter((value): value is string => Boolean(value));
 
   return (
     <Section
-      title="데이터 기준과 신뢰도"
-      description="매입 통계를 해석하기 전에 가격·검수·판매 연결 범위를 확인하세요."
+      title={t("coverage.title")}
+      description={t("coverage.subtitle")}
     >
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <StatisticsCalculationScope calculation={data.calculation} />
         <StatisticsCoverageItem
-          label="종결 입고 회차"
-          value={`${formatNumber(data.source.terminalInboundCount)}건`}
-          description={`확정 매입 ${formatNumber(
-            data.source.purchaseCount
-          )} · 매입처 반품 ${formatNumber(
-            data.source.supplierReturnCount
-          )}`}
+          label={t("coverage.terminalInbound")}
+          value={t("count", { count: data.source.terminalInboundCount })}
+          description={t("coverage.terminalDescription", { purchases: data.source.purchaseCount, returns: data.source.supplierReturnCount })}
         />
         <StatisticsCoverageItem
-          label="매입가 확인 범위"
+          label={t("coverage.priceCoverage")}
           value={`${data.summary.purchaseAmount.coveragePercent}%`}
-          description={`${formatNumber(
-            data.source.pricedPurchaseCount
-          )} / ${formatNumber(data.source.purchaseCount)}건`}
+          description={t("coverage.countRatio", { available: data.source.pricedPurchaseCount, total: data.source.purchaseCount })}
         />
         <StatisticsCoverageItem
-          label="매입처 확인 범위"
-          value={`${formatNumber(
-            data.source.namedSupplierOutcomeCount
-          )}건`}
-          description={`종결 회차 ${formatNumber(
-            data.source.terminalInboundCount
-          )}건 중`}
+          label={t("coverage.supplierCoverage")}
+          value={t("count", { count: data.source.namedSupplierOutcomeCount })}
+          description={t("coverage.supplierDescription", { total: data.source.terminalInboundCount })}
         />
         <StatisticsCoverageItem
-          label="입고 검수 연결률"
+          label={t("coverage.inspectionLinkRate")}
           value={`${data.source.inspectionLinkCoveragePercent}%`}
-          description={`${formatNumber(
-            data.source.linkedInspectionOutcomeCount
-          )} / ${formatNumber(data.source.terminalInboundCount)}건`}
+          description={t("coverage.countRatio", { available: data.source.linkedInspectionOutcomeCount, total: data.source.terminalInboundCount })}
         />
         <StatisticsCoverageItem
-          label="매입 등급 확인"
-          value={`${formatNumber(
-            data.source.knownPurchaseGradeOutcomeCount
-          )}건`}
-          description={`미확인 ${formatNumber(
-            data.source.missingPurchaseGradeOutcomeCount
-          )}건`}
+          label={t("coverage.gradeCoverage")}
+          value={t("count", { count: data.source.knownPurchaseGradeOutcomeCount })}
+          description={t("coverage.gradeDescription", { missing: data.source.missingPurchaseGradeOutcomeCount })}
         />
         <StatisticsCoverageItem
-          label="가격 정책 증거"
+          label={t("coverage.policyEvidence")}
           value={`${data.source.pricePolicyCoveragePercent}%`}
-          description={`입력 방식 ${formatNumber(
-            data.source.pricePolicyEvidenceCount
-          )} · 기준가 ${formatNumber(
-            data.source.priceReferenceEvidenceCount
-          )}건`}
+          description={t("coverage.policyDescription", { modes: data.source.pricePolicyEvidenceCount, references: data.source.priceReferenceEvidenceCount })}
         />
         <StatisticsCoverageItem
-          label="판매 원매입 연결률"
+          label={t("coverage.salesLinkRate")}
           value={`${data.source.salesLinkCoveragePercent}%`}
-          description={`원매입처 snapshot ${data.source.supplierSnapshotCoveragePercent}%`}
+          description={t("coverage.salesLinkDescription", { percent: data.source.supplierSnapshotCoveragePercent })}
         />
         <StatisticsCoverageItem
-          label="생성 시각"
-          value={formatPurchaseStatisticsDate(data.generatedAt)}
-          description="선택 기간 전체"
+          label={t("coverage.generatedAt")}
+          value={formatDate(data.generatedAt)}
+          description={t("coverage.periodAll")}
         />
       </div>
 
@@ -194,7 +152,7 @@ function PurchaseSourceCoverage({
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <div>
               <div className="font-semibold">
-                통계에서 확인이 필요한 데이터가 있습니다.
+                {t("coverage.warning")}
               </div>
               <div className="mt-1">{warnings.join(" · ")}</div>
             </div>
@@ -202,7 +160,7 @@ function PurchaseSourceCoverage({
         </FeedbackBanner>
       ) : (
         <FeedbackBanner tone="success" size="xs">
-          조회 범위에서 별도로 확인할 누락·시간 이상이 없습니다.
+          {t("coverage.success")}
         </FeedbackBanner>
       )}
     </Section>
@@ -210,6 +168,9 @@ function PurchaseSourceCoverage({
 }
 
 function PurchaseCoreSummary({ data }: { data: PurchaseStatisticsData }) {
+  const t = useTranslations("statistics.purchase");
+  const locale = useLocale();
+  const { formatAmount: formatPurchaseAmount, formatAveragePrice: formatPurchaseAveragePrice, formatRate: formatPurchaseRate } = usePurchaseStatisticsPresentation();
   const purchaseAmount = formatPurchaseAmount(data.summary.purchaseAmount);
   const supplierReturnRate = formatPurchaseRate(
     data.summary.supplierReturnRate
@@ -219,39 +180,37 @@ function PurchaseCoreSummary({ data }: { data: PurchaseStatisticsData }) {
     <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
       <SummaryTile
         icon={PackageCheck}
-        label="확정 매입 회차"
-        value={formatNumber(data.summary.purchaseCount)}
-        description="매입 확정 기준"
+        label={t("summary.purchaseCount")}
+        value={formatNumber(data.summary.purchaseCount, locale)}
+        description={t("summary.purchaseBasis")}
         tone="success"
       />
       <SummaryTile
         icon={BadgeDollarSign}
-        label="매입금액"
+        label={t("summary.amount")}
         value={purchaseAmount.value}
         description={purchaseAmount.detail}
         tone="warning"
       />
       <SummaryTile
         icon={BadgeDollarSign}
-        label="평균 매입가"
+        label={t("summary.averagePrice")}
         value={formatPurchaseAveragePrice(
           data.summary.averagePurchasePrice
         )}
-        description={`가격 확인 ${formatNumber(
-          data.summary.purchaseAmount.pricedCount
-        )}건`}
+        description={t("summary.priceConfirmed", { count: data.summary.purchaseAmount.pricedCount })}
         tone="sky"
       />
       <SummaryTile
         icon={Building2}
-        label="매입처"
-        value={formatNumber(data.summary.supplierCount)}
-        description="종결 회차의 고유 매입처"
+        label={t("summary.suppliers")}
+        value={formatNumber(data.summary.supplierCount, locale)}
+        description={t("summary.supplierDescription")}
         tone="purple"
       />
       <SummaryTile
         icon={Percent}
-        label="매입처 반품률"
+        label={t("summary.supplierReturnRate")}
         value={supplierReturnRate.value}
         description={supplierReturnRate.detail}
         tone="primary"
@@ -261,26 +220,28 @@ function PurchaseCoreSummary({ data }: { data: PurchaseStatisticsData }) {
 }
 
 function PurchaseMonthlyTrend({ data }: { data: PurchaseStatisticsData }) {
+  const t = useTranslations("statistics.purchase");
+  const { formatAveragePrice: formatPurchaseAveragePrice, formatMonth: formatPurchaseStatisticsMonth } = usePurchaseStatisticsPresentation();
   const rows = data.monthlyTrend.map((row) => [
     formatPurchaseStatisticsMonth(row.month),
-    `${formatNumber(row.purchaseCount)}건`,
+    t("count", { count: row.purchaseCount }),
     formatPurchaseAveragePrice(row.purchaseAmount),
-    `${formatNumber(row.pricedPurchaseCount)}건`,
-    `${formatNumber(row.missingPurchasePriceCount)}건`,
-    `${formatNumber(row.supplierReturnCount)}건`,
-    `${formatNumber(row.inspectionDefectOutcomeCount)}건`,
+    t("count", { count: row.pricedPurchaseCount }),
+    t("count", { count: row.missingPurchasePriceCount }),
+    t("count", { count: row.supplierReturnCount }),
+    t("count", { count: row.inspectionDefectOutcomeCount }),
   ]);
 
   return (
     <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.15fr)_minmax(520px,0.85fr)]">
       <MultiLineTrendChart
-        title="월별 매입 결과 추이"
-        description="확정 매입은 매입 확정일, 매입처 반품은 최초 반품 전환일 기준입니다."
-        valueFormatter={(value) => `${formatNumber(value)}건`}
+        title={t("monthly.title")}
+        description={t("monthly.subtitle")}
+        valueFormatter={(value) => t("count", { count: value })}
         series={[
           {
             key: "purchase",
-            label: "확정 매입",
+            label: t("monthly.purchase"),
             points: data.monthlyTrend.map((row) => ({
               label: formatPurchaseStatisticsMonth(row.month),
               value: row.purchaseCount,
@@ -288,7 +249,7 @@ function PurchaseMonthlyTrend({ data }: { data: PurchaseStatisticsData }) {
           },
           {
             key: "supplier-return",
-            label: "매입처 반품",
+            label: t("monthly.supplierReturn"),
             points: data.monthlyTrend.map((row) => ({
               label: formatPurchaseStatisticsMonth(row.month),
               value: row.supplierReturnCount,
@@ -296,7 +257,7 @@ function PurchaseMonthlyTrend({ data }: { data: PurchaseStatisticsData }) {
           },
           {
             key: "inspection-defect",
-            label: "검수 불량 결과",
+            label: t("monthly.inspectionDefect"),
             points: data.monthlyTrend.map((row) => ({
               label: formatPurchaseStatisticsMonth(row.month),
               value: row.inspectionDefectOutcomeCount,
@@ -305,18 +266,18 @@ function PurchaseMonthlyTrend({ data }: { data: PurchaseStatisticsData }) {
         ]}
       />
       <Section
-        title="월별 매입 금액"
-        description="가격 미입력 건을 0원으로 포함하지 않습니다."
+        title={t("monthly.amountTitle")}
+        description={t("monthly.amountSubtitle")}
       >
         <CompactTable
           columns={[
-            "월",
-            { label: "매입", align: "right" },
-            { label: "매입액", align: "right" },
-            { label: "가격 확인", align: "right" },
-            { label: "가격 미입력", align: "right" },
-            { label: "매입처 반품", align: "right" },
-            { label: "검수 불량", align: "right" },
+            t("monthly.month"),
+            { label: t("monthly.count"), align: "right" },
+            { label: t("monthly.amount"), align: "right" },
+            { label: t("monthly.priceConfirmed"), align: "right" },
+            { label: t("monthly.priceMissing"), align: "right" },
+            { label: t("monthly.supplierReturn"), align: "right" },
+            { label: t("monthly.defect"), align: "right" },
           ]}
           rows={rows}
           minWidth={760}
@@ -332,11 +293,13 @@ function PurchaseProductPerformance({
 }: {
   data: PurchaseStatisticsData;
 }) {
+  const t = useTranslations("statistics.purchase");
+  const { formatAmount: formatPurchaseAmount, formatAveragePrice: formatPurchaseAveragePrice, formatRate: formatPurchaseRate } = usePurchaseStatisticsPresentation();
   const rows = data.productRows.map((row) => [
     row.model,
     row.storage,
     row.purchaseGrade,
-    `${formatNumber(row.purchaseCount)}건`,
+    t("count", { count: row.purchaseCount }),
     <PresentationValue
       key={`${row.key}-amount`}
       metric={formatPurchaseAmount(row.purchaseAmount)}
@@ -372,22 +335,20 @@ function PurchaseProductPerformance({
 
   return (
     <Section
-      title="상품별 매입 cohort 성과"
-      description="기종·용량·매입등급별 확정 매입과 성숙 cohort의 판매 전환을 비교합니다."
+      title={t("product.title")}
+      description={t("product.subtitle")}
     >
       <CompactTable
         columns={[
-          "기종",
-          "용량",
-          "매입등급",
-          { label: "확정 매입", align: "right" },
-          { label: "매입액", align: "right" },
-          { label: "평균가", align: "right" },
-          { label: "매입처 반품률", align: "right", wrap: true },
-          { label: "검수 불량률", align: "right", wrap: true },
-          { label: "30일 판매전환", align: "right", wrap: true },
-          { label: "60일 판매전환", align: "right", wrap: true },
-          { label: "90일 판매전환", align: "right", wrap: true },
+          t("product.model"), t("product.storage"), t("product.grade"),
+          { label: t("product.purchase"), align: "right" },
+          { label: t("product.amount"), align: "right" },
+          { label: t("product.average"), align: "right" },
+          { label: t("product.supplierReturnRate"), align: "right", wrap: true },
+          { label: t("product.defectRate"), align: "right", wrap: true },
+          { label: t("product.conversion30"), align: "right", wrap: true },
+          { label: t("product.conversion60"), align: "right", wrap: true },
+          { label: t("product.conversion90"), align: "right", wrap: true },
         ]}
         rows={rows}
         minWidth={1480}
@@ -404,10 +365,12 @@ function PurchaseSupplierPerformance({
 }: {
   data: PurchaseStatisticsData;
 }) {
+  const t = useTranslations("statistics.purchase");
+  const { formatAmount: formatPurchaseAmount, formatAveragePrice: formatPurchaseAveragePrice, formatRate: formatPurchaseRate } = usePurchaseStatisticsPresentation();
   const rows = data.supplierRows.map((row) => [
     row.supplierName,
-    `${formatNumber(row.terminalOutcomeCount)}건`,
-    `${formatNumber(row.purchaseCount)}건`,
+    t("count", { count: row.terminalOutcomeCount }),
+    t("count", { count: row.purchaseCount }),
     <PresentationValue
       key={`${row.supplierName}-amount`}
       metric={formatPurchaseAmount(row.purchaseAmount)}
@@ -431,19 +394,19 @@ function PurchaseSupplierPerformance({
 
   return (
     <Section
-      title="매입처 성과"
-      description="매입처 반품과 판매 후 고객 반품 확정을 서로 다른 결과로 비교합니다."
+      title={t("supplier.title")}
+      description={t("supplier.subtitle")}
     >
       <CompactTable
         columns={[
-          "매입처",
-          { label: "종결 회차", align: "right" },
-          { label: "확정 매입", align: "right" },
-          { label: "매입액", align: "right" },
-          { label: "평균가", align: "right" },
-          { label: "매입처 반품률", align: "right", wrap: true },
-          { label: "검수 불량률", align: "right", wrap: true },
-          { label: "고객 반품 확정률", align: "right", wrap: true },
+          t("supplier.supplier"),
+          { label: t("supplier.terminal"), align: "right" },
+          { label: t("supplier.purchase"), align: "right" },
+          { label: t("supplier.amount"), align: "right" },
+          { label: t("supplier.average"), align: "right" },
+          { label: t("supplier.supplierReturnRate"), align: "right", wrap: true },
+          { label: t("supplier.defectRate"), align: "right", wrap: true },
+          { label: t("supplier.customerReturnRate"), align: "right", wrap: true },
         ]}
         rows={rows}
         minWidth={1180}
@@ -459,17 +422,24 @@ function PurchasePricePolicyPerformance({
 }: {
   data: PurchaseStatisticsData;
 }) {
+  const t = useTranslations("statistics.purchase");
+  const locale = useLocale();
+  const { formatAdjustmentAmount: formatPurchaseAdjustmentAmount, formatAdjustmentPercent: formatPurchaseAdjustmentPercent, formatAmount: formatPurchaseAmount, formatAveragePrice: formatPurchaseAveragePrice } = usePurchaseStatisticsPresentation();
+  const pricePolicyLabels = {
+    RATE: t("pricePolicy.rate"),
+    OVERRIDE: t("pricePolicy.override"),
+    MANUAL: t("pricePolicy.manual"),
+    UNKNOWN: t("pricePolicy.unknown"),
+  } satisfies Record<PurchaseStatisticsData["pricePolicyRows"][number]["entryMode"], string>;
   const rows = data.pricePolicyRows.map((row) => [
-    purchasePricePolicyLabel(row.entryMode),
-    `${formatNumber(row.purchaseCount)}건`,
+    pricePolicyLabels[row.entryMode],
+    t("count", { count: row.purchaseCount }),
     <PresentationValue
       key={`${row.entryMode}-amount`}
       metric={formatPurchaseAmount(row.purchaseAmount)}
     />,
     formatPurchaseAveragePrice(row.averagePurchasePrice),
-    `${formatNumber(row.referenceAvailableCount)}건 / ${
-      row.referenceCoveragePercent
-    }%`,
+    `${t("count", { count: row.referenceAvailableCount })} / ${row.referenceCoveragePercent}%`,
     <div key={`${row.entryMode}-adjustment`}>
       <div className="font-semibold tabular-nums">
         {formatPurchaseAdjustmentAmount(row.averageAdjustmentAmount)}
@@ -478,25 +448,26 @@ function PurchasePricePolicyPerformance({
         {formatPurchaseAdjustmentPercent(row.averageAdjustmentPercent)}
       </div>
     </div>,
-    `${formatNumber(row.increasedCount)} / ${formatNumber(
-      row.unchangedCount
-    )} / ${formatNumber(row.decreasedCount)}`,
+    `${formatNumber(row.increasedCount, locale)} / ${formatNumber(
+      row.unchangedCount,
+      locale
+    )} / ${formatNumber(row.decreasedCount, locale)}`,
   ]);
 
   return (
     <Section
-      title="가격 정책 결과"
-      description="매입 확정 당시 저장한 기준가와 실제 확정가의 관계를 비교합니다."
+      title={t("pricePolicy.title")}
+      description={t("pricePolicy.subtitle")}
     >
       <CompactTable
         columns={[
-          "입력 방식",
-          { label: "매입", align: "right" },
-          { label: "매입액", align: "right" },
-          { label: "평균가", align: "right" },
-          { label: "기준가 확인", align: "right", wrap: true },
-          { label: "평균 조정", align: "right", wrap: true },
-          { label: "상승 / 동일 / 하락", align: "right", wrap: true },
+          t("pricePolicy.mode"),
+          { label: t("pricePolicy.purchase"), align: "right" },
+          { label: t("pricePolicy.amount"), align: "right" },
+          { label: t("pricePolicy.average"), align: "right" },
+          { label: t("pricePolicy.reference"), align: "right", wrap: true },
+          { label: t("pricePolicy.adjustment"), align: "right", wrap: true },
+          { label: t("pricePolicy.direction"), align: "right", wrap: true },
         ]}
         rows={rows}
         minWidth={980}
@@ -512,6 +483,8 @@ function PurchaseInspectionQuality({
 }: {
   data: PurchaseStatisticsData;
 }) {
+  const t = useTranslations("statistics.purchase");
+  const { formatRate: formatPurchaseRate } = usePurchaseStatisticsPresentation();
   const defectRate = formatPurchaseRate(
     data.inspectionQuality.defectRate
   );
@@ -525,31 +498,27 @@ function PurchaseInspectionQuality({
   return (
     <div className="grid gap-4 xl:grid-cols-3">
       <Section
-        title="입고 검수 품질"
-        description="정확한 입고 회차에 연결된 검수만 집계합니다."
+        title={t("inspection.title")}
+        description={t("inspection.subtitle")}
       >
         <div className="grid gap-3">
           <SummaryTile
             icon={ClipboardCheck}
-            label="검수 불량률"
+            label={t("inspection.defectRate")}
             value={defectRate.value}
             description={defectRate.detail}
             tone="warning"
           />
           <StatisticsCoverageItem
-            label="검수 연결 표본"
-            value={`${formatNumber(
-              data.inspectionQuality.inspectedOutcomeCount
-            )}건`}
-            description={`실제 하자 ${formatNumber(
-              data.inspectionQuality.defectOutcomeCount
-            )}건`}
+            label={t("inspection.sample")}
+            value={t("count", { count: data.inspectionQuality.inspectedOutcomeCount })}
+            description={t("inspection.sampleDescription", { count: data.inspectionQuality.defectOutcomeCount })}
           />
         </div>
       </Section>
       <Section
-        title="외관 하자 항목"
-        description="한 회차에 여러 하자 항목이 기록될 수 있습니다."
+        title={t("inspection.appearance")}
+        description={t("inspection.appearanceDescription")}
       >
         <BarList
           groups={data.inspectionQuality.appearanceDefects}
@@ -557,8 +526,8 @@ function PurchaseInspectionQuality({
         />
       </Section>
       <Section
-        title="기능 하자 항목"
-        description="항목 비중은 검수 기기 비중과 다를 수 있습니다."
+        title={t("inspection.function")}
+        description={t("inspection.functionDescription")}
       >
         <BarList
           groups={data.inspectionQuality.functionDefects}
@@ -570,6 +539,8 @@ function PurchaseInspectionQuality({
 }
 
 function PurchaseLeadTimes({ data }: { data: PurchaseStatisticsData }) {
+  const t = useTranslations("statistics.purchase");
+  const { formatDuration: formatPurchaseDuration } = usePurchaseStatisticsPresentation();
   const receivedToInspection = formatPurchaseDuration(
     data.leadTimes.receivedToLastInspection
   );
@@ -582,22 +553,22 @@ function PurchaseLeadTimes({ data }: { data: PurchaseStatisticsData }) {
 
   return (
     <Section
-      title="매입 처리시간"
-      description="중앙값을 주 값으로, P90과 제외 이상치를 함께 표시합니다."
+      title={t("leadTime.title")}
+      description={t("leadTime.subtitle")}
     >
       <div className="grid gap-2 md:grid-cols-3">
         <StatisticsCoverageItem
-          label="입고 → 마지막 검수"
+          label={t("leadTime.receivedToInspection")}
           value={receivedToInspection.value}
           description={receivedToInspection.detail}
         />
         <StatisticsCoverageItem
-          label="마지막 검수 → 종결"
+          label={t("leadTime.inspectionToOutcome")}
           value={inspectionToOutcome.value}
           description={inspectionToOutcome.detail}
         />
         <StatisticsCoverageItem
-          label="입고 → 종결"
+          label={t("leadTime.receivedToOutcome")}
           value={receivedToOutcome.value}
           description={receivedToOutcome.detail}
         />
@@ -611,6 +582,7 @@ export function PurchaseStatisticsPanel({
 }: {
   periodSelection: StatisticsPeriodSelection;
 }) {
+  const t = useTranslations("statistics.purchase");
   const requestKey =
     buildStatisticsPeriodRequestQuery(periodSelection);
   const [requestState, setRequestState] = React.useState<{
@@ -656,7 +628,7 @@ export function PurchaseStatisticsPanel({
 
           if (!response.ok || !payload?.ok || !payload.data) {
             throw new Error(
-              payload?.message || "매입 통계를 불러오지 못했습니다."
+              legacyApiMessage(payload, t("loading.error"))
             );
           }
 
@@ -699,7 +671,7 @@ export function PurchaseStatisticsPanel({
       window.clearTimeout(timerId);
       controller.abort();
     };
-  }, [requestKey, retryRevision]);
+  }, [requestKey, retryRevision, t]);
 
   const visibleData =
     requestState.requestKey === requestKey ? requestState.data : null;
@@ -714,9 +686,9 @@ export function PurchaseStatisticsPanel({
     return (
       <div aria-busy="true" className="grid gap-3">
         <FeedbackBanner tone="info" size="xs">
-          매입 통계를 불러오는 중입니다.
+          {t("loading.initial")}
         </FeedbackBanner>
-        <EmptyDataState message="매입 데이터를 집계하고 있습니다." />
+        <EmptyDataState message={t("loading.aggregating")} />
       </div>
     );
   }
@@ -727,7 +699,7 @@ export function PurchaseStatisticsPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-semibold">
-              매입 통계를 불러오지 못했습니다.
+              {t("loading.error")}
             </div>
             <div className="mt-1 text-xs">{errorMessage}</div>
           </div>
@@ -737,7 +709,7 @@ export function PurchaseStatisticsPanel({
             onClick={() => setRetryRevision((value) => value + 1)}
           >
             <RefreshCw />
-            다시 시도
+            {t("loading.retry")}
           </Button>
         </div>
       </FeedbackBanner>
@@ -752,8 +724,7 @@ export function PurchaseStatisticsPanel({
     <div aria-busy={isLoading} className="grid min-w-0 gap-4">
       {isLoading ? (
         <FeedbackBanner tone="info" size="xs">
-          같은 조건으로 통계를 다시 확인하고 있습니다. 현재 결과는 계속
-          표시합니다.
+          {t("loading.refresh")}
         </FeedbackBanner>
       ) : null}
       {errorMessage ? (
@@ -766,7 +737,7 @@ export function PurchaseStatisticsPanel({
               onClick={() => setRetryRevision((value) => value + 1)}
             >
               <RefreshCw />
-              다시 시도
+              {t("loading.retry")}
             </Button>
           </div>
         </FeedbackBanner>

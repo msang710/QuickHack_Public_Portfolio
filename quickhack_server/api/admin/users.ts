@@ -12,7 +12,7 @@ import { normalizeAccountUsername } from "@/quickhack_shared/auth/account-userna
 import { isClientRuntime } from "@/quickhack_shared/core/runtime";
 import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
 import { activityLogChangeData } from "@/quickhack_server/audit/structured-log-values";
-import { passwordLengthError } from "@/quickhack_shared/auth/password-policy";
+import { PASSWORD_MIN_LENGTH } from "@/quickhack_shared/auth/password-policy";
 import {
   apiDate,
   apiDateTime,
@@ -82,7 +82,7 @@ function cleanOptionalDate(value: unknown, label: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
     throw publicBadRequest(
       "INVALID_ACCOUNT_DATE",
-      `${label}은 YYYY-MM-DD 형식으로 입력해야 합니다.`
+      "INVALID_ACCOUNT_DATE"
     );
   }
 
@@ -94,7 +94,7 @@ function requiredExpectedRevision(body: Record<string, unknown>) {
   if (!Number.isInteger(revision) || revision < 0) {
     throw publicBadRequest(
       "EXPECTED_ACCOUNT_REVISION_REQUIRED",
-      "대상 계정의 최신 revision이 필요합니다. 목록을 새로고침한 뒤 다시 시도하세요."
+      "EXPECTED_ACCOUNT_REVISION_REQUIRED"
     );
   }
   return revision;
@@ -210,51 +210,47 @@ function validateUserInput(body: Record<string, unknown>) {
   if (userId !== null && (!Number.isInteger(userId) || userId <= 0)) {
     throw publicBadRequest(
       "INVALID_ACCOUNT_ID",
-      "수정할 계정 정보가 올바르지 않습니다."
+      "INVALID_ACCOUNT_ID"
     );
   }
 
   if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
     throw publicBadRequest(
       "INVALID_USERNAME",
-      "아이디는 영문 소문자, 숫자, 점, 밑줄, 하이픈으로 3~32자만 입력할 수 있습니다."
+      "INVALID_USERNAME"
     );
   }
 
   if (!displayName || displayName.length > 40) {
     throw publicBadRequest(
       "INVALID_DISPLAY_NAME",
-      "직원 표시 이름은 1~40자로 입력해야 합니다."
+      "INVALID_DISPLAY_NAME"
     );
   }
 
   if (phone && !/^[0-9+\-()\s]{7,30}$/.test(phone)) {
     throw publicBadRequest(
       "INVALID_PHONE_NUMBER",
-      "전화번호 형식이 올바르지 않습니다."
+      "INVALID_PHONE_NUMBER"
     );
   }
 
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw publicBadRequest("INVALID_EMAIL", "이메일 형식이 올바르지 않습니다.");
+    throw publicBadRequest("INVALID_EMAIL", "INVALID_EMAIL");
   }
 
   if (!isRole(role)) {
-    throw publicBadRequest("INVALID_ACCOUNT_ROLE", "권한 값이 올바르지 않습니다.");
+    throw publicBadRequest("INVALID_ACCOUNT_ROLE", "INVALID_ACCOUNT_ROLE");
   }
 
-  const tempPasswordError = tempPassword
-    ? passwordLengthError(tempPassword, "임시 비밀번호")
-    : "";
-
-  if (tempPasswordError) {
-    throw publicBadRequest("INVALID_TEMP_PASSWORD", tempPasswordError);
+  if (tempPassword && tempPassword.length < PASSWORD_MIN_LENGTH) {
+    throw publicBadRequest("INVALID_TEMP_PASSWORD", "INVALID_TEMP_PASSWORD");
   }
 
   if (!userId && !tempPassword) {
     throw publicBadRequest(
       "TEMP_PASSWORD_REQUIRED",
-      "새 계정을 만들 때는 임시 비밀번호가 필요합니다."
+      "TEMP_PASSWORD_REQUIRED"
     );
   }
 
@@ -264,7 +260,7 @@ function validateUserInput(body: Record<string, unknown>) {
   ) {
     throw publicBadRequest(
       "EXPECTED_ACCOUNT_REVISION_REQUIRED",
-      "수정할 계정의 최신 revision이 필요합니다. 목록을 새로고침한 뒤 다시 시도하세요."
+      "EXPECTED_ACCOUNT_REVISION_REQUIRED"
     );
   }
 
@@ -396,7 +392,7 @@ async function handleAdminUsersPost(
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -422,7 +418,7 @@ async function handleAdminUsersPost(
         if (input.userId && !before) {
           throw publicNotFound(
             "ACCOUNT_NOT_FOUND",
-            "수정할 계정을 찾을 수 없습니다."
+            "ACCOUNT_NOT_FOUND"
           );
         }
 
@@ -430,21 +426,21 @@ async function handleAdminUsersPost(
           if (!input.isActive) {
             throw publicConflict(
               "SELF_DEACTIVATION_FORBIDDEN",
-              "자기 자신의 계정은 비활성화할 수 없습니다."
+              "SELF_DEACTIVATION_FORBIDDEN"
             );
           }
 
           if (input.role !== before.role && input.role !== "LEADER") {
             throw publicConflict(
               "SELF_ROLE_DOWNGRADE_FORBIDDEN",
-              "자기 자신의 리더급 권한은 낮출 수 없습니다."
+              "SELF_ROLE_DOWNGRADE_FORBIDDEN"
             );
           }
 
           if (before.is_developer === 1 && !input.isDeveloper) {
             throw publicConflict(
               "SELF_DEVELOPER_REVOKE_FORBIDDEN",
-              "자기 자신의 개발자 권한은 해제할 수 없습니다."
+              "SELF_DEVELOPER_REVOKE_FORBIDDEN"
             );
           }
         }
@@ -456,7 +452,7 @@ async function handleAdminUsersPost(
         if (duplicate && duplicate.user_id !== input.userId) {
           throw publicConflict(
             "USERNAME_ALREADY_EXISTS",
-            "이미 사용 중인 아이디입니다."
+            "USERNAME_ALREADY_EXISTS"
           );
         }
 
@@ -577,7 +573,10 @@ async function handleAdminUsersPost(
 
       return NextResponse.json({
         ok: true,
-        message: inputMessage(saved.userId === input.userId, Boolean(input.tempPassword)),
+        resultCode: inputResultCode(
+          saved.userId === input.userId,
+          Boolean(input.tempPassword)
+        ),
         item: saved,
         receipt,
       });
@@ -590,14 +589,14 @@ async function handleAdminUsersPost(
       if (!Number.isInteger(userId) || userId <= 0) {
         throw publicBadRequest(
           "INVALID_ACCOUNT_ID",
-          "비활성화할 계정 정보가 올바르지 않습니다."
+          "INVALID_ACCOUNT_ID"
         );
       }
 
       if (userId === authResult.user.userId) {
         throw publicConflict(
           "SELF_DEACTIVATION_FORBIDDEN",
-          "자기 자신의 계정은 비활성화할 수 없습니다."
+          "SELF_DEACTIVATION_FORBIDDEN"
         );
       }
 
@@ -608,7 +607,7 @@ async function handleAdminUsersPost(
         if (!before) {
           throw publicNotFound(
             "ACCOUNT_NOT_FOUND",
-            "비활성화할 계정을 찾을 수 없습니다."
+            "ACCOUNT_NOT_FOUND"
           );
         }
 
@@ -664,7 +663,7 @@ async function handleAdminUsersPost(
 
       return NextResponse.json({
         ok: true,
-        message: "계정을 비활성화했습니다.",
+        resultCode: "ACCOUNT_DEACTIVATED",
         item: updated,
         receipt,
       });
@@ -677,7 +676,7 @@ async function handleAdminUsersPost(
       if (!Number.isInteger(userId) || userId <= 0) {
         throw publicBadRequest(
           "INVALID_ACCOUNT_ID",
-          "OTP를 초기화할 계정 정보가 올바르지 않습니다."
+          "INVALID_ACCOUNT_ID"
         );
       }
 
@@ -690,7 +689,7 @@ async function handleAdminUsersPost(
         if (!target) {
           throw publicNotFound(
             "ACCOUNT_NOT_FOUND",
-            "OTP를 초기화할 계정을 찾을 수 없습니다."
+            "ACCOUNT_NOT_FOUND"
           );
         }
 
@@ -739,7 +738,7 @@ async function handleAdminUsersPost(
 
       return NextResponse.json({
         ok: true,
-        message: "OTP 설정을 초기화했습니다. 대상 계정은 다시 로그인해야 합니다.",
+        resultCode: "ACCOUNT_OTP_RESET",
         item: updated,
         receipt,
       });
@@ -752,7 +751,7 @@ async function handleAdminUsersPost(
       if (!Number.isInteger(userId) || userId <= 0) {
         throw publicBadRequest(
           "INVALID_ACCOUNT_ID",
-          "복구코드를 발급할 계정 정보가 올바르지 않습니다."
+          "INVALID_ACCOUNT_ID"
         );
       }
 
@@ -766,14 +765,14 @@ async function handleAdminUsersPost(
         if (!target) {
           throw publicNotFound(
             "ACCOUNT_NOT_FOUND",
-            "복구코드를 발급할 계정을 찾을 수 없습니다."
+            "ACCOUNT_NOT_FOUND"
           );
         }
 
         if (target.user_totp_credentials?.enabled !== 1) {
           throw publicConflict(
             "TOTP_NOT_CONFIGURED",
-            "OTP가 설정된 계정만 복구코드를 발급할 수 있습니다."
+            "TOTP_NOT_CONFIGURED"
           );
         }
 
@@ -832,7 +831,7 @@ async function handleAdminUsersPost(
 
       return NextResponse.json({
         ok: true,
-        message: "OTP 복구코드를 발급했습니다. 이 코드는 지금 한 번만 표시됩니다.",
+        resultCode: "ACCOUNT_RECOVERY_CODES_ISSUED",
         item: generated.item,
         recoveryCodes: generated.recoveryCodes,
         receipt,
@@ -840,7 +839,7 @@ async function handleAdminUsersPost(
     }
 
     return NextResponse.json(
-      { ok: false, message: "지원하지 않는 사용자 계정 관리 요청입니다." },
+      { ok: false, code: "ACTION_UNSUPPORTED" },
       { status: 400 }
     );
   } catch (error) {
@@ -857,14 +856,14 @@ export function createAdminUsersPostHandler(
 
 export const POST = createAdminUsersPostHandler();
 
-function inputMessage(isUpdate: boolean, passwordChanged: boolean) {
+function inputResultCode(isUpdate: boolean, passwordChanged: boolean) {
   if (!isUpdate) {
-    return "새 계정을 생성했습니다.";
+    return "ACCOUNT_CREATED";
   }
 
   if (passwordChanged) {
-    return "계정 정보와 비밀번호를 저장했습니다.";
+    return "ACCOUNT_AND_PASSWORD_SAVED";
   }
 
-  return "계정 정보를 저장했습니다.";
+  return "ACCOUNT_SAVED";
 }

@@ -48,11 +48,31 @@ export type StatisticsPoint = {
   value: number;
 };
 
-export type SalesRateMetric = {
+export const STATISTICS_UNAVAILABLE_REASON_CODES = [
+  "NO_DENOMINATOR", "NO_MATURE_SALES", "NO_CONFIRMED_RETURN_FAULT_SAMPLE",
+  "NO_CONFIRMED_RETURN_INSPECTION_SAMPLE", "NO_CURRENT_MATURE_COHORT",
+  "NO_PREVIOUS_MATURE_COHORT", "NO_CURRENT_30_DAY_MATURE_COHORT",
+  "NO_PREVIOUS_30_DAY_MATURE_COHORT", "NO_RETURN_RECEIPTS",
+  "NO_MATURE_PURCHASE_BATCHES", "NO_LINKED_INBOUND_INSPECTION_SAMPLE",
+  "NO_TERMINAL_INBOUND_BATCHES", "NO_ORIGINAL_SUPPLIER_SALES_SAMPLE",
+  "INVENTORY_LEDGER_UNAVAILABLE", "NO_INVENTORY_OR_SALES",
+  "SALES_WITHOUT_INVENTORY_DENOMINATOR", "SALE_LEDGER_TIMESTAMP_UNVERIFIED",
+] as const;
+
+export type StatisticsUnavailableReasonCode =
+  (typeof STATISTICS_UNAVAILABLE_REASON_CODES)[number];
+
+export type StatisticsUnavailableReason = {
+  unavailableReasonCode?: StatisticsUnavailableReasonCode;
+  unavailableReasonDays?: number;
+  /** Legacy snapshots keep their original authored text verbatim. */
+  unavailableReason?: string;
+};
+
+export type SalesRateMetric = StatisticsUnavailableReason & {
   value: number | null;
   numerator: number;
   denominator: number;
-  unavailableReason?: string;
 };
 
 export type SalesAmountMetric = {
@@ -80,7 +100,6 @@ export type SalesLeadTimeBucketKey =
 
 export type SalesLeadTimeBucket = {
   key: SalesLeadTimeBucketKey;
-  label: string;
   count: number;
 };
 
@@ -254,13 +273,11 @@ export type InventoryStatisticsStatusGroupKey =
 
 export type InventoryStatisticsStatusQuantity = {
   status: InventoryStatusCode;
-  label: string;
   quantity: number | null;
 };
 
 export type InventoryStatisticsCurrentGroup = {
   key: InventoryStatisticsStatusGroupKey;
-  label: string;
   quantity: number | null;
   statuses: InventoryStatisticsStatusQuantity[];
 };
@@ -281,7 +298,6 @@ export type InventoryStatisticsPurchaseCostMetric = {
 
 export type InventoryStatisticsAgeBucket = {
   key: InventoryStatisticsAgeBucketKey;
-  label: string;
   fromDays: number;
   toDays: number | null;
   quantity: number | null;
@@ -336,11 +352,10 @@ export type InventoryStatisticsPeriodIssue = {
   count: number;
 };
 
-export type InventoryStatisticsTurnoverMetric = {
+export type InventoryStatisticsTurnoverMetric = StatisticsUnavailableReason & {
   value: number | null;
   soldQuantity: number;
   averageWarehouseQuantity: number | null;
-  unavailableReason?: string;
 };
 
 export type InventoryStatisticsPeriodSourceCoverage = {
@@ -476,11 +491,10 @@ export type InventoryStatisticsApiResponse = {
   data?: InventoryStatisticsData;
 };
 
-export type ReturnRateMetric = {
+export type ReturnRateMetric = StatisticsUnavailableReason & {
   value: number | null;
   numerator: number;
   denominator: number;
-  unavailableReason?: string;
 };
 
 export type ReturnAmountMetric = {
@@ -655,11 +669,10 @@ export type ReturnStatisticsApiResponse = {
   data?: ReturnStatisticsData;
 };
 
-export type PurchaseRateMetric = {
+export type PurchaseRateMetric = StatisticsUnavailableReason & {
   value: number | null;
   numerator: number;
   denominator: number;
-  unavailableReason?: string;
 };
 
 export type PurchaseAmountMetric = {
@@ -801,3 +814,13 @@ export type PurchaseStatisticsApiResponse = {
   message?: string;
   data?: PurchaseStatisticsData;
 };
+export const SALES_STATISTICS_UNKNOWN = {
+  sku: "__UNKNOWN_SKU__", model: "__UNKNOWN_MODEL__", storage: "__UNKNOWN_STORAGE__",
+  color: "__UNKNOWN_COLOR__", grade: "__UNKNOWN_GRADE__", warranty: "__UNKNOWN_WARRANTY__",
+  channel: "__UNKNOWN_CHANNEL__",
+} as const;
+
+export const SALES_STATISTICS_PRICE_BANDS = [
+  "PRICE_LT_100K", "PRICE_100K_199K", "PRICE_200K_299K", "PRICE_300K_399K",
+  "PRICE_400K_499K", "PRICE_500K_599K", "PRICE_600K_PLUS", "PRICE_UNKNOWN",
+] as const;

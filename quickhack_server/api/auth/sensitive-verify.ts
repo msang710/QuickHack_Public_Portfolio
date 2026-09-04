@@ -31,16 +31,16 @@ async function handleSensitiveVerify(request: NextRequest, dependencies: Sensiti
   }
   const sessionToken = request.cookies.get(AUTH_COOKIE_NAME)?.value;
   if (!sessionToken) {
-    return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ ok: false, code: "AUTH_REQUIRED" }, { status: 401 });
   }
   const body = parseJsonObject(bodyText);
   if (!body) {
-    return NextResponse.json({ ok: false, message: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json({ ok: false, code: "INVALID_BODY" }, { status: 400 });
   }
   const code = String(body.otpCode || body.code || "").trim();
   const sensitiveAction = parseSensitiveAction(body.sensitiveAction || body.action);
   if (!sensitiveAction || !code) {
-    return NextResponse.json({ ok: false, message: "인증할 작업과 OTP 코드를 입력하세요." }, { status: 400 });
+    return NextResponse.json({ ok: false, code: "SENSITIVE_VERIFICATION_INPUT_REQUIRED" }, { status: 400 });
   }
 
   try {
@@ -52,7 +52,7 @@ async function handleSensitiveVerify(request: NextRequest, dependencies: Sensiti
     const verification = result.verification;
     if (!verification.enabled) {
       return NextResponse.json(
-        { ok: false, message: "먼저 OTP를 등록하세요.", totpSetupRequired: true },
+        { ok: false, code: "OTP_SETUP_REQUIRED", totpSetupRequired: true },
         { status: 403 }
       );
     }
@@ -60,9 +60,10 @@ async function handleSensitiveVerify(request: NextRequest, dependencies: Sensiti
       return NextResponse.json(
         {
           ok: false,
-          message: verification.locked
-            ? `OTP 인증이 잠겼습니다. ${verification.remainingLockedSeconds}초 뒤 다시 시도하세요.`
-            : "OTP 코드가 올바르지 않습니다.",
+          code: verification.locked ? "OTP_RATE_LIMITED" : "OTP_CODE_INVALID",
+          details: verification.locked
+            ? { remainingSeconds: verification.remainingLockedSeconds }
+            : undefined,
         },
         { status: verification.locked ? 429 : 401 }
       );

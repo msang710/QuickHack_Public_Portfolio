@@ -54,14 +54,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "출고 목록 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -126,14 +126,14 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "출고 목록 출력 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 형식이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -171,7 +171,6 @@ export async function POST(request: NextRequest) {
       return apiFailureResponse({
         status: 409,
         code: error.code,
-        message: error.message,
         extra: { conflicts: error.conflicts },
         cause: error,
       });
@@ -208,14 +207,14 @@ export async function PATCH(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "출고 목록 출력 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -225,7 +224,7 @@ export async function PATCH(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 형식이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -260,7 +259,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!result) {
       return NextResponse.json(
-        { ok: false, message: "지원하지 않는 출력 차수 작업입니다." },
+        { ok: false, code: "ACTION_UNSUPPORTED" },
         { status: 400 }
       );
     }
@@ -271,7 +270,6 @@ export async function PATCH(request: NextRequest) {
       return apiFailureResponse({
         status: 409,
         code: error.code,
-        message: error.message,
         extra: { conflicts: error.conflicts },
         cause: error,
       });

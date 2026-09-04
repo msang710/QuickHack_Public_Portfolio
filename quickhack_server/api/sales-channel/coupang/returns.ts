@@ -54,14 +54,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "반품 목록 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -113,14 +113,14 @@ export async function PATCH(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "반품 처리 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -130,7 +130,7 @@ export async function PATCH(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 형식이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -158,7 +158,6 @@ export async function PATCH(request: NextRequest) {
       ok: true,
       completed: true,
       reviewRequired: false,
-      message: `${result.actionLabel} 처리되었습니다.`,
       ...result,
     });
   } catch (error) {
@@ -169,8 +168,7 @@ export async function PATCH(request: NextRequest) {
           completed: false,
           reviewRequired: true,
           writeRequestId: error.requestId,
-          message:
-            "쿠팡 상태를 자동으로 확정하지 못해 판매 채널 동기화 점검으로 이동했습니다.",
+          messageCode: "RETURN_WRITE_REVIEW_REQUIRED",
         },
         { status: 202 }
       );

@@ -35,14 +35,14 @@ export async function GET(request: NextRequest) {
 
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "로그인이 필요합니다." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
 
       if (!canAccessRole(user.role, "VIEWER")) {
         return NextResponse.json(
-          { ok: false, message: "대쉬보드 조회 권한이 없습니다." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           {
             ok: false,
-            message: "대시보드 통계를 불러오지 못했습니다.",
+            code: "DASHBOARD_LOAD_FAILED",
           },
           { status: 500 }
         );

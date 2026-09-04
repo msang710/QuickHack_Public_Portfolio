@@ -12,7 +12,7 @@ import {
   resolveStatisticsPeriodSelection,
   statisticsDateRangeDayCount,
   statisticsDateTimeBounds,
-  statisticsPeriodErrorMessage,
+  statisticsPeriodErrorCode,
   statisticsPeriodSelectionKey,
 } from "../../quickhack_shared/statistics/statistics-period.ts";
 
@@ -174,14 +174,14 @@ assertPeriodError("STATISTICS_PERIOD_OPEN_DATE_NOT_ALLOWED", () =>
   })
 );
 assert.equal(
-  statisticsPeriodErrorMessage(
+  statisticsPeriodErrorCode(
     new StatisticsPeriodError(
       "STATISTICS_PERIOD_REVERSED_RANGE",
       "test"
     )
   ),
-  "통계 시작일은 종료일보다 늦을 수 없습니다."
+  "STATISTICS_PERIOD_REVERSED_RANGE"
 );
-assert.equal(statisticsPeriodErrorMessage(new Error("test")), null);
+assert.equal(statisticsPeriodErrorCode(new Error("test")), null);
 
 console.log("Statistics period contract checks passed.");

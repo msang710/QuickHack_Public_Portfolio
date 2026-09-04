@@ -66,11 +66,21 @@ export type LogenLabelDto = {
   };
 };
 
+export const LOGEN_LABEL_BLOCKER_CODES = [
+  "ISSUE_ITEM_NOT_ALLOCATED", "CARRIER_SHIPMENT_MISSING",
+  "INVALID_TRACKING_NUMBER", "PACKAGE_GROUP_NOT_READY",
+  "LOGEN_REGISTRATION_NOT_READY", "LABEL_SNAPSHOT_INCOMPLETE",
+  "ISSUE_BATCH_NOT_ALLOCATED", "ISSUE_BATCH_EMPTY", "LABEL_BATCH_TOO_LARGE",
+  "SHIPMENT_RETURN_CONFLICT",
+] as const;
+
+export type LogenLabelBlockerCode =
+  (typeof LOGEN_LABEL_BLOCKER_CODES)[number];
+
 export type LogenLabelBlocker = {
-  code: string;
+  code: LogenLabelBlockerCode;
   message: string;
   issueItemId: number | null;
   issueSequence: number | null;
   packageGroupId: number | null;
 };
-

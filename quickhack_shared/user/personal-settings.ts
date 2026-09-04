@@ -1,3 +1,8 @@
+import {
+  DEFAULT_LOCALE,
+  type QuickHackLocale,
+} from "@/quickhack_shared/i18n/locales";
+
 export type UserPreferences = {
   keyboardShortcutsEnabled: boolean;
   windowsNotificationsEnabled: boolean;
@@ -209,6 +214,7 @@ export type UserShortcutBinding = {
 
 export type PersonalSettings = {
   revision: number;
+  locale: QuickHackLocale;
   preferences: UserPreferences;
   shortcutBindings: UserShortcutBinding[];
 };
@@ -253,6 +259,7 @@ const RESERVED_SHORTCUTS = new Set([
 export function clonePersonalSettings(settings: PersonalSettings): PersonalSettings {
   return {
     revision: settings.revision,
+    locale: settings.locale,
     preferences: { ...settings.preferences },
     shortcutBindings: settings.shortcutBindings.map((binding) => ({
       ...binding,
@@ -263,6 +270,7 @@ export function clonePersonalSettings(settings: PersonalSettings): PersonalSetti
 export function createDefaultPersonalSettings(): PersonalSettings {
   return {
     revision: 0,
+    locale: DEFAULT_LOCALE,
     preferences: { ...DEFAULT_USER_PREFERENCES },
     shortcutBindings: DEFAULT_USER_SHORTCUT_BINDINGS.map((binding) => ({
       ...binding,
@@ -370,6 +378,9 @@ export function personalSettingsEqual(
   left: PersonalSettings,
   right: PersonalSettings
 ) {
+  if (left.locale !== right.locale) {
+    return false;
+  }
   if (
     USER_PREFERENCE_KEYS.some(
       (key) => left.preferences[key] !== right.preferences[key]

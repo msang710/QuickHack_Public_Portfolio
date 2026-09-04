@@ -8,12 +8,13 @@ import {
   RequestBodyTooLargeError,
 } from "@/quickhack_shared/http/bounded-request-body";
 import { normalizeAccountUsername } from "@/quickhack_shared/auth/account-username";
+import { normalizeQuickHackLocale } from "@/quickhack_shared/i18n/locales";
 
 export const runtime = "nodejs";
 
 function invalidLoginResponse() {
   return NextResponse.json(
-    { ok: false, message: "로그인 정보가 올바르지 않습니다." },
+    { ok: false, code: "LOGIN_INVALID_CREDENTIALS" },
     { status: 401 }
   );
 }
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
       return NextResponse.json(
-        { ok: false, code: error.code, message: "로그인 요청 본문이 너무 큽니다." },
+        { ok: false, code: error.code },
         { status: 413 }
       );
     }
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
 
   if (!username || !password) {
     return NextResponse.json(
-      { ok: false, message: "아이디와 비밀번호를 입력하세요." },
+      { ok: false, code: "LOGIN_CREDENTIALS_REQUIRED" },
       { status: 400 }
     );
   }
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof InvalidTrustedClientAddressError) {
       return NextResponse.json(
-        { ok: false, message: "잘못된 로그인 요청입니다." },
+        { ok: false, code: "LOGIN_REQUEST_INVALID" },
         { status: 400 }
       );
     }
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
     async (tx) => {
       const user = await tx.users.findUnique({
         where: { username },
-        include: { employee_profiles: true },
+        include: { employee_profiles: true, user_preferences: true },
       });
       const passwordOk = await verifyLoginPassword(
         password,
@@ -111,7 +112,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        message: `로그인 실패가 반복되어 잠시 제한되었습니다. ${attemptResult.remainingSeconds}초 후 다시 시도하세요.`,
+        code: "LOGIN_RATE_LIMITED",
+        details: { remainingSeconds: attemptResult.remainingSeconds },
       },
       { status: 429 }
     );
@@ -130,8 +132,17 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.json({
     ok: true,
     user: toAuthUser(user),
+    locale: normalizeQuickHackLocale(user.user_preferences?.locale),
   });
 
   setSessionCookie(response, token);
+  const { setLocaleSnapshotCookie } = await import(
+    "@/quickhack_server/i18n/locale-cookie"
+  );
+  setLocaleSnapshotCookie(
+    request,
+    response,
+    normalizeQuickHackLocale(user.user_preferences?.locale)
+  );
   return response;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import {
   AlertTriangle,
   Check,
@@ -27,16 +28,17 @@ import {
   invoiceReplacementConfirmFormId,
 } from "./invoice-operation-draft-state";
 import type { InvoiceReplacement } from "./invoice-operation-types";
+import { useInvoiceReplacementPresentation } from "./invoice-replacement-presentation";
 
 const steps = [
-  { code: "PRECHECK", label: "최신 주문 확인" },
-  { code: "HOLD", label: "출고 보류" },
-  { code: "OLD_INVOICE_HANDLING", label: "기존 송장 처리" },
-  { code: "ALLOCATION", label: "새 번호 채번" },
-  { code: "CHANNEL_UPDATE", label: "쿠팡 반영" },
-  { code: "CARRIER_REGISTRATION", label: "로젠 등록" },
-  { code: "LABEL_PRINT", label: "새 송장 출력 확인" },
-  { code: "FINALIZE", label: "출고 보류 해제" },
+  { code: "PRECHECK", labelKey: "steps.precheck" },
+  { code: "HOLD", labelKey: "steps.hold" },
+  { code: "OLD_INVOICE_HANDLING", labelKey: "steps.oldInvoice" },
+  { code: "ALLOCATION", labelKey: "steps.allocation" },
+  { code: "CHANNEL_UPDATE", labelKey: "steps.channel" },
+  { code: "CARRIER_REGISTRATION", labelKey: "steps.carrier" },
+  { code: "LABEL_PRINT", labelKey: "steps.label" },
+  { code: "FINALIZE", labelKey: "steps.finalize" },
 ] as const;
 
 function formatDate(value: string | null | undefined) {
@@ -71,6 +73,9 @@ export function InvoiceReplacementProgress({
   onOpenShipmentOutput?: () => void;
   onRecoverCarrierRegistration?: () => void;
 }) {
+  const t = useTranslations("shipment.invoiceReplacement");
+  const replacementPresentation = useInvoiceReplacementPresentation();
+  const nextActionPresentation = replacementPresentation.action(replacement.nextAction.code);
   const [note, setNote] = React.useState("");
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const [cancelNote, setCancelNote] = React.useState("");
@@ -121,17 +126,17 @@ export function InvoiceReplacementProgress({
   const closeCancelDraft = React.useCallback(() => {
     setCancelOpen(false);
     setCancelNote("");
-  }, []);
+  }, [setCancelNote, setCancelOpen]);
   const cancelFormIds = React.useMemo(() => [cancelFormId], [cancelFormId]);
   const requestCancelDraftClose = useGuardedDialogClose({
     formIds: cancelFormIds,
-    targetLabel: "송장 재발급 취소 입력",
+    targetLabel: t("forms.cancelInput"),
     onClose: closeCancelDraft,
   });
 
   useUnsavedForm({
     id: confirmFormId,
-    label: `송장 재발급 #${replacement.replacementWorkId} 기존 송장 처리 근거`,
+    label: t("forms.evidence", { id: String(replacement.replacementWorkId) }),
     enabled: waitingManual && Boolean(onAction),
     isDirty: !invoiceActionNoteSnapshotsEqual(
       confirmBaseline,
@@ -143,7 +148,7 @@ export function InvoiceReplacementProgress({
 
   useUnsavedForm({
     id: cancelFormId,
-    label: `송장 재발급 #${replacement.replacementWorkId} 취소 사유`,
+    label: t("forms.cancelReason", { id: String(replacement.replacementWorkId) }),
     enabled: cancelOpen && canCancel,
     isDirty: !invoiceActionNoteSnapshotsEqual(
       cancelBaseline,
@@ -176,7 +181,7 @@ export function InvoiceReplacementProgress({
     runGuardedAction({
       intent: "internal-change",
       formIds: [cancelFormId],
-      targetLabel: "기존 송장 처리 확인",
+      targetLabel: t("guarded.confirmOld"),
       action: () => void submitOldInvoiceHandling(),
     });
   }
@@ -185,7 +190,7 @@ export function InvoiceReplacementProgress({
     runGuardedAction({
       intent: "internal-change",
       formIds: [confirmFormId],
-      targetLabel: "송장 재발급 취소",
+      targetLabel: t("guarded.cancel"),
       action: () => void submitCancellation(),
     });
   }
@@ -195,7 +200,7 @@ export function InvoiceReplacementProgress({
     runGuardedAction({
       intent: "internal-change",
       formIds: [confirmFormId, cancelFormId],
-      targetLabel: "송장 재발급 상태 다시 확인",
+      targetLabel: t("guarded.refresh"),
       action: onRefresh,
     });
   }
@@ -205,7 +210,7 @@ export function InvoiceReplacementProgress({
     runGuardedAction({
       intent: "internal-change",
       formIds: [confirmFormId, cancelFormId],
-      targetLabel: "송장 재발급 현재 단계 다시 확인",
+      targetLabel: t("guarded.resume"),
       action: () => void onAction("resume"),
     });
   }
@@ -215,7 +220,7 @@ export function InvoiceReplacementProgress({
     runGuardedAction({
       intent: "internal-change",
       formIds: [confirmFormId, cancelFormId],
-      targetLabel: "로젠 등록 복구 실행",
+      targetLabel: t("guarded.recoverCarrier"),
       action: onRecoverCarrierRegistration,
     });
   }
@@ -227,16 +232,18 @@ export function InvoiceReplacementProgress({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="font-semibold">
-                송장 재발급 #{replacement.replacementWorkId}
+                {t("header.title", { id: String(replacement.replacementWorkId) })}
               </h3>
               <Badge variant={statusVariant(replacement.status)}>
-                {replacement.statusLabel}
+                {replacementPresentation.status(replacement.status)}
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              기존 {replacement.oldTrackingNumber} → 새 송장{" "}
-              {replacement.candidateTrackingNumber ?? "채번 전"} · 합포장{" "}
-              {replacement.memberCount}건
+              {t("header.summary", {
+                old: replacement.oldTrackingNumber,
+                candidate: replacement.candidateTrackingNumber ?? t("header.unallocated"),
+                count: replacement.memberCount,
+              })}
             </p>
           </div>
           {onRefresh ? (
@@ -249,7 +256,7 @@ export function InvoiceReplacementProgress({
               <RefreshCcw
                 className={cn("size-3.5", busy && "animate-spin")}
               />
-              상태 확인
+              {t("header.refresh")}
             </Button>
           ) : null}
         </div>
@@ -294,7 +301,7 @@ export function InvoiceReplacementProgress({
                   )}
                   <span className="font-semibold">{index + 1}</span>
                 </div>
-                <div className="leading-4">{step.label}</div>
+                <div className="leading-4">{t(step.labelKey)}</div>
               </div>
             );
           })}
@@ -315,10 +322,10 @@ export function InvoiceReplacementProgress({
         )}
       >
         <div className="text-sm font-semibold">
-          지금 할 일: {replacement.nextAction.label}
+          {t("action.now", { action: nextActionPresentation.label })}
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {replacement.nextAction.description}
+          {nextActionPresentation.description}
         </p>
         {replacement.errorMessage ? (
           <div className="mt-2 rounded border border-red-200 bg-white/70 px-3 py-2 text-xs text-red-700">
@@ -333,13 +340,13 @@ export function InvoiceReplacementProgress({
               className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="기존 로젠 송장을 미사용 처리하고 기존 송장 출력물을 폐기한 근거를 입력하세요."
+              placeholder={t("action.evidencePlaceholder")}
             />
             <Button
               disabled={busy || !note.trim()}
               onClick={requestOldInvoiceHandling}
             >
-              기존 송장 처리 확인 후 계속
+              {t("action.confirmOld")}
             </Button>
           </div>
         ) : null}
@@ -352,7 +359,7 @@ export function InvoiceReplacementProgress({
                 onClick={onOpenChannelRecovery}
               >
                 <ExternalLink className="size-4" />
-                쿠팡 처리 복구 열기
+                {t("action.openChannelRecovery")}
               </Button>
             ) : null}
             {carrierRecovery && onRecoverCarrierRegistration ? (
@@ -361,13 +368,13 @@ export function InvoiceReplacementProgress({
                 onClick={requestCarrierRegistrationRecovery}
               >
                 <RotateCcw className="size-4" />
-                로젠 등록 복구 실행
+                {t("action.recoverCarrier")}
               </Button>
             ) : null}
             {shipmentOutputRecovery && onOpenShipmentOutput ? (
               <Button disabled={busy} onClick={onOpenShipmentOutput}>
                 <Printer className="size-4" />
-                송장 출력 화면 열기
+                {t("action.openOutput")}
               </Button>
             ) : null}
             <Button
@@ -376,7 +383,7 @@ export function InvoiceReplacementProgress({
               onClick={requestResume}
             >
               <RefreshCcw className="size-4" />
-              {executionStale ? "중단된 처리 재개" : "현재 단계 다시 확인"}
+              {executionStale ? t("action.resumeInterrupted") : t("action.recheck")}
             </Button>
           </div>
         ) : null}
@@ -388,14 +395,13 @@ export function InvoiceReplacementProgress({
             onClick={onOpenShipmentOutput}
           >
             <Printer className="size-4" />
-            송장 출력 화면 열기
+            {t("action.openOutput")}
           </Button>
         ) : null}
 
         {shipmentOutputRecovery && !onOpenShipmentOutput ? (
           <div className="mt-3 rounded border border-amber-300 bg-white/70 px-3 py-2 text-xs text-amber-900">
-            연결된 송장 출력 차수를 찾지 못했습니다. 상태를 다시 확인한 뒤에도
-            계속되면 송장 발급 이력에서 대상 차수를 확인하세요.
+            {t("action.outputMissing")}
           </div>
         ) : null}
 
@@ -409,19 +415,18 @@ export function InvoiceReplacementProgress({
                 onClick={() => setCancelOpen(true)}
               >
                 <XCircle className="size-4" />
-                재발급 취소
+                {t("cancel.open")}
               </Button>
             ) : (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  쿠팡에 새 송장번호를 보내기 전 단계입니다. 취소하면 기존 송장을
-                  유지하고 출고 보류를 해제합니다.
+                  {t("cancel.description")}
                 </p>
                 <textarea
                   className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                   value={cancelNote}
                   onChange={(event) => setCancelNote(event.target.value)}
-                  placeholder="재발급을 취소하는 이유를 입력하세요."
+                  placeholder={t("cancel.placeholder")}
                 />
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -429,14 +434,14 @@ export function InvoiceReplacementProgress({
                     disabled={busy || !cancelNote.trim()}
                     onClick={requestCancellation}
                   >
-                    재발급 취소 확정
+                    {t("cancel.confirm")}
                   </Button>
                   <Button
                     variant="outline"
                     disabled={busy}
                     onClick={requestCancelDraftClose}
                   >
-                    계속 진행
+                    {t("cancel.continue")}
                   </Button>
                 </div>
               </div>
@@ -448,9 +453,9 @@ export function InvoiceReplacementProgress({
       {!compact ? (
         <div className="grid gap-3 text-xs md:grid-cols-2">
           <div className="rounded-md border p-3">
-            <div className="mb-2 font-semibold">배송지 변경</div>
+            <div className="mb-2 font-semibold">{t("detail.address")}</div>
             <div className="grid grid-cols-[64px_1fr] gap-x-2 gap-y-1">
-              <span className="text-muted-foreground">변경 전</span>
+              <span className="text-muted-foreground">{t("detail.before")}</span>
               <span className="break-words">
                 {[
                   replacement.beforeReceiver.postCode,
@@ -460,7 +465,7 @@ export function InvoiceReplacementProgress({
                   .filter(Boolean)
                   .join(" ")}
               </span>
-              <span className="text-muted-foreground">변경 후</span>
+              <span className="text-muted-foreground">{t("detail.after")}</span>
               <span className="break-words">
                 {[
                   replacement.afterReceiver.postCode,
@@ -473,15 +478,15 @@ export function InvoiceReplacementProgress({
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="mb-2 font-semibold">처리 시각</div>
+            <div className="mb-2 font-semibold">{t("detail.timestamps")}</div>
             <div className="grid grid-cols-[90px_1fr] gap-x-2 gap-y-1">
-              <span className="text-muted-foreground">요청</span>
+              <span className="text-muted-foreground">{t("detail.requested")}</span>
               <span>{formatDate(replacement.requestedAt)}</span>
-              <span className="text-muted-foreground">쿠팡 반영</span>
+              <span className="text-muted-foreground">{t("detail.channel")}</span>
               <span>{formatDate(replacement.channelUpdatedAt)}</span>
-              <span className="text-muted-foreground">로젠 등록</span>
+              <span className="text-muted-foreground">{t("detail.carrier")}</span>
               <span>{formatDate(replacement.carrierRegisteredAt)}</span>
-              <span className="text-muted-foreground">출력 확인</span>
+              <span className="text-muted-foreground">{t("detail.label")}</span>
               <span>{formatDate(replacement.labelConfirmedAt)}</span>
             </div>
           </div>

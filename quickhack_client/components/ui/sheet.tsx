@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import * as SheetPrimitive from "@radix-ui/react-dialog";
+import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { cn } from "@/quickhack_shared/core/utils";
 
@@ -30,8 +31,10 @@ SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <SheetPortal>
+>(({ className, children, ...props }, ref) => {
+  const t = useTranslations("common.actions");
+
+  return <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
       ref={ref}
@@ -44,11 +47,11 @@ const SheetContent = React.forwardRef<
       {children}
       <SheetPrimitive.Close className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
         <X className="size-4" />
-        <span className="sr-only">닫기</span>
+        <span className="sr-only">{t("close")}</span>
       </SheetPrimitive.Close>
     </SheetPrimitive.Content>
-  </SheetPortal>
-));
+  </SheetPortal>;
+});
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 const SheetHeader = ({

@@ -62,7 +62,7 @@ function optionalText(value: unknown, maxLength = 80) {
 function positiveInt(value: unknown, label: string) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw publicBadRequest("INVALID_MOBILE_DEVICE_INPUT", `${label} 값이 올바르지 않습니다.`);
+    throw publicBadRequest("INVALID_MOBILE_DEVICE_INPUT", "INVALID_MOBILE_DEVICE_INPUT");
   }
   return parsed;
 }
@@ -70,7 +70,7 @@ function positiveInt(value: unknown, label: string) {
 function nonNegativeInt(value: unknown, label: string) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
-    throw publicBadRequest("INVALID_MOBILE_DEVICE_REVISION", `${label} 값이 올바르지 않습니다.`);
+    throw publicBadRequest("INVALID_MOBILE_DEVICE_REVISION", "INVALID_MOBILE_DEVICE_REVISION");
   }
   return parsed;
 }
@@ -111,12 +111,12 @@ function provisioningTokenHash(value: string) {
 function randomCredential(value: unknown, label: string) {
   const encoded = cleanText(value);
   if (!/^[A-Za-z0-9_-]{43}$/.test(encoded)) {
-    throw new MobileDeviceAuthError(`${label} 값이 올바르지 않습니다.`);
+    throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   }
   const decoded = Buffer.from(encoded.replace(/-/g, "+").replace(/_/g, "/"), "base64");
   try {
     if (decoded.length !== 32 || decoded.toString("base64url") !== encoded) {
-      throw new MobileDeviceAuthError(`${label} 값이 올바르지 않습니다.`);
+      throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
     }
     return encoded;
   } finally {
@@ -156,11 +156,11 @@ function registrationProofMessage(input: {
 function decodeBase64(value: unknown, label: string) {
   const encoded = cleanText(value);
   if (!encoded || !/^[A-Za-z0-9+/_-]+={0,2}$/.test(encoded)) {
-    throw new MobileDeviceAuthError(`${label} 값이 올바르지 않습니다.`);
+    throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   }
   const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
   const payload = Buffer.from(normalized, "base64");
-  if (!payload.length) throw new MobileDeviceAuthError(`${label} 값이 올바르지 않습니다.`);
+  if (!payload.length) throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   return payload;
 }
 
@@ -181,7 +181,7 @@ function verifyRegistrationProof(input: {
       publicKey.asymmetricKeyType !== "ec" ||
       publicKey.asymmetricKeyDetails?.namedCurve !== "prime256v1"
     ) {
-      throw new MobileDeviceAuthError("기기 공개키는 P-256 키여야 합니다.");
+      throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
     }
     const canonicalSpki = publicKey.export({ format: "der", type: "spki" }) as Buffer;
     const verified = crypto.verify(
@@ -190,14 +190,14 @@ function verifyRegistrationProof(input: {
       publicKey,
       signature
     );
-    if (!verified) throw new MobileDeviceAuthError("기기 등록 서명이 올바르지 않습니다.");
+    if (!verified) throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
     return {
       spki: canonicalSpki.toString("base64"),
       fingerprint: publicKeyFingerprint(canonicalSpki),
     };
   } catch (error) {
     if (error instanceof MobileDeviceAuthError) throw error;
-    throw new MobileDeviceAuthError("기기 공개키 또는 서명이 올바르지 않습니다.");
+    throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   } finally {
     spki.fill(0);
     signature.fill(0);
@@ -352,7 +352,7 @@ async function authorizeMutation(
     ) {
       throw publicConflict(
         "MOBILE_AUTHORIZATION_CHANGED",
-        "로그인 또는 계정 상태가 변경되었습니다. 다시 로그인한 뒤 시도하세요."
+        "MOBILE_AUTHORIZATION_CHANGED"
       );
     }
     actorUserId = session.user_id;
@@ -374,15 +374,15 @@ async function authorizeMutation(
   `;
   const target = locked[0];
   if (!target) {
-    throw publicNotFound("MOBILE_DEVICE_ACCOUNT_NOT_FOUND", "등록할 계정을 찾을 수 없습니다.");
+    throw publicNotFound("MOBILE_DEVICE_ACCOUNT_NOT_FOUND", "MOBILE_DEVICE_ACCOUNT_NOT_FOUND");
   }
   if (options.requireActiveAccount && target.is_active !== 1) {
-    throw publicConflict("MOBILE_DEVICE_ACCOUNT_INACTIVE", "비활성 계정에는 기기를 등록할 수 없습니다.");
+    throw publicConflict("MOBILE_DEVICE_ACCOUNT_INACTIVE", "MOBILE_DEVICE_ACCOUNT_INACTIVE");
   }
   if (options.requirePackingPermission && target.mobile_packing_enabled !== 1) {
     throw publicConflict(
       "MOBILE_DEVICE_PERMISSION_REQUIRED",
-      "먼저 대상 계정에 포장 검수 권한을 부여해야 합니다."
+      "MOBILE_DEVICE_PERMISSION_REQUIRED"
     );
   }
   return { serverState, actorUserId, target };
@@ -485,7 +485,7 @@ export async function beginMobileDeviceProvisioning(
 ) {
   const userId = positiveInt(input.userId, "등록 계정");
   const serial = normalizeAdbSerial(input.adbSerial);
-  if (!serial) throw publicBadRequest("ADB_SERIAL_REQUIRED", "ADB 기기 식별값이 필요합니다.");
+  if (!serial) throw publicBadRequest("ADB_SERIAL_REQUIRED", "ADB_SERIAL_REQUIRED");
   const deviceId = input.deviceId == null ? null : positiveInt(input.deviceId, "기기");
   const expectedRevision =
     deviceId === null
@@ -511,16 +511,16 @@ export async function beginMobileDeviceProvisioning(
         await tx.$queryRaw`SELECT device_id FROM mobile_registered_devices WHERE device_id = ${deviceId} FOR UPDATE`;
         before = await findMobileDeviceForDto(deviceId, tx);
         if (!before || before.user_id !== userId) {
-          throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "등록된 모바일 기기를 찾을 수 없습니다.");
+          throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "MOBILE_DEVICE_NOT_FOUND");
         }
         if (before.registration_revision !== expectedRevision) {
-          throw publicConflict("MOBILE_DEVICE_CHANGED", "기기 등록 상태가 변경되었습니다. 목록을 새로고침하세요.");
+          throw publicConflict("MOBILE_DEVICE_CHANGED", "MOBILE_DEVICE_CHANGED");
         }
         if (before.registration_state === "REVOKED") {
-          throw publicConflict("MOBILE_DEVICE_REVOKED", "폐기된 등록은 다시 사용할 수 없습니다. 새로 등록하세요.");
+          throw publicConflict("MOBILE_DEVICE_REVOKED", "MOBILE_DEVICE_REVOKED");
         }
         if (before.adb_serial_hmac !== hmac) {
-          throw publicConflict("MOBILE_DEVICE_PHYSICAL_MISMATCH", "처음 등록한 물리 기기와 일치하지 않습니다.");
+          throw publicConflict("MOBILE_DEVICE_PHYSICAL_MISMATCH", "MOBILE_DEVICE_PHYSICAL_MISMATCH");
         }
         row = await tx.mobile_registered_devices.update({
           where: { device_id: deviceId },
@@ -585,7 +585,7 @@ export async function beginMobileDeviceProvisioning(
     if (isPostgresqlUniqueViolation(error)) {
       throw publicConflict(
         "MOBILE_DEVICE_ALREADY_REGISTERED",
-        "이 물리 기기는 이미 다른 활성 등록에 연결되어 있습니다. 기존 등록을 폐기한 뒤 다시 시도하세요."
+        "MOBILE_DEVICE_ALREADY_REGISTERED"
       );
     }
     throw error;
@@ -604,20 +604,20 @@ export async function cancelMobileDeviceProvisioning(
       where: { device_id: deviceId },
       select: { user_id: true },
     });
-    if (!discovered) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "등록된 모바일 기기를 찾을 수 없습니다.");
+    if (!discovered) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "MOBILE_DEVICE_NOT_FOUND");
     const auth = await authorizeMutation(tx, context, discovered.user_id, {
       requirePackingPermission: false,
       requireActiveAccount: false,
     });
     await tx.$queryRaw`SELECT device_id FROM mobile_registered_devices WHERE device_id = ${deviceId} FOR UPDATE`;
     const before = await findMobileDeviceForDto(deviceId, tx);
-    if (!before) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "등록된 모바일 기기를 찾을 수 없습니다.");
+    if (!before) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "MOBILE_DEVICE_NOT_FOUND");
     if (
       before.registration_state !== "PROVISIONING" ||
       before.registration_revision !== expectedRevision ||
       before.provisioning_token_hash !== tokenHash
     ) {
-      throw publicConflict("MOBILE_DEVICE_CHANGED", "기기 등록 상태가 변경되어 실패 보상을 적용하지 않았습니다.");
+      throw publicConflict("MOBILE_DEVICE_CHANGED", "MOBILE_DEVICE_CHANGED");
     }
     const now = quickHackClock.nowDate();
     const row = await tx.mobile_registered_devices.update({
@@ -656,19 +656,19 @@ export async function revokeMobileDevice(
       where: { device_id: deviceId },
       select: { user_id: true },
     });
-    if (!discovered) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "등록된 모바일 기기를 찾을 수 없습니다.");
+    if (!discovered) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "MOBILE_DEVICE_NOT_FOUND");
     const auth = await authorizeMutation(tx, context, discovered.user_id, {
       requirePackingPermission: false,
       requireActiveAccount: false,
     });
     await tx.$queryRaw`SELECT device_id FROM mobile_registered_devices WHERE device_id = ${deviceId} FOR UPDATE`;
     const before = await findMobileDeviceForDto(deviceId, tx);
-    if (!before) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "등록된 모바일 기기를 찾을 수 없습니다.");
+    if (!before) throw publicNotFound("MOBILE_DEVICE_NOT_FOUND", "MOBILE_DEVICE_NOT_FOUND");
     if (before.registration_revision !== expectedRevision) {
-      throw publicConflict("MOBILE_DEVICE_CHANGED", "기기 등록 상태가 변경되었습니다. 목록을 새로고침하세요.");
+      throw publicConflict("MOBILE_DEVICE_CHANGED", "MOBILE_DEVICE_CHANGED");
     }
     if (before.registration_state === "REVOKED") {
-      throw publicConflict("MOBILE_DEVICE_REVOKED", "이미 폐기된 기기 등록입니다.");
+      throw publicConflict("MOBILE_DEVICE_REVOKED", "MOBILE_DEVICE_REVOKED");
     }
     const now = quickHackClock.nowDate();
     const row = await tx.mobile_registered_devices.update({
@@ -709,14 +709,14 @@ export async function activateMobileDevice(
   },
   context: MobileRegistrationSecurityContext
 ) {
-  if (context.scope !== "SELF") throw new MobileDeviceAuthError("본인 로그인 세션이 필요합니다.");
+  if (context.scope !== "SELF") throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   const deviceId = positiveInt(input.deviceId, "기기");
   const expectedRevision = nonNegativeInt(input.registrationRevision, "기기 등록 revision");
   const provisioningToken = randomCredential(input.provisioningToken, "USB 등록 토큰");
   const appInstanceId = cleanText(input.appInstanceId ?? input.clientId);
   const deviceToken = randomCredential(input.deviceToken, "기기 토큰");
   if (!appInstanceId) {
-    throw new MobileDeviceAuthError("USB 등록 증명과 앱 자격증명이 필요합니다.");
+    throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   }
   const proof = verifyRegistrationProof({
     deviceId,
@@ -739,7 +739,7 @@ export async function activateMobileDevice(
     await tx.$queryRaw`SELECT device_id FROM mobile_registered_devices WHERE device_id = ${deviceId} FOR UPDATE`;
     const before = await findMobileDeviceForDto(deviceId, tx);
     if (!before || before.user_id !== context.actor.userId) {
-      throw new MobileDeviceAuthError("이 계정의 USB 등록 요청을 찾을 수 없습니다.");
+      throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
     }
 
     if (
@@ -762,7 +762,7 @@ export async function activateMobileDevice(
     ) {
       throw publicConflict(
         "MOBILE_DEVICE_PROVISIONING_INVALIDATED",
-        "USB 기기 등록 요청이 취소되었거나 변경되었습니다. 새 등록을 시작하세요."
+        "MOBILE_DEVICE_PROVISIONING_INVALIDATED"
       );
     }
 
@@ -772,7 +772,7 @@ export async function activateMobileDevice(
     ) {
       throw publicConflict(
         "MOBILE_DEVICE_PROVISIONING_EXPIRED",
-        "USB 기기 등록 요청이 만료되었습니다. 새 등록을 시작하세요."
+        "MOBILE_DEVICE_PROVISIONING_EXPIRED"
       );
     }
 
@@ -797,7 +797,7 @@ export async function activateMobileDevice(
       });
     } catch (error) {
       if (isPostgresqlUniqueViolation(error)) {
-        throw publicConflict("MOBILE_DEVICE_KEY_ALREADY_REGISTERED", "이 앱 보안 키는 이미 다른 기기에 등록되어 있습니다.");
+        throw publicConflict("MOBILE_DEVICE_KEY_ALREADY_REGISTERED", "MOBILE_DEVICE_KEY_ALREADY_REGISTERED");
       }
       throw error;
     }
@@ -818,11 +818,11 @@ export async function requireMobilePackingDeviceInTransaction(
   input: { clientId?: unknown; appInstanceId?: unknown; deviceToken?: unknown },
   context: MobileRegistrationSecurityContext
 ) {
-  if (context.scope !== "SELF") throw new MobileDeviceAuthError("본인 로그인 세션이 필요합니다.");
+  if (context.scope !== "SELF") throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   const appInstanceId = cleanText(input.appInstanceId ?? input.clientId);
   const deviceToken = cleanText(input.deviceToken);
   if (!appInstanceId || !deviceToken) {
-    throw new MobileDeviceAuthError("등록된 모바일 기기에서만 포장 검수를 실행할 수 있습니다.");
+    throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   }
   const auth = await authorizeMutation(tx, context, context.actor.userId, {
     requirePackingPermission: true,
@@ -836,7 +836,7 @@ export async function requireMobilePackingDeviceInTransaction(
     FOR UPDATE
   `;
   if (matches.length !== 1) {
-    throw new MobileDeviceAuthError("등록된 모바일 기기에서만 포장 검수를 실행할 수 있습니다.");
+    throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   }
   const row = await findMobileDeviceForDto(matches[0].device_id, tx);
   if (
@@ -847,7 +847,7 @@ export async function requireMobilePackingDeviceInTransaction(
     row.user_credential_revision !== auth.target.credential_revision ||
     row.instance_epoch !== auth.serverState.instance_epoch
   ) {
-    throw new MobileDeviceAuthError("기기 또는 계정 보안 상태가 변경되었습니다. USB로 다시 등록하세요.");
+    throw new MobileDeviceAuthError("MOBILE_DEVICE_AUTH_FAILED");
   }
   const now = quickHackClock.nowDate();
   const updated = await tx.mobile_registered_devices.update({

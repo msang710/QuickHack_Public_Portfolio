@@ -574,7 +574,7 @@ export async function saveInspectionRecord(
       if (!claim.claimed) {
         throw publicConflict(
           "INBOUND_WORKFLOW_STATE_CONFLICT",
-          "입고 상태가 변경되어 검수 기록을 저장하지 않았습니다. 최신 상태를 확인한 뒤 다시 시도해 주세요.",
+          "INBOUND_WORKFLOW_STATE_CONFLICT",
           {
             pgNo,
             inboundId: inboundBeforeClaim.inbound_id,
@@ -669,7 +669,7 @@ export async function saveInspectionRecord(
     if (updatedInbound.count !== 1) {
       throw publicConflict(
         "INBOUND_WORKFLOW_STATE_CONFLICT",
-        "입고 회차가 동시에 변경되어 검수 기록을 저장하지 않았습니다. 최신 상태를 확인한 뒤 다시 시도해 주세요."
+        "INBOUND_WORKFLOW_STATE_CONFLICT"
       );
     }
 
@@ -690,8 +690,8 @@ export async function saveInspectionRecord(
       sourceId: String(result.inspection_id ?? result.inbound_id),
       dedupeKey: `INSPECTION_COMPLETE:${result.inspection_ids.join(",")}`,
       menuId: "inbound-upload-pending",
-      title: "검수 저장 완료",
-      body: `${result.pg_no} 검수 결과가 저장되었습니다.`,
+      messageKey: "inspectionComplete",
+      messageArguments: { pgNo: result.pg_no },
       resolvedAt: timestamp,
     });
     return result;

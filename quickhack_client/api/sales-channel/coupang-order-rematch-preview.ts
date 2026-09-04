@@ -1,5 +1,9 @@
 // QuickHack note: 상품 매핑 화면의 읽기 전용 기존 주문 재매칭 대상 preview 호출 계약입니다.
-import { sensitiveJsonFetch } from "@/quickhack_client/auth/sensitive-request";
+import {
+  sensitiveJsonFetch,
+  type SensitiveRequestFallbacks,
+} from "@/quickhack_client/auth/sensitive-request";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 
 export type CoupangOrderRematchOfferPreview = {
   salesOfferId: number;
@@ -18,7 +22,7 @@ export type CoupangOrderRematchPreviewItem = {
   externalShipmentId: string;
   externalOrderStatus: string | null;
   eligible: boolean;
-  exclusionReasons: Array<{ code: string; label: string }>;
+  exclusionReasons: Array<{ code: string }>;
   itemCount: number;
   allocationCount: number;
   items: Array<{
@@ -53,7 +57,6 @@ export type CoupangOrderRematchPreviewData = {
     eligibleAllocationCount: number;
     exclusionReasonCounts: Array<{
       code: string;
-      label: string;
       count: number;
     }>;
   };
@@ -106,7 +109,8 @@ type CoupangOrderRematchPreviewResponse = {
 export async function fetchCoupangOrderRematchPreview(input: {
   cursor?: number | null;
   limit?: number;
-} = {}) {
+  fallbackMessage: string;
+}) {
   const params = new URLSearchParams();
 
   if (input.cursor) {
@@ -123,13 +127,17 @@ export async function fetchCoupangOrderRematchPreview(input: {
     | null;
 
   if (!response.ok || !payload?.ok || !payload.data) {
-    throw new Error(payload?.message || "기존 주문 재매칭 대상을 조회하지 못했습니다.");
+    throw new Error(legacyApiMessage(payload, input.fallbackMessage));
   }
 
   return payload.data;
 }
 
-export async function executeCoupangOrderRematch(manifestToken: string) {
+export async function executeCoupangOrderRematch(
+  manifestToken: string,
+  fallbackMessage: string,
+  sensitiveFallbacks: SensitiveRequestFallbacks
+) {
   const payload = await sensitiveJsonFetch<{
     ok: boolean;
     message?: string;
@@ -138,10 +146,11 @@ export async function executeCoupangOrderRematch(manifestToken: string) {
     url: "/api/coupang/order-rematch",
     method: "POST",
     body: { manifestToken },
+    fallbacks: sensitiveFallbacks,
   });
 
   if (!payload.ok || !payload.data) {
-    throw new Error(payload.message || "기존 주문 재매칭을 완료하지 못했습니다.");
+    throw new Error(fallbackMessage);
   }
 
   return payload.data;

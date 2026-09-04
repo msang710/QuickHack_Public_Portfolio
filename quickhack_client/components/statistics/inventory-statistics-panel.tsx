@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -16,18 +18,10 @@ import {
   Warehouse,
 } from "lucide-react";
 import {
-  buildInventoryTransitionMatrix,
-  formatInventoryNumber,
-  formatInventoryPeriodRange,
-  formatInventoryPurchaseCost,
-  formatInventoryQuantity,
-  formatInventoryTurnover,
-  inventoryAgeBucketLabel,
-  inventoryIntegrityMessage,
-  inventoryPeriodLabel,
   inventorySkuLabel,
-  inventoryStatusGroupLabel,
+  useInventoryStatisticsPresentation,
 } from "@/quickhack_client/components/statistics/inventory-statistics-presentation";
+import { statusLabel as deviceStatusLabel } from "@/quickhack_client/components/shared/device-detail-sheet";
 import {
   CompactTable,
   EmptyDataState,
@@ -50,16 +44,28 @@ import {
   type StatisticsPeriodSelection,
 } from "@/quickhack_shared/statistics/statistics-period";
 
-function quantityPercent(quantity: number | null, total: number | null) {
+function quantityPercent(
+  quantity: number | null,
+  total: number | null,
+  unavailable: string
+) {
   if (quantity === null || total === null) {
-    return "확인 불가";
+    return unavailable;
   }
 
   return `${groupPercent(quantity, total)}%`;
 }
 
 function AsOfInventorySection({ data }: { data: InventoryStatisticsData }) {
-  const message = inventoryIntegrityMessage(
+  const t = useTranslations("statistics.inventory");
+  const detailT = useTranslations("common.deviceDetail");
+  const {
+    formatPurchaseCost,
+    formatQuantity,
+    integrityMessage,
+    statusLabel,
+  } = useInventoryStatisticsPresentation();
+  const message = integrityMessage(
     data.integrity.availability,
     "asOf"
   );
@@ -68,7 +74,7 @@ function AsOfInventorySection({ data }: { data: InventoryStatisticsData }) {
   const sellableQuantity = group("SELLABLE");
   const allocatedQuantity = group("ORDER_ALLOCATED");
   const restrictedQuantity = group("SALES_RESTRICTED");
-  const longTermCost = formatInventoryPurchaseCost(
+  const longTermCost = formatPurchaseCost(
     data.aging.longTermPurchaseCost
   );
 
@@ -88,50 +94,53 @@ function AsOfInventorySection({ data }: { data: InventoryStatisticsData }) {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <SummaryTile
           icon={Boxes}
-          label={`${data.asOf.date} 기준 전체 재고`}
-          value={formatInventoryQuantity(data.asOf.totalQuantity)}
-          description={`${data.asOf.date} 마감 기준`}
+          label={t("asOf.total", { date: data.asOf.date })}
+          value={formatQuantity(data.asOf.totalQuantity)}
+          description={t("asOf.closing", { date: data.asOf.date })}
         />
         <SummaryTile
           icon={PackageCheck}
-          label="판매 가능"
-          value={formatInventoryQuantity(sellableQuantity)}
+          label={t("asOf.sellable")}
+          value={formatQuantity(sellableQuantity)}
           description={quantityPercent(
             sellableQuantity,
-            data.asOf.totalQuantity
+            data.asOf.totalQuantity,
+            t("unavailable.confirm")
           )}
           tone="success"
         />
         <SummaryTile
           icon={ShoppingCart}
-          label="주문 배정"
-          value={formatInventoryQuantity(allocatedQuantity)}
+          label={t("asOf.allocated")}
+          value={formatQuantity(allocatedQuantity)}
           description={quantityPercent(
             allocatedQuantity,
-            data.asOf.totalQuantity
+            data.asOf.totalQuantity,
+            t("unavailable.confirm")
           )}
           tone="sky"
         />
         <SummaryTile
           icon={Warehouse}
-          label="판매 제한·점검"
-          value={formatInventoryQuantity(restrictedQuantity)}
+          label={t("asOf.restricted")}
+          value={formatQuantity(restrictedQuantity)}
           description={quantityPercent(
             restrictedQuantity,
-            data.asOf.totalQuantity
+            data.asOf.totalQuantity,
+            t("unavailable.confirm")
           )}
           tone="warning"
         />
         <SummaryTile
           icon={TimerReset}
-          label="장기 재고"
-          value={formatInventoryQuantity(data.aging.longTermQuantity)}
-          description="30일 이상 · 주문 배정 제외"
+          label={t("asOf.longTerm")}
+          value={formatQuantity(data.aging.longTermQuantity)}
+          description={t("asOf.longTermDescription")}
           tone="purple"
         />
         <SummaryTile
           icon={CircleDollarSign}
-          label="장기 재고 매입원가"
+          label={t("asOf.longTermCost")}
           value={longTermCost.value}
           description={longTermCost.detail}
           tone="warning"
@@ -139,23 +148,25 @@ function AsOfInventorySection({ data }: { data: InventoryStatisticsData }) {
       </div>
 
       <Section
-        title={`${data.asOf.date} 기준 재고 상태 구성`}
-        description="선택한 마감일의 모든 재고를 판매·출고·배송·클레임 의미에 따라 한 번씩만 분류합니다."
+        title={t("asOf.composition", { date: data.asOf.date })}
+        description={t("asOf.compositionDescription")}
       >
         <CompactTable
           columns={[
-            "상태 그룹",
-            { label: "포함 상태", wrap: true },
-            { label: "수량", align: "right" },
-            { label: "비율", align: "right" },
+            t("asOf.group"),
+            { label: t("asOf.included"), wrap: true },
+            { label: t("asOf.quantity"), align: "right" },
+            { label: t("asOf.ratio"), align: "right" },
           ]}
           gridTemplateColumns="minmax(180px,0.8fr) minmax(360px,2fr) minmax(100px,0.5fr) minmax(90px,0.45fr)"
           minWidth={780}
           rows={data.asOf.groups.map((item) => [
-            inventoryStatusGroupLabel(item.key),
-            item.statuses.map((status) => status.label).join(", "),
-            formatInventoryQuantity(item.quantity),
-            quantityPercent(item.quantity, data.asOf.totalQuantity),
+            statusLabel(item.key),
+            item.statuses
+              .map((status) => deviceStatusLabel(status.status, detailT))
+              .join(", "),
+            formatQuantity(item.quantity),
+            quantityPercent(item.quantity, data.asOf.totalQuantity, t("unavailable.confirm")),
           ])}
         />
       </Section>
@@ -164,8 +175,15 @@ function AsOfInventorySection({ data }: { data: InventoryStatisticsData }) {
 }
 
 function InventoryAgingSection({ data }: { data: InventoryStatisticsData }) {
+  const t = useTranslations("statistics.inventory");
+  const {
+    ageLabel,
+    formatPurchaseCost,
+    formatQuantity,
+    integrityMessage,
+  } = useInventoryStatisticsPresentation();
   const { aging } = data;
-  const message = inventoryIntegrityMessage(
+  const message = integrityMessage(
     aging.integrity.availability,
     "aging"
   );
@@ -175,8 +193,8 @@ function InventoryAgingSection({ data }: { data: InventoryStatisticsData }) {
 
   return (
     <Section
-      title="재고 연령과 장기 재고 부담"
-      description={`${data.asOf.date} 마감 시점의 창고 보유 주기를 기준으로 하며 주문 배정 재고는 장기 재고에서 제외합니다.`}
+      title={t("aging.title")}
+      description={t("aging.description", { date: data.asOf.date })}
     >
       {message ? (
         <FeedbackBanner
@@ -188,20 +206,20 @@ function InventoryAgingSection({ data }: { data: InventoryStatisticsData }) {
       ) : null}
 
       {!canShow ? (
-        <EmptyDataState message="원장 보유 주기를 확인한 뒤 재고 연령을 표시합니다." />
+        <EmptyDataState message={t("aging.pending")} />
       ) : (
         <div className="grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {aging.buckets.map((bucket) => {
-              const purchaseCost = formatInventoryPurchaseCost(
+              const purchaseCost = formatPurchaseCost(
                 bucket.purchaseCost
               );
 
               return (
                 <StatisticsCoverageItem
                   key={bucket.key}
-                  label={inventoryAgeBucketLabel(bucket.key)}
-                  value={formatInventoryQuantity(bucket.quantity)}
+                  label={ageLabel(bucket.key)}
+                  value={formatQuantity(bucket.quantity)}
                   description={`${purchaseCost.value} · ${purchaseCost.detail}`}
                 />
               );
@@ -210,21 +228,21 @@ function InventoryAgingSection({ data }: { data: InventoryStatisticsData }) {
 
           <CompactTable
             columns={[
-              { label: "SKU / 상품", wrap: true },
-              "등급",
-              { label: "기준일 대상", align: "right" },
-              { label: "장기 재고", align: "right" },
-              { label: "0~29일", align: "right" },
-              { label: "30~59일", align: "right" },
-              { label: "60~89일", align: "right" },
-              { label: "90일 이상", align: "right" },
-              { label: "확인 매입원가", align: "right" },
-              { label: "가격 미확인", align: "right" },
+              { label: t("aging.sku"), wrap: true },
+              t("aging.grade"),
+              { label: t("aging.target"), align: "right" },
+              { label: t("aging.longTerm"), align: "right" },
+              { label: t("age.days0_29"), align: "right" },
+              { label: t("age.days30_59"), align: "right" },
+              { label: t("age.days60_89"), align: "right" },
+              { label: t("age.days90Plus"), align: "right" },
+              { label: t("aging.cost"), align: "right" },
+              { label: t("aging.missingPrice"), align: "right" },
             ]}
             gridTemplateColumns="minmax(260px,1.7fr) minmax(70px,0.4fr) repeat(6,minmax(92px,0.55fr)) minmax(140px,0.8fr) minmax(110px,0.6fr)"
             minWidth={1280}
             maxHeight={440}
-            emptyMessage="기준일에 장기 재고 대상 SKU가 없습니다."
+            emptyMessage={t("aging.empty")}
             rows={aging.skuRows.map((row) => {
               const bucketQuantity = (key: typeof row.ageBuckets[number]["key"]) =>
                 row.ageBuckets.find((bucket) => bucket.key === key)?.quantity ??
@@ -238,14 +256,14 @@ function InventoryAgingSection({ data }: { data: InventoryStatisticsData }) {
                   </div>
                 </div>,
                 row.saleGrade || "-",
-                formatInventoryQuantity(row.quantity),
-                formatInventoryQuantity(row.longTermQuantity),
-                formatInventoryQuantity(bucketQuantity("DAYS_0_29")),
-                formatInventoryQuantity(bucketQuantity("DAYS_30_59")),
-                formatInventoryQuantity(bucketQuantity("DAYS_60_89")),
-                formatInventoryQuantity(bucketQuantity("DAYS_90_PLUS")),
-                formatInventoryPurchaseCost(row.purchaseCost).value,
-                formatInventoryQuantity(row.purchaseCost.missingPriceQuantity),
+                formatQuantity(row.quantity),
+                formatQuantity(row.longTermQuantity),
+                formatQuantity(bucketQuantity("DAYS_0_29")),
+                formatQuantity(bucketQuantity("DAYS_30_59")),
+                formatQuantity(bucketQuantity("DAYS_60_89")),
+                formatQuantity(bucketQuantity("DAYS_90_PLUS")),
+                formatPurchaseCost(row.purchaseCost).value,
+                formatQuantity(row.purchaseCost.missingPriceQuantity),
               ];
             })}
           />
@@ -256,13 +274,22 @@ function InventoryAgingSection({ data }: { data: InventoryStatisticsData }) {
 }
 
 function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
+  const t = useTranslations("statistics.inventory");
+  const {
+    buildTransitionMatrix,
+    formatNumber,
+    formatQuantity,
+    formatTurnover,
+    integrityMessage,
+    periodLabel,
+  } = useInventoryStatisticsPresentation();
   const { period } = data;
-  const message = inventoryIntegrityMessage(
+  const message = integrityMessage(
     period.integrity.availability,
     "period"
   );
-  const turnover = formatInventoryTurnover(period.summary.turnover);
-  const transitionMatrix = buildInventoryTransitionMatrix(period.transitions);
+  const turnover = formatTurnover(period.summary.turnover);
+  const transitionMatrix = buildTransitionMatrix(period.transitions);
   const dateLabels = period.daily.map((point) => point.date.slice(5));
 
   return (
@@ -279,84 +306,84 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryTile
           icon={TrendingUp}
-          label="판매 회전율"
+          label={t("flow.turnover")}
           value={turnover.value}
           description={turnover.detail}
           tone="success"
         />
         <SummaryTile
           icon={ShoppingCart}
-          label="판매 완료"
-          value={formatInventoryQuantity(
+          label={t("flow.sold")}
+          value={formatQuantity(
             period.summary.salesCompletedQuantity
           )}
-          description={inventoryPeriodLabel(period.preset)}
+          description={periodLabel(period.preset)}
           tone="sky"
         />
         <SummaryTile
           icon={Warehouse}
-          label="일평균 창고 재고"
-          value={formatInventoryQuantity(
+          label={t("flow.averageInventory")}
+          value={formatQuantity(
             period.summary.averageWarehouseQuantity
           )}
-          description="KST 날짜별 마감 수량 평균"
+          description={t("flow.averageDescription")}
           tone="purple"
         />
         <SummaryTile
           icon={ArrowDownToLine}
-          label="신규 재고 유입"
-          value={formatInventoryQuantity(
+          label={t("flow.newInventory")}
+          value={formatQuantity(
             period.summary.newInventoryQuantity
           )}
-          description="최초 재고 생성"
+          description={t("flow.newDescription")}
         />
         <SummaryTile
           icon={RotateCcw}
-          label="고객 반품 재입고"
-          value={formatInventoryQuantity(
+          label={t("flow.customerReturn")}
+          value={formatQuantity(
             period.summary.customerReturnReentryQuantity
           )}
-          description="판매 후 창고 재진입"
+          description={t("flow.customerReturnDescription")}
           tone="warning"
         />
         <SummaryTile
           icon={ArrowDownToLine}
-          label="기타 재입고"
-          value={formatInventoryQuantity(
+          label={t("flow.otherReturn")}
+          value={formatQuantity(
             period.summary.otherWarehouseReentryQuantity
           )}
-          description="고객 반품 외 재진입"
+          description={t("flow.otherReturnDescription")}
           tone="sky"
         />
         <SummaryTile
           icon={ArrowUpFromLine}
-          label="창고 이탈"
-          value={formatInventoryQuantity(
+          label={t("flow.exit")}
+          value={formatQuantity(
             period.summary.warehouseExitQuantity
           )}
-          description="배송·클레임 등 창고 외 이동"
+          description={t("flow.exitDescription")}
           tone="purple"
         />
         <SummaryTile
           icon={Trash2}
-          label="재고 삭제"
-          value={formatInventoryQuantity(period.summary.removedQuantity)}
-          description="원장에서 제거된 수량"
+          label={t("flow.removed")}
+          value={formatQuantity(period.summary.removedQuantity)}
+          description={t("flow.removedDescription")}
           tone="warning"
         />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <MultiLineTrendChart
-          title="일별 창고 재고와 판매"
-          description="모든 날짜의 흐름은 유지하고 축 표시는 읽기 좋은 간격으로 줄입니다."
+          title={t("flow.closingChart")}
+          description={t("flow.closingChartDescription")}
           maxAxisLabels={8}
           showPointMarkers={period.daily.length <= 60}
-          valueFormatter={(value) => `${formatInventoryNumber(value)}대`}
+          valueFormatter={(value) => formatQuantity(value)}
           series={[
             {
               key: "closing",
-              label: "창고 마감 재고",
+              label: t("flow.closing"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.closingWarehouseQuantity,
@@ -364,7 +391,7 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
             },
             {
               key: "sales",
-              label: "판매 완료",
+              label: t("flow.sold"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.salesCompletedQuantity,
@@ -373,15 +400,15 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
           ]}
         />
         <MultiLineTrendChart
-          title="일별 재고 유입·이탈"
-          description="신규 유입, 재입고와 창고 이탈·삭제를 같은 기간에서 비교합니다."
+          title={t("flow.movementChart")}
+          description={t("flow.movementChartDescription")}
           maxAxisLabels={8}
           showPointMarkers={period.daily.length <= 60}
-          valueFormatter={(value) => `${formatInventoryNumber(value)}대`}
+          valueFormatter={(value) => formatQuantity(value)}
           series={[
             {
               key: "new",
-              label: "신규 유입",
+              label: t("flow.new"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.newInventoryQuantity,
@@ -389,7 +416,7 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
             },
             {
               key: "customer-return",
-              label: "고객 반품 재입고",
+              label: t("flow.customerReturn"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.customerReturnReentryQuantity,
@@ -397,7 +424,7 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
             },
             {
               key: "other-return",
-              label: "기타 재입고",
+              label: t("flow.otherReturn"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.otherWarehouseReentryQuantity,
@@ -405,7 +432,7 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
             },
             {
               key: "exit",
-              label: "창고 이탈",
+              label: t("flow.exit"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.warehouseExitQuantity,
@@ -413,7 +440,7 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
             },
             {
               key: "removed",
-              label: "재고 삭제",
+              label: t("flow.removed"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.removedQuantity,
@@ -421,7 +448,7 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
             },
             {
               key: "sales",
-              label: "판매 완료",
+              label: t("flow.sold"),
               points: period.daily.map((point, index) => ({
                 label: dateLabels[index],
                 value: point.salesCompletedQuantity,
@@ -433,8 +460,8 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
 
       <div className="grid gap-4 2xl:grid-cols-2">
         <Section
-          title="재고 상태 이동"
-          description="선택 기간에 발생한 상태 그룹 간 이동을 작업 단위로 집계합니다."
+          title={t("flow.transition")}
+          description={t("flow.transitionDescription")}
         >
           <CompactTable
             columns={transitionMatrix.columns.map((label, index) => ({
@@ -444,30 +471,30 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
             }))}
             minWidth={Math.max(760, transitionMatrix.columns.length * 125)}
             maxHeight={420}
-            emptyMessage="선택 기간에 재고 상태 이동이 없습니다."
+            emptyMessage={t("flow.noTransition")}
             rows={transitionMatrix.rows.map((row) =>
               row.map((value, index) =>
-                index === 0 ? value : formatInventoryNumber(Number(value))
+                index === 0 ? value : formatNumber(Number(value))
               )
             )}
           />
         </Section>
 
         <Section
-          title="SKU별 판매 회전율"
-          description="판매 완료 수량과 일평균 창고 재고를 같은 SKU 기준으로 비교합니다."
+          title={t("flow.skuTurnover")}
+          description={t("flow.skuTurnoverDescription")}
         >
           <CompactTable
             columns={[
-              { label: "SKU / 상품", wrap: true },
-              { label: "평균 재고", align: "right" },
-              { label: "판매 완료", align: "right" },
-              { label: "회전율", align: "right" },
+              { label: t("flow.sku"), wrap: true },
+              { label: t("flow.average"), align: "right" },
+              { label: t("flow.sold"), align: "right" },
+              { label: t("flow.turnover"), align: "right" },
             ]}
             gridTemplateColumns="minmax(300px,1.8fr) repeat(3,minmax(110px,0.65fr))"
             minWidth={720}
             maxHeight={420}
-            emptyMessage="선택 기간에 SKU별 회전율을 표시할 데이터가 없습니다."
+            emptyMessage={t("flow.emptySku")}
             rows={period.skuRows.map((row) => [
               <div key={row.skuCode}>
                 <div className="font-medium">{row.skuCode}</div>
@@ -475,9 +502,9 @@ function InventoryPeriodSection({ data }: { data: InventoryStatisticsData }) {
                   {inventorySkuLabel(row)}
                 </div>
               </div>,
-              formatInventoryQuantity(row.averageWarehouseQuantity),
-              formatInventoryQuantity(row.salesCompletedQuantity),
-              formatInventoryTurnover(row.turnover).value,
+              formatQuantity(row.averageWarehouseQuantity),
+              formatQuantity(row.salesCompletedQuantity),
+              formatTurnover(row.turnover).value,
             ])}
           />
         </Section>
@@ -491,46 +518,36 @@ function InventoryStatisticsScope({
 }: {
   data: InventoryStatisticsData;
 }) {
+  const t = useTranslations("statistics.inventory");
+  const { formatQuantity } = useInventoryStatisticsPresentation();
   return (
     <Section
-      title="집계 기준과 복원 범위"
-      description="조회 기간과 마감 기준, 기준일 재고를 복원할 때 제외하거나 확인하지 못한 근거를 함께 표시합니다."
+      title={t("scope.title")}
+      description={t("scope.description")}
     >
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <StatisticsCalculationScope calculation={data.calculation} />
         <StatisticsCoverageItem
-          label="기준일 재고"
-          value={formatInventoryQuantity(data.asOf.totalQuantity)}
-          description={`재고 ${formatInventoryNumber(
-            data.source.inventoryRowCount
-          )}건 · 원장 ${formatInventoryNumber(
-            data.source.balanceQuantity
-          )}대`}
+          label={t("scope.asOf")}
+          value={formatQuantity(data.asOf.totalQuantity)}
+          description={t("scope.asOfDescription", { inventory: data.source.inventoryRowCount, ledger: data.source.balanceQuantity })}
         />
         <StatisticsCoverageItem
-          label="마감 이후 제외"
-          value={`${formatInventoryNumber(
-            data.source.cutoffExcludedMovementCount
-          )}행`}
-          description={`판매 ${formatInventoryNumber(
-            data.source.cutoffExcludedSaleRecordCount
-          )}건 제외`}
+          label={t("scope.cutoff")}
+          value={t("scope.cutoffValue", { count: data.source.cutoffExcludedMovementCount })}
+          description={t("scope.cutoffDescription", { count: data.source.cutoffExcludedSaleRecordCount })}
         />
         <StatisticsCoverageItem
-          label="기준일 가격 근거"
+          label={t("scope.price")}
           value={
             data.source.asOfPriceExcludedCount === 0
-              ? "제외 없음"
-              : `${formatInventoryNumber(
-                  data.source.asOfPriceExcludedCount
-                )}건 제외`
+              ? t("scope.noneExcluded")
+              : t("scope.excluded", { count: data.source.asOfPriceExcludedCount })
           }
           description={
             data.source.asOfReconstructionIssueCount === 0
-              ? "재고 복원 검증 완료"
-              : `복원 확인 필요 ${formatInventoryNumber(
-                  data.source.asOfReconstructionIssueCount
-                )}건`
+              ? t("scope.reconstructionComplete")
+              : t("scope.reconstructionNeeded", { count: data.source.asOfReconstructionIssueCount })
           }
         />
       </div>
@@ -543,6 +560,8 @@ export function InventoryStatisticsPanel({
 }: {
   periodSelection: StatisticsPeriodSelection;
 }) {
+  const t = useTranslations("statistics.inventory");
+  const { formatPeriodRange, periodLabel } = useInventoryStatisticsPresentation();
   const requestKey =
     buildStatisticsPeriodRequestQuery(periodSelection);
   const [requestState, setRequestState] = React.useState<{
@@ -587,7 +606,7 @@ export function InventoryStatisticsPanel({
 
           if (!response.ok || !payload?.ok || !payload.data) {
             throw new Error(
-              payload?.message || "재고 통계를 불러오지 못했습니다."
+              legacyApiMessage(payload, t("loading.error"))
             );
           }
 
@@ -630,7 +649,7 @@ export function InventoryStatisticsPanel({
       window.clearTimeout(timerId);
       controller.abort();
     };
-  }, [requestKey, retryRevision]);
+  }, [requestKey, retryRevision, t]);
 
   const visibleData =
     requestState.requestKey === requestKey ? requestState.data : null;
@@ -645,9 +664,9 @@ export function InventoryStatisticsPanel({
     return (
       <div aria-busy="true" className="grid gap-3">
         <FeedbackBanner tone="info" size="xs">
-          재고 원장과 판매 원장을 집계하고 있습니다.
+          {t("loading.aggregating")}
         </FeedbackBanner>
-        <EmptyDataState message="재고 통계를 불러오는 중입니다." />
+        <EmptyDataState message={t("loading.initial")} />
       </div>
     );
   }
@@ -658,7 +677,7 @@ export function InventoryStatisticsPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-semibold">
-              재고 통계를 불러오지 못했습니다.
+              {t("loading.error")}
             </div>
             <div className="mt-1 text-xs">{errorMessage}</div>
           </div>
@@ -668,7 +687,7 @@ export function InventoryStatisticsPanel({
             onClick={() => setRetryRevision((value) => value + 1)}
           >
             <RefreshCw />
-            다시 시도
+            {t("loading.retry")}
           </Button>
         </div>
       </FeedbackBanner>
@@ -686,8 +705,7 @@ export function InventoryStatisticsPanel({
     >
       {isLoading ? (
         <FeedbackBanner tone="info" size="xs">
-          같은 조건으로 통계를 다시 확인하고 있습니다. 현재 결과는 계속
-          표시합니다.
+          {t("loading.refresh")}
         </FeedbackBanner>
       ) : null}
       {errorMessage ? (
@@ -700,7 +718,7 @@ export function InventoryStatisticsPanel({
               onClick={() => setRetryRevision((value) => value + 1)}
             >
               <RefreshCw />
-              다시 시도
+              {t("loading.retry")}
             </Button>
           </div>
         </FeedbackBanner>
@@ -710,8 +728,8 @@ export function InventoryStatisticsPanel({
       <AsOfInventorySection data={visibleData} />
       <InventoryAgingSection data={visibleData} />
       <Section
-        title={`${inventoryPeriodLabel(visibleData.period.preset)} 재고 흐름과 판매 회전율`}
-        description={formatInventoryPeriodRange(
+        title={t("period.sectionTitle", { period: periodLabel(visibleData.period.preset) })}
+        description={formatPeriodRange(
           visibleData.period.fromDate,
           visibleData.period.toDate,
           visibleData.period.dayCount

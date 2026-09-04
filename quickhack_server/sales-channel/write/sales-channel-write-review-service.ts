@@ -87,7 +87,7 @@ async function loadUnknownTargetGroups(
   if (!request) {
     throw publicConflict(
       "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND",
-      "판매 채널 쓰기 요청을 찾을 수 없습니다."
+      "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND"
     );
   }
 
@@ -106,13 +106,13 @@ async function loadUnknownTargetGroups(
   ) {
     throw publicConflict(
       "SALES_CHANNEL_TARGET_GROUP_STATE_CONFLICT",
-      "같은 외부 업무 대상 그룹의 처리 결과가 서로 다릅니다. 자동 판단하지 않고 관리자 확인이 필요합니다."
+      "SALES_CHANNEL_TARGET_GROUP_STATE_CONFLICT"
     );
   }
   if (unknownGroups.length === 0) {
     throw publicConflict(
       "SALES_CHANNEL_TARGET_GROUP_ALREADY_RESOLVED",
-      "확인할 미확정 판매 채널 대상 그룹이 없습니다."
+      "SALES_CHANNEL_TARGET_GROUP_ALREADY_RESOLVED"
     );
   }
 
@@ -137,7 +137,7 @@ async function loadUnknownTargetGroup(
   if (!request) {
     throw publicConflict(
       "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND",
-      "판매 채널 쓰기 요청을 찾을 수 없습니다."
+      "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND"
     );
   }
   const group = findSalesChannelWriteTargetGroup({
@@ -152,7 +152,7 @@ async function loadUnknownTargetGroup(
   ) {
     throw publicConflict(
       "SALES_CHANNEL_TARGET_GROUP_STATE_CONFLICT",
-      "선택한 판매 채널 대상 그룹의 결과가 이미 변경되었습니다. 화면을 새로고침하세요."
+      "SALES_CHANNEL_TARGET_GROUP_STATE_CONFLICT"
     );
   }
   return group;
@@ -164,7 +164,7 @@ function requiredNote(value: unknown) {
   if (!note) {
     throw publicBadRequest(
       "SALES_CHANNEL_REVIEW_NOTE_REQUIRED",
-      "직접 확인 결과와 근거를 입력하세요."
+      "SALES_CHANNEL_REVIEW_NOTE_REQUIRED"
     );
   }
 
@@ -667,7 +667,6 @@ export async function recheckSalesChannelWriteRequest(
     },
     stateConflict: {
       code: "SALES_CHANNEL_RECHECK_STATE_CONFLICT",
-      message: "확인이 필요한 요청만 상태를 재조회할 수 있습니다.",
     },
   });
   let observation: CoupangWriteVerificationObservation;
@@ -871,7 +870,11 @@ export async function recheckSalesChannelWriteRequest(
     });
   }
 
-  return { confirmed: result.confirmedCount > 0, message: result.message };
+  return {
+    confirmed: result.confirmedCount > 0,
+    messageCode: result.code,
+    messageArguments: result.messageArguments,
+  };
 }
 
 async function recoverCommittedManualDecisionSettlement(input: {
@@ -990,8 +993,6 @@ async function settleOwnedManualWriteDecision(input: {
             },
             stateConflict: {
               code: "SALES_CHANNEL_WRITE_REQUEST_STATE_CONFLICT",
-              message:
-                "확인 필요 또는 내부 확정 필요 상태만 확정할 수 있습니다.",
             },
           }
         );
@@ -1186,7 +1187,7 @@ export async function recordManualWriteDecision(input: {
     ) {
       throw publicConflict(
         "SALES_CHANNEL_REVIEW_STATE_CONFLICT",
-        "확인이 필요한 요청만 직접 판정할 수 있습니다."
+        "SALES_CHANNEL_REVIEW_STATE_CONFLICT"
       );
     }
 
@@ -1196,7 +1197,7 @@ export async function recordManualWriteDecision(input: {
     ) {
       throw publicConflict(
         "SALES_CHANNEL_LOCAL_FINALIZATION_REQUIRED",
-        "채널 반영이 확인된 요청입니다. QuickHack 내부 확정 재시도만 사용할 수 있습니다."
+        "SALES_CHANNEL_LOCAL_FINALIZATION_REQUIRED"
       );
     }
 
@@ -1225,7 +1226,7 @@ export async function recordManualWriteDecision(input: {
     if (updated.count !== 1) {
       throw publicConflict(
         "SALES_CHANNEL_WRITE_REVIEW_IN_PROGRESS",
-        "같은 외부 API 요청의 상태 점검 또는 내부 확정 작업이 이미 진행 중입니다. 완료 후 다시 시도하세요."
+        "SALES_CHANNEL_WRITE_REVIEW_IN_PROGRESS"
       );
     }
 
@@ -1265,7 +1266,6 @@ export async function retrySalesChannelLocalFinalization(input: {
     },
     stateConflict: {
       code: "SALES_CHANNEL_LOCAL_RETRY_STATE_CONFLICT",
-      message: "QuickHack 내부 확정 실패 건만 다시 확정할 수 있습니다.",
     },
   });
 
@@ -1289,7 +1289,6 @@ export async function recoverSalesChannelLocalFinalization(input: {
     },
     stateConflict: {
       code: "SALES_CHANNEL_LOCAL_RECOVERY_STATE_CONFLICT",
-      message: "QuickHack 내부 확정 상태가 이미 변경되었습니다.",
     },
   });
 

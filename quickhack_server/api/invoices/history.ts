@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
   const user = await getAuthUserFromRequest(request);
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
   if (!canAccessRole(user.role, "MANAGER")) {
     return NextResponse.json(
-      { ok: false, message: "송장 발급 이력 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }

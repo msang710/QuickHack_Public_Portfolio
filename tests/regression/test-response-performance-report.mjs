@@ -3,7 +3,7 @@ import {
   buildResponsePerformanceTraceDetail,
   responsePerformanceDurationStats,
 } from "@/quickhack_server/observability/response-performance-service";
-import { responsePerformanceOperationLabel } from "@/quickhack_shared/observability/response-performance";
+import { RESPONSE_PERFORMANCE_OPERATION_NAMES } from "@/quickhack_shared/observability/response-performance";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -60,27 +60,17 @@ const durationStats = responsePerformanceDurationStats([1_000, 100, 300, 200]);
 assert(durationStats.averageMs === 400, "Average duration must be calculated.");
 assert(durationStats.p50Ms === 200, "P50 must use nearest-rank calculation.");
 assert(durationStats.p95Ms === 1_000, "P95 must use nearest-rank calculation.");
-assert(
-  responsePerformanceOperationLabel("statistics.sales.read") === "매출 통계 조회",
-  "Expanded read operations must have a user-facing label."
-);
-assert(
-  responsePerformanceOperationLabel("sales-channel.sync-check.read") ===
-    "판매 채널 동기화 점검 조회",
-  "Sync-check reads must have a user-facing label."
-);
-assert(
-  responsePerformanceOperationLabel(
-    "sales-channel.sync-check.recheck-inventory"
-  ) === "판매 채널 재고 다시 점검",
-  "Inventory rechecks must have a user-facing label."
-);
-assert(
-  responsePerformanceOperationLabel(
-    "sales-channel.sync-check.repair-inventory"
-  ) === "판매 채널 재고수량 복구",
-  "Inventory repairs must have a user-facing label."
-);
+for (const operationName of [
+  "statistics.sales.read",
+  "sales-channel.sync-check.read",
+  "sales-channel.sync-check.recheck-inventory",
+  "sales-channel.sync-check.repair-inventory",
+]) {
+  assert(
+    RESPONSE_PERFORMANCE_OPERATION_NAMES.includes(operationName),
+    `${operationName} must be registered for client-side presentation.`
+  );
+}
 
 const rows = [
   trace({ id: 1, durationMs: 100 }),

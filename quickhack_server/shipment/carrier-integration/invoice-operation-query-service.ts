@@ -85,7 +85,7 @@ function positiveId(value: unknown, label: string) {
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw publicBadRequest(
       "INVALID_INVOICE_OPERATION_ID",
-      `${label}이 올바르지 않습니다.`
+      "INVALID_INVOICE_OPERATION_ID"
     );
   }
   return parsed;
@@ -353,7 +353,7 @@ export async function getCarrierInvoiceHistoryDetail(input: {
   if (!target) {
     throw publicNotFound(
       "INVOICE_HISTORY_NOT_FOUND",
-      "송장 이력을 찾지 못했습니다."
+      "INVOICE_HISTORY_NOT_FOUND"
     );
   }
   const rows = await prisma.carrier_shipments.findMany({
@@ -630,19 +630,16 @@ export async function listCarrierInvoiceManualCandidates(input: {
         replacementStatus: replacement?.work_status ?? null,
         replacementStage: replacement?.current_stage ?? null,
         nextAction: replacement
-          ? {
-              code: "OPEN_REPLACEMENT",
-              label: "재발급 진행 상태 확인",
-            }
-          : retryable
             ? {
-                code: "RETRY_ALLOCATION",
-                label: "송장 채번 다시 시도",
+                code: "OPEN_REPLACEMENT",
               }
-            : {
-                code: "REVIEW_ALLOCATION",
-                label: "채번 결과 직접 확인",
-              },
+          : retryable
+              ? {
+                  code: "RETRY_ALLOCATION",
+                }
+              : {
+                  code: "REVIEW_ALLOCATION",
+                },
         items: batch.items.map((item) => ({
           issueItemId: item.carrier_invoice_issue_item_id,
           packageGroupId: item.package_group_id,

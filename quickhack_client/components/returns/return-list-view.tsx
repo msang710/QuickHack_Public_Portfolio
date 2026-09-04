@@ -1,12 +1,15 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import { CheckCircle2, RefreshCcw, ShieldAlert } from "lucide-react";
 import {
   useGuardedDialogClose,
   useUnsavedForm,
 } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
-import { statusMap } from "@/quickhack_client/components/shared/device-detail-sheet";
+import { statusLabel, statusMap } from "@/quickhack_client/components/shared/device-detail-sheet";
+import { allocationStatusLabel } from "@/quickhack_client/components/sales-channel/allocation-status-presentation";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { DialogFrame } from "@/quickhack_client/components/ui/dialog-frame";
@@ -23,7 +26,6 @@ import {
   type ReturnActionDraftSnapshot,
   type ReturnInspectionDraft,
 } from "@/quickhack_client/components/returns/return-action-draft-state";
-import { inventoryStatusLabel } from "@/quickhack_shared/inventory/inventory-status";
 
 type ReturnListPhase = "before" | "after";
 
@@ -47,7 +49,6 @@ type ReturnListRow = {
   itemRequirements?: ReturnItemRequirement[];
   allocationCandidates?: ReturnAllocationCandidate[];
   nextReturnAction?: "stopShipment" | "receiveConfirm" | "approve" | null;
-  nextReturnActionLabel?: string | null;
   reason1?: string | null;
   reason2?: string | null;
   reason3?: string | null;
@@ -109,7 +110,10 @@ type ReturnListSummary = {
 
 type ReturnListApiResponse = {
   ok: boolean;
+  code?: string;
   message?: string;
+  details?: { expectedAction?: "stopShipment" | "receiveConfirm" | "approve" };
+  messageCode?: "RETURN_WRITE_REVIEW_REQUIRED";
   completed?: boolean;
   reviewRequired?: boolean;
   writeRequestId?: number | null;
@@ -138,40 +142,12 @@ type ReturnColumnKey =
   | "reason2"
   | "reason3";
 
-const phaseConfig = {
-  before: {
-    title: "출고 전 반품목록",
-    empty: "출고 전 기준에 해당하는 쿠팡 반품 접수 데이터가 없습니다.",
-    loading: "출고 전 반품목록을 불러오는 중입니다.",
-  },
-  after: {
-    title: "출고 후 반품목록",
-    empty: "출고 후 기준에 해당하는 쿠팡 반품 접수 데이터가 없습니다.",
-    loading: "출고 후 반품목록을 불러오는 중입니다.",
-  },
-} satisfies Record<
-  ReturnListPhase,
-  { title: string; empty: string; loading: string }
->;
-
-const receiptStatusLabels: Record<string, string> = {
-  RU: "출고중지 요청",
-  UC: "반품접수",
-  CC: "반품완료",
-  PR: "쿠팡 확인 요청",
-  RELEASE_STOP_UNCHECKED: "출고중지 요청",
-  RETURNS_UNCHECKED: "반품접수",
-  VENDOR_WAREHOUSE_CONFIRM: "입고 확인",
-  REQUEST_COUPANG_CHECK: "쿠팡 확인 요청",
-  RETURNS_COMPLETED: "반품완료",
-};
-
 const returnInspectionResultOptions = [
-  { value: "PASSED", label: "재판매 가능" },
-  { value: "FAILED", label: "불량" },
-  { value: "HOLD", label: "보류" },
-  { value: "RETURN_TO_SUPPLIER", label: "매입처 반품" },
-  { value: "DISPOSAL", label: "폐기" },
+  { value: "PASSED" },
+  { value: "FAILED" },
+  { value: "HOLD" },
+  { value: "RETURN_TO_SUPPLIER" },
+  { value: "DISPOSAL" },
 ] as const;
 
 function defaultReturnInspectionDraft(
@@ -207,14 +183,6 @@ function formatDateTime(value: string | null | undefined) {
   }
 
   return text.replace("T", " ").slice(0, 19);
-}
-
-function mappedLabel(
-  labels: Record<string, string>,
-  value: string | null | undefined
-) {
-  const key = String(value ?? "").trim();
-  return key ? labels[key] ?? key : "-";
 }
 
 function statusVariant(value: string | null | undefined) {
@@ -267,10 +235,13 @@ function receiverText(row: ReturnListRow) {
   return [name, phone].filter(Boolean).join(" / ");
 }
 
-function deviceSummary(candidate: ReturnAllocationCandidate) {
+function deviceSummary(
+  candidate: ReturnAllocationCandidate,
+  modelSequence: (value: number) => string
+) {
   return [
     candidate.model,
-    candidate.modelSeq ? `${candidate.modelSeq}번` : "",
+    candidate.modelSeq ? modelSequence(candidate.modelSeq) : "",
     candidate.storage,
     candidate.color,
   ]
@@ -307,11 +278,12 @@ function SummaryPill({
   label: string;
   value: number | null | undefined;
 }) {
+  const locale = useLocale();
   return (
     <span className="inline-flex h-7 items-center gap-1 rounded-md border bg-background px-2 text-xs text-muted-foreground">
       {label}
       <strong className="font-semibold text-foreground">
-        {numberOrZero(value).toLocaleString("ko-KR")}
+        {numberOrZero(value).toLocaleString(locale)}
       </strong>
     </span>
   );
@@ -340,6 +312,7 @@ function InventoryStatusBadgeList({
 }: {
   value: string | null | undefined;
 }) {
+  const detailT = useTranslations("common.deviceDetail");
   const statuses = splitLines(value);
 
   if (statuses.length === 0) {
@@ -350,7 +323,7 @@ function InventoryStatusBadgeList({
     <div className="flex min-w-0 flex-col items-start gap-1 leading-4">
       {statuses.map((status, index) => {
         const mapped = statusMap[status];
-        const label = mapped?.label ?? inventoryStatusLabel(status);
+        const label = statusLabel(status, detailT);
 
         return (
           <Badge
@@ -373,6 +346,40 @@ export function ReturnListView({
   phase: ReturnListPhase;
   onOpenWriteReview?: (requestId: number) => void;
 }) {
+  const t = useTranslations("returns");
+  const detailT = useTranslations("common.deviceDetail");
+  const manualMatchT = useTranslations("salesChannel.manualMatch");
+  const locale = useLocale();
+
+  const phaseTitle = phase === "before" ? t("phase.before.title") : t("phase.after.title");
+  const phaseEmpty = phase === "before" ? t("phase.before.empty") : t("phase.after.empty");
+  const phaseLoading = phase === "before" ? t("phase.before.loading") : t("phase.after.loading");
+
+  const returnActionLabel = React.useCallback((value: ReturnListRow["nextReturnAction"]) => {
+    if (value === "stopShipment") return t("actions.stopShipment");
+    if (value === "receiveConfirm") return t("actions.receiveConfirm");
+    if (value === "approve") return t("actions.approve");
+    return "";
+  }, [t]);
+
+  const receiptStatusLabel = React.useCallback((value: string | null | undefined) => {
+    const key = String(value ?? "").trim();
+    if (["RU", "RELEASE_STOP_UNCHECKED"].includes(key)) return t("receiptStatus.stop");
+    if (["UC", "RETURNS_UNCHECKED"].includes(key)) return t("receiptStatus.receipt");
+    if (["CC", "RETURNS_COMPLETED"].includes(key)) return t("receiptStatus.completed");
+    if (key === "VENDOR_WAREHOUSE_CONFIRM") return t("receiptStatus.confirm");
+    if (["PR", "REQUEST_COUPANG_CHECK"].includes(key)) return t("receiptStatus.requestCheck");
+    return key || "-";
+  }, [t]);
+
+  const inspectionResultLabel = React.useCallback((value: string) => {
+    if (value === "FAILED") return t("inspection.result.failed");
+    if (value === "HOLD") return t("inspection.result.hold");
+    if (value === "RETURN_TO_SUPPLIER") return t("inspection.result.returnToSupplier");
+    if (value === "DISPOSAL") return t("inspection.result.disposal");
+    return t("inspection.result.passed");
+  }, [t]);
+
   const [rows, setRows] = React.useState<ReturnListRow[]>([]);
   const [summary, setSummary] = React.useState<ReturnListSummary>({});
   const [summaryCoverage, setSummaryCoverage] = React.useState<
@@ -439,13 +446,13 @@ export function ReturnListView({
 
   const requestActionModalClose = useGuardedDialogClose({
     formIds: actionDraftFormIds,
-    targetLabel: "반품 처리",
+    targetLabel: t("actionDraft.target"),
     onClose: closeActionModalImmediately,
   });
 
   useUnsavedForm({
     id: actionDraftFormId,
-    label: "반품 처리 입력",
+    label: t("actionDraft.form"),
     enabled: actionModalRow !== null,
     isDirty: actionDraftDirty,
     isBusy: runningActionId !== null,
@@ -473,7 +480,7 @@ export function ReturnListView({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "반품 목록을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.loadFailed")));
       }
 
       setRows((current) =>
@@ -496,7 +503,7 @@ export function ReturnListView({
     } finally {
       setIsLoading(false);
     }
-  }, [phase]);
+  }, [phase, t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -662,15 +669,29 @@ export function ReturnListView({
           }),
         });
         const payload = (await response.json().catch(() => null)) as
-          | (ReturnListApiResponse & { actionLabel?: string })
+          | ReturnListApiResponse
           | null;
 
         if (!response.ok || !payload?.ok) {
-          throw new Error(payload?.message || "반품 처리를 완료하지 못했습니다.");
+          if (
+            payload?.code === "RETURN_ACTION_MISMATCH" &&
+            payload.details?.expectedAction
+          ) {
+            throw new Error(
+              t("message.actionMismatch", {
+                action: t(`actions.${payload.details.expectedAction}`),
+              })
+            );
+          }
+          throw new Error(legacyApiMessage(payload, t("message.actionFailed")));
         }
 
         await loadRows();
-        setMessage(payload.message || "반품 처리가 완료되었습니다.");
+        setMessage(
+          payload.messageCode === "RETURN_WRITE_REVIEW_REQUIRED"
+            ? t("message.reviewRequired")
+            : t("message.actionComplete")
+        );
         setMessageTone(payload.reviewRequired ? "warning" : "info");
         closeActionModalImmediately();
       } catch (error) {
@@ -680,7 +701,7 @@ export function ReturnListView({
         setRunningActionId(null);
       }
     },
-    [closeActionModalImmediately, loadRows]
+    [closeActionModalImmediately, loadRows, t]
   );
 
   const columns = React.useMemo<
@@ -689,10 +710,10 @@ export function ReturnListView({
     () => [
       {
         key: "action",
-        label: "처리",
+        label: t("columns.action"),
         width: "124px",
         cellClassName: "flex min-w-0 items-center px-3",
-        text: (row) => row.nextReturnActionLabel,
+        text: (row) => returnActionLabel(row.nextReturnAction),
         render: (row) => {
           if (row.writeReviewRequired && row.writeRequestId) {
             return (
@@ -703,7 +724,7 @@ export function ReturnListView({
                 className="w-full border-red-300 text-red-800 hover:bg-red-50"
               >
                 <ShieldAlert className="size-4" />
-                API 확인 필요
+                {t("actions.reviewRequired")}
               </Button>
             );
           }
@@ -713,7 +734,7 @@ export function ReturnListView({
             runningActionId !== null ||
             !row.nextReturnAction;
 
-          if (!row.nextReturnActionLabel) {
+          if (!row.nextReturnAction) {
             return <span className="text-xs text-muted-foreground">-</span>;
           }
 
@@ -726,26 +747,26 @@ export function ReturnListView({
               className="w-full"
             >
               <CheckCircle2 className="size-4" />
-              {runningActionId === row.id ? "처리중" : row.nextReturnActionLabel}
+              {runningActionId === row.id ? t("actions.processing") : returnActionLabel(row.nextReturnAction)}
             </Button>
           );
         },
       },
       {
         key: "receiptStatus",
-        label: "접수상태",
+        label: t("columns.receiptStatus"),
         width: "130px",
         cellClassName: "flex min-w-0 items-center px-3",
-        text: (row) => mappedLabel(receiptStatusLabels, row.receiptStatus),
+        text: (row) => receiptStatusLabel(row.receiptStatus),
         render: (row) => (
           <Badge variant={statusVariant(row.receiptStatus)}>
-            {mappedLabel(receiptStatusLabels, row.receiptStatus)}
+            {receiptStatusLabel(row.receiptStatus)}
           </Badge>
         ),
       },
       {
         key: "inventoryStatus",
-        label: "재고상태",
+        label: t("columns.inventoryStatus"),
         width: "130px",
         cellClassName: "flex min-w-0 items-center px-3",
         text: (row) => lineText(row.inventoryStatusText),
@@ -755,7 +776,7 @@ export function ReturnListView({
       },
       {
         key: "shipmentBatch",
-        label: "출고 차수",
+        label: t("columns.shipmentBatch"),
         width: "170px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => lineText(row.shipmentBatchText),
@@ -763,7 +784,7 @@ export function ReturnListView({
       },
       {
         key: "externalOrderId",
-        label: "주문번호",
+        label: t("columns.orderId"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.externalOrderId,
@@ -773,7 +794,7 @@ export function ReturnListView({
       },
       {
         key: "product",
-        label: "상품",
+        label: t("columns.product"),
         width: "minmax(260px, 1.25fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.productText,
@@ -793,7 +814,7 @@ export function ReturnListView({
       },
       {
         key: "receiver",
-        label: "수취인",
+        label: t("columns.receiver"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: receiverText,
@@ -801,7 +822,7 @@ export function ReturnListView({
       },
       {
         key: "receiverAddress",
-        label: "주소",
+        label: t("columns.address"),
         width: "minmax(280px, 1fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverAddress,
@@ -811,7 +832,7 @@ export function ReturnListView({
       },
       {
         key: "orderedAt",
-        label: "주문일시",
+        label: t("columns.orderAt"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.orderedAt,
@@ -821,7 +842,7 @@ export function ReturnListView({
       },
       {
         key: "reason1",
-        label: "사유 1",
+        label: t("columns.reason1"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.reason1,
@@ -829,7 +850,7 @@ export function ReturnListView({
       },
       {
         key: "reason2",
-        label: "사유 2",
+        label: t("columns.reason2"),
         width: "170px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.reason2,
@@ -837,14 +858,14 @@ export function ReturnListView({
       },
       {
         key: "reason3",
-        label: "사유 3",
+        label: t("columns.reason3"),
         width: "180px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.reason3,
         render: (row) => <span className="truncate">{textOrDash(row.reason3)}</span>,
       },
     ],
-    [isLoading, onOpenWriteReview, openActionModal, runningActionId]
+    [isLoading, onOpenWriteReview, openActionModal, receiptStatusLabel, returnActionLabel, runningActionId, t]
   );
 
   const modalCancelCount = numberOrZero(actionModalRow?.cancelCount);
@@ -894,15 +915,15 @@ export function ReturnListView({
     <WorkspacePageFrame className="p-5">
       <div className="mb-3 flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{phaseConfig[phase].title}</h2>
+          <h2 className="text-sm font-semibold">{phaseTitle}</h2>
           <div className="mt-2 flex flex-wrap gap-2">
-            <SummaryPill label="접수" value={summary.returnCount} />
-            <SummaryPill label="연결주문" value={summary.linkedOrderCount} />
-            <SummaryPill label="연결출고" value={summary.linkedShipmentCount} />
-            <SummaryPill label="출고 전" value={summary.beforeShipmentCount} />
-            <SummaryPill label="출고 후" value={summary.afterShipmentCount} />
-            <SummaryPill label="상태확인" value={summary.orderStatusCheckCount} />
-            <SummaryPill label="매칭PG" value={summary.matchedDeviceCount} />
+            <SummaryPill label={t("summary.receipts")} value={summary.returnCount} />
+            <SummaryPill label={t("summary.linkedOrders")} value={summary.linkedOrderCount} />
+            <SummaryPill label={t("summary.linkedShipments")} value={summary.linkedShipmentCount} />
+            <SummaryPill label={t("summary.before")} value={summary.beforeShipmentCount} />
+            <SummaryPill label={t("summary.after")} value={summary.afterShipmentCount} />
+            <SummaryPill label={t("summary.statusCheck")} value={summary.orderStatusCheckCount} />
+            <SummaryPill label={t("summary.matchedPg")} value={summary.matchedDeviceCount} />
           </div>
         </div>
         <Button
@@ -911,7 +932,7 @@ export function ReturnListView({
           disabled={isLoading}
         >
           <RefreshCcw className="size-4" />
-          목록 새로고침
+          {t("actions.refresh")}
         </Button>
       </div>
 
@@ -928,7 +949,7 @@ export function ReturnListView({
         rows={rows}
         columns={columns}
         rowKey={(row) => `${phase}-${row.id}`}
-        emptyMessage={isLoading ? phaseConfig[phase].loading : phaseConfig[phase].empty}
+        emptyMessage={isLoading ? phaseLoading : phaseEmpty}
         minWidth="2084px"
         rowHeight={54}
       />
@@ -940,14 +961,14 @@ export function ReturnListView({
             disabled={isLoading || !nextCursor}
             onClick={() => void loadRows({ cursor: nextCursor, append: true })}
           >
-            {isLoading ? "불러오는 중" : "다음 반품 더 보기"}
+            {isLoading ? t("actions.loading") : t("actions.loadMore")}
           </Button>
         </div>
       ) : null}
 
       {summaryCoverage === "PAGE" ? (
         <p className="mt-2 text-center text-xs text-muted-foreground">
-          접수 건수는 전체 대상 기준이며, 나머지 연결 요약은 현재 불러온 페이지 기준입니다.
+          {t("summary.coverage")}
         </p>
       ) : null}
 
@@ -958,8 +979,8 @@ export function ReturnListView({
             requestActionModalClose();
           }
         }}
-        title="반품 PG 선택"
-        description={`연결 가능한 PG를 선택한 뒤 ${actionModalRow?.nextReturnActionLabel ?? "처리"}합니다.`}
+        title={t("modal.title")}
+        description={t("modal.description", { action: returnActionLabel(actionModalRow?.nextReturnAction) || t("columns.action") })}
         closeDisabled={runningActionId !== null}
         overlayClassName="z-40"
         contentClassName="z-50 max-h-[86vh] w-[min(1040px,calc(100vw-32px))] shadow-lg"
@@ -969,25 +990,25 @@ export function ReturnListView({
               <>
                 <div className="grid shrink-0 gap-2 border-b bg-secondary/35 px-5 py-3 text-xs md:grid-cols-4">
                   <div>
-                    <span className="text-muted-foreground">주문번호</span>
+                    <span className="text-muted-foreground">{t("modal.orderId")}</span>
                     <div className="mt-1 font-mono font-medium">
                       {textOrDash(actionModalRow.externalOrderId)}
                     </div>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">접수번호</span>
+                    <span className="text-muted-foreground">{t("modal.receiptId")}</span>
                     <div className="mt-1 font-mono font-medium">
                       {textOrDash(actionModalRow.externalReceiptId)}
                     </div>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">반품 수량</span>
+                    <span className="text-muted-foreground">{t("modal.cancelCount")}</span>
                     <div className="mt-1 font-medium">
-                      {modalCancelCount.toLocaleString("ko-KR")}대
+                      {t("modal.unit", { count: modalCancelCount })}
                     </div>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">PG 연결</span>
+                    <span className="text-muted-foreground">{t("modal.allocation")}</span>
                     <div
                       className={
                         selectedAllocationIds.length === modalRequiredCount
@@ -995,7 +1016,8 @@ export function ReturnListView({
                           : "mt-1 font-medium text-amber-700"
                       }
                     >
-                      {selectedAllocationIds.length.toLocaleString("ko-KR")} / {modalRequiredCount.toLocaleString("ko-KR")}
+                      {selectedAllocationIds.length.toLocaleString(locale)} /{" "}
+                      {modalRequiredCount.toLocaleString(locale)}
                     </div>
                   </div>
                 </div>
@@ -1013,12 +1035,12 @@ export function ReturnListView({
                             className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-secondary/25 px-3 py-2 text-xs"
                           >
                             <span>
-                              배송 {requirement.externalShipmentId} · 상품 {requirement.externalVendorItemId}
+                              {t("modal.item", { shipmentId: requirement.externalShipmentId, itemId: requirement.externalVendorItemId })}
                               {requirement.vendorItemName ? ` · ${requirement.vendorItemName}` : ""}
                             </span>
                             <span className={selectedCount === requirement.selectableQuantity ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
-                              {selectedCount} / {requirement.selectableQuantity} 선택
-                              {requirement.missingQuantity > 0 ? ` · 연결 부족 ${requirement.missingQuantity}` : ""}
+                              {t("modal.select", { selected: selectedCount, required: requirement.selectableQuantity })}
+                              {requirement.missingQuantity > 0 ? ` · ${t("modal.missing", { count: requirement.missingQuantity })}` : ""}
                             </span>
                           </div>
                         );
@@ -1027,7 +1049,7 @@ export function ReturnListView({
                   ) : null}
                   {modalCandidates.length === 0 ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      이 반품 접수와 연결할 수 있는 매칭 PG가 없습니다. 쿠팡 반품 처리는 PG 연결 없이 진행됩니다.
+                      {t("modal.candidateEmpty")}
                     </div>
                   ) : (
                     <div className="grid gap-2">
@@ -1072,7 +1094,7 @@ export function ReturnListView({
                                 {candidate.pgNo}
                               </div>
                               <div className="truncate text-xs text-muted-foreground">
-                                {inventoryStatusLabel(candidate.inventoryStatus)}
+                                {statusLabel(candidate.inventoryStatus ?? "", detailT)}
                               </div>
                             </div>
                             <div className="min-w-0">
@@ -1085,7 +1107,7 @@ export function ReturnListView({
                             </div>
                             <div className="min-w-0">
                               <div className="truncate font-medium">
-                                {textOrDash(deviceSummary(candidate))}
+                                {textOrDash(deviceSummary(candidate, (value) => t("format.modelSequence", { value })))}
                               </div>
                               <div className="truncate text-xs text-muted-foreground">
                                 {textOrDash(gradeSummary(candidate))} · IMEI {maskedImei(candidate.imei)}
@@ -1096,7 +1118,7 @@ export function ReturnListView({
                                 {textOrDash(candidate.shipmentBatchText)}
                               </div>
                               <div className="truncate text-muted-foreground">
-                                {textOrDash(candidate.allocationStatus)}
+                                {allocationStatusLabel(candidate.allocationStatus, manualMatchT)}
                               </div>
                             </div>
                           </label>
@@ -1108,9 +1130,9 @@ export function ReturnListView({
                   {modalRequiresReturnInspection ? (
                     <div className="mt-4 rounded-md border bg-background">
                       <div className="border-b px-3 py-2">
-                        <div className="text-sm font-semibold">반품검수 입력</div>
+                        <div className="text-sm font-semibold">{t("inspection.title")}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          반품 완료 처리와 함께 선택한 PG별 검수 결과를 기록합니다.
+                          {t("inspection.description")}
                         </div>
                       </div>
                       <div className="grid gap-3 p-3">
@@ -1130,7 +1152,7 @@ export function ReturnListView({
                                     {candidate.pgNo}
                                   </div>
                                   <div className="truncate text-xs text-muted-foreground">
-                                    {textOrDash(deviceSummary(candidate))} / {textOrDash(gradeSummary(candidate))}
+                                    {textOrDash(deviceSummary(candidate, (value) => t("format.modelSequence", { value })))} / {textOrDash(gradeSummary(candidate))}
                                   </div>
                                 </div>
                                 <select
@@ -1147,14 +1169,14 @@ export function ReturnListView({
                                 >
                                   {returnInspectionResultOptions.map((option) => (
                                     <option key={option.value} value={option.value}>
-                                      {option.label}
+                                      {inspectionResultLabel(option.value)}
                                     </option>
                                   ))}
                                 </select>
                               </div>
                               <div className="grid gap-2 md:grid-cols-3">
                                 <label className="grid gap-1 text-xs">
-                                  <span className="text-muted-foreground">외관 등급</span>
+                                  <span className="text-muted-foreground">{t("inspection.appearanceGrade")}</span>
                                   <input
                                     value={draft.appearanceGrade}
                                     disabled={runningActionId !== null}
@@ -1166,11 +1188,11 @@ export function ReturnListView({
                                       )
                                     }
                                     className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                                    placeholder="예: A, B, 파손"
+                                    placeholder={t("inspection.appearanceGradePlaceholder")}
                                   />
                                 </label>
                                 <label className="grid gap-1 text-xs">
-                                  <span className="text-muted-foreground">외관 이상</span>
+                                  <span className="text-muted-foreground">{t("inspection.appearanceDefect")}</span>
                                   <input
                                     value={draft.appearanceDefect}
                                     disabled={runningActionId !== null}
@@ -1182,11 +1204,11 @@ export function ReturnListView({
                                       )
                                     }
                                     className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                                    placeholder="예: 액정 찍힘"
+                                    placeholder={t("inspection.appearanceDefectPlaceholder")}
                                   />
                                 </label>
                                 <label className="grid gap-1 text-xs">
-                                  <span className="text-muted-foreground">기능 이상</span>
+                                  <span className="text-muted-foreground">{t("inspection.functionDefect")}</span>
                                   <input
                                     value={draft.functionDefect}
                                     disabled={runningActionId !== null}
@@ -1198,12 +1220,12 @@ export function ReturnListView({
                                       )
                                     }
                                     className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                                    placeholder="예: 충전 불량"
+                                    placeholder={t("inspection.functionDefectPlaceholder")}
                                   />
                                 </label>
                               </div>
                               <label className="grid gap-1 text-xs">
-                                <span className="text-muted-foreground">검수 메모</span>
+                                <span className="text-muted-foreground">{t("inspection.note")}</span>
                                 <textarea
                                   value={draft.note}
                                   disabled={runningActionId !== null}
@@ -1215,14 +1237,14 @@ export function ReturnListView({
                                     )
                                   }
                                   className="min-h-16 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                  placeholder="포장 상태, 누락 구성품, 재판매 판단 근거"
+                                  placeholder={t("inspection.notePlaceholder")}
                                 />
                               </label>
                               <div className="grid gap-2 border-t pt-3">
                                 <div>
-                                  <div className="text-xs font-semibold">회수 비품</div>
+                                  <div className="text-xs font-semibold">{t("supplies.title")}</div>
                                   <div className="mt-1 text-xs text-muted-foreground">
-                                    실제 출고 때 차감된 비품 중 다시 사용할 수 있는 품목만 선택합니다.
+                                    {t("supplies.description")}
                                   </div>
                                 </div>
                                 {candidate.reusableSupplies?.length ? (
@@ -1258,14 +1280,14 @@ export function ReturnListView({
                                           />
                                           <span className="min-w-0">
                                             <span className="block truncate font-medium">
-                                              {supply.supplyName} {supply.quantity}개
+                                              {supply.supplyName} {t("supplies.unit", { count: supply.quantity })}
                                             </span>
                                             <span className="block truncate text-muted-foreground">
                                               {!supply.reusable
-                                                ? "재사용 불가"
+                                                ? t("supplies.unavailable")
                                                 : supply.recovered
-                                                  ? "복구 완료"
-                                                  : "회수 시 재고 복구"}
+                                                  ? t("supplies.recovered")
+                                                  : t("supplies.recoverOnReturn")}
                                             </span>
                                           </span>
                                         </label>
@@ -1274,7 +1296,7 @@ export function ReturnListView({
                                   </div>
                                 ) : (
                                   <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
-                                    해당 출고에서 차감된 비품 이력이 없습니다.
+                                    {t("supplies.empty")}
                                   </div>
                                 )}
                               </div>
@@ -1289,10 +1311,10 @@ export function ReturnListView({
                 <div className="flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4">
                   <div className="text-xs text-muted-foreground">
                     {modalSelectionLocked
-                      ? "반품 완료는 입고 확인 때 연결한 PG와 동일한 PG로만 처리됩니다."
+                      ? t("modal.footerLocked")
                       : modalCandidates.length === 0
-                        ? "매칭 PG가 없는 주문은 PG 연결 없이 쿠팡 처리만 진행합니다."
-                        : "PG 연결 수량이 가능한 PG 수량과 일치해야 쿠팡 처리 버튼이 활성화됩니다."}
+                        ? t("modal.footerNoCandidate")
+                        : t("modal.footerSelection")}
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1301,7 +1323,7 @@ export function ReturnListView({
                       disabled={runningActionId !== null}
                       onClick={requestActionModalClose}
                     >
-                      취소
+                      {t("actions.cancel")}
                     </Button>
                     <Button
                       type="button"
@@ -1320,8 +1342,8 @@ export function ReturnListView({
                     >
                       <CheckCircle2 className="size-4" />
                       {runningActionId === actionModalRow.id
-                        ? "처리중"
-                        : actionModalRow.nextReturnActionLabel}
+                        ? t("actions.processing")
+                        : returnActionLabel(actionModalRow.nextReturnAction)}
                     </Button>
                   </div>
                 </div>

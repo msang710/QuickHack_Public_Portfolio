@@ -1,4 +1,5 @@
 import type { InvoiceReplacement } from "./invoice-operation-types";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   mutationWakeDeferred,
   type MutationReceipt,
@@ -12,10 +13,18 @@ type CarrierRegistrationRecoveryResponse = {
 };
 
 export async function recoverCarrierRegistration(
-  replacement: InvoiceReplacement
+  replacement: InvoiceReplacement,
+  message: (
+    key:
+      | "missingBatch"
+      | "startFailed"
+      | "reconcileQueued"
+      | "retryQueued"
+      | "backgroundDeferred"
+  ) => string
 ) {
   if (!replacement.issueBatchId) {
-    throw new Error("로젠 등록을 복구할 송장 발급 차수를 찾지 못했습니다.");
+    throw new Error(message("missingBatch"));
   }
 
   const registrationStatus = replacement.carrierRegistration?.status ?? "";
@@ -31,14 +40,12 @@ export async function recoverCarrierRegistration(
 
   if (!response.ok || !payload?.ok) {
     throw new Error(
-      payload?.message || "로젠 등록 복구 작업을 시작하지 못했습니다."
+      legacyApiMessage(payload, message("startFailed"))
     );
   }
 
-  const message = reconcileOnly
-    ? "로젠의 실제 등록 상태를 다시 조회합니다."
-    : "로젠 등록 작업을 다시 실행하도록 예약했습니다.";
+  const resultMessage = message(reconcileOnly ? "reconcileQueued" : "retryQueued");
   return mutationWakeDeferred(payload.receipt)
-    ? `${message} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
-    : message;
+    ? `${resultMessage} ${message("backgroundDeferred")}`
+    : resultMessage;
 }

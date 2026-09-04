@@ -91,7 +91,7 @@ export async function transitionShipmentPrintBatchStatus(
   if (!current) {
     throw publicNotFound(
       "SHIPMENT_PRINT_BATCH_NOT_FOUND",
-      "출고 출력 차수를 찾을 수 없습니다.",
+      "SHIPMENT_PRINT_BATCH_NOT_FOUND",
       { batchId: input.batchId }
     );
   }

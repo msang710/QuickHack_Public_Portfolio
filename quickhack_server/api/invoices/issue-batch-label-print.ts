@@ -41,7 +41,7 @@ async function authorize(request: NextRequest) {
   if (!session) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "Login is required." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
       user: null,
@@ -51,7 +51,7 @@ async function authorize(request: NextRequest) {
   if (!canAccessRole(user.role, "STAFF")) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "You do not have permission to print labels." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
       user: null,
@@ -80,7 +80,6 @@ function errorResponse(error: unknown) {
     return apiFailureResponse({
       status,
       code: String(error.code),
-      message: error.message,
       extra: {
         blockers:
           "blockers" in error && Array.isArray(error.blockers)
@@ -173,7 +172,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const body = parseJsonObject(bodyText);
       if (!body) {
         return NextResponse.json(
-          { ok: false, message: "The request body must be a JSON object." },
+          { ok: false, code: "INVALID_BODY" },
           { status: 400 }
         );
       }
@@ -223,7 +222,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const body = parseJsonObject(bodyText);
       if (!body) {
         return NextResponse.json(
-          { ok: false, message: "The request body must be a JSON object." },
+          { ok: false, code: "INVALID_BODY" },
           { status: 400 }
         );
       }

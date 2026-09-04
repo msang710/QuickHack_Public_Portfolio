@@ -57,9 +57,7 @@ import {
   CARRIER_INVOICE_REPLACEMENT_SOURCE,
   CARRIER_INVOICE_REPLACEMENT_EXECUTION_STATE,
   CARRIER_INVOICE_REPLACEMENT_STAGE,
-  CARRIER_INVOICE_REPLACEMENT_STAGE_LABELS,
   CARRIER_INVOICE_REPLACEMENT_STATUS,
-  CARRIER_INVOICE_REPLACEMENT_STATUS_LABELS,
   ACTIVE_CARRIER_INVOICE_REPLACEMENT_STATUSES,
   TERMINAL_CARRIER_INVOICE_REPLACEMENT_STATUSES,
 } from "@/quickhack_shared/shipment/invoice-replacement";
@@ -167,7 +165,7 @@ function positiveId(value: unknown, label: string) {
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new CarrierInvoiceReplacementError(
       "INVALID_ID",
-      `${label} must be a positive integer.`,
+      "INVALID_ID",
       400
     );
   }
@@ -183,7 +181,7 @@ function requiredText(value: unknown, label: string) {
   if (!normalized) {
     throw new CarrierInvoiceReplacementError(
       "REQUIRED_VALUE_MISSING",
-      `${label} is required.`,
+      "REQUIRED_VALUE_MISSING",
       400
     );
   }
@@ -216,7 +214,7 @@ function userLabel(
       }
     | null
 ) {
-  return user?.employee_profiles?.display_name ?? user?.username ?? "시스템";
+  return user?.employee_profiles?.display_name ?? user?.username ?? "";
 }
 
 function nextAction(row: ReplacementRow) {
@@ -224,76 +222,32 @@ function nextAction(row: ReplacementRow) {
   if (
     executionState === CARRIER_INVOICE_REPLACEMENT_EXECUTION_STATE.stale
   ) {
-    return {
-      code: "RESUME_INTERRUPTED",
-      label: "중단된 처리 재개",
-      description:
-        "이전 실행이 중단되었습니다. 저장된 채번·판매 채널 처리 결과를 재사용해 현재 단계부터 복구할 수 있습니다.",
-    };
+    return { code: "RESUME_INTERRUPTED" };
   }
   if (
     executionState === CARRIER_INVOICE_REPLACEMENT_EXECUTION_STATE.running
   ) {
-    return {
-      code: "WAIT",
-      label: "처리 중",
-      description:
-        "현재 요청이 송장 교체 단계를 처리하고 있습니다. 완료될 때까지 기다려 주세요.",
-    };
+    return { code: "WAIT" };
   }
   if (row.work_status === CARRIER_INVOICE_REPLACEMENT_STATUS.waitingManual) {
-    return {
-      code: "CONFIRM_OLD_INVOICE_HANDLING",
-      label: "기존 송장 처리 확인",
-      description:
-        "로젠에 이미 등록된 기존 송장이므로 미사용 처리와 기존 송장 출력물 폐기를 확인한 뒤 계속하세요.",
-    };
+    return { code: "CONFIRM_OLD_INVOICE_HANDLING" };
   }
   if (row.work_status === CARRIER_INVOICE_REPLACEMENT_STATUS.waitingLabel) {
-    return {
-      code: "PRINT_REPLACEMENT_LABEL",
-      label: "새 송장 출력",
-      description:
-        "쿠팡과 로젠에 새 송장이 반영되었습니다. 새 송장을 출력한 뒤 실물 송장이 정상적으로 출력되었는지 확인하세요.",
-    };
+    return { code: "PRINT_REPLACEMENT_LABEL" };
   }
   if (row.work_status === CARRIER_INVOICE_REPLACEMENT_STATUS.reviewRequired) {
-    return {
-      code: "REVIEW_FAILURE",
-      label: "처리 상태 확인",
-      description:
-        "자동으로 처리 결과를 확정하지 못했습니다. 표시된 실패 단계와 외부 API 처리 이력을 확인하세요.",
-    };
+    return { code: "REVIEW_FAILURE" };
   }
   if (row.work_status === CARRIER_INVOICE_REPLACEMENT_STATUS.completed) {
-    return {
-      code: "NONE",
-      label: "처리 완료",
-      description:
-        "새 송장 출력과 출고 보류 해제가 모두 완료되었습니다.",
-    };
+    return { code: "NONE" };
   }
   if (row.work_status === CARRIER_INVOICE_REPLACEMENT_STATUS.canceled) {
-    return {
-      code: "NONE",
-      label: "작업 취소",
-      description:
-        "쿠팡 반영 전에 작업을 취소해 기존 송장을 현재 송장으로 유지했습니다.",
-    };
+    return { code: "NONE" };
   }
   if (row.work_status === CARRIER_INVOICE_REPLACEMENT_STATUS.failed) {
-    return {
-      code: "REVIEW_FAILURE",
-      label: "실패 원인 확인",
-      description:
-        "자동 재발급을 완료하지 못했습니다. 현재 송장과 출고 보류 상태를 확인한 뒤 관리자 판단이 필요합니다.",
-    };
+    return { code: "REVIEW_FAILURE" };
   }
-  return {
-    code: "WAIT",
-    label: "자동 처리 대기",
-    description: "현재 단계를 처리하고 있습니다. 잠시 후 상태를 새로고침하세요.",
-  };
+  return { code: "WAIT" };
 }
 
 function toDto(row: ReplacementRow) {
@@ -308,13 +262,7 @@ function toDto(row: ReplacementRow) {
     sourceType: row.source_type,
     requestKey: row.request_key,
     status: row.work_status,
-    statusLabel:
-      CARRIER_INVOICE_REPLACEMENT_STATUS_LABELS[row.work_status] ??
-      row.work_status,
     stage: row.current_stage,
-    stageLabel:
-      CARRIER_INVOICE_REPLACEMENT_STAGE_LABELS[row.current_stage] ??
-      row.current_stage,
     oldInvoiceHandlingStatus: row.old_invoice_handling_status,
     executionState: replacementExecutionState(row),
     packageGroupId: row.package_group_id,
@@ -402,7 +350,7 @@ async function loadReplacement(workId: number) {
   if (!row) {
     throw new CarrierInvoiceReplacementError(
       "REPLACEMENT_WORK_NOT_FOUND",
-      "송장 교체 작업을 찾지 못했습니다.",
+      "REPLACEMENT_WORK_NOT_FOUND",
       404
     );
   }
@@ -457,25 +405,25 @@ async function resolveFreshReceiver(
     if (!order) {
       throw new CarrierInvoiceReplacementError(
         "TARGETED_ORDER_NOT_FOUND",
-        `쿠팡 주문 ${member.external_order_id}/${member.external_shipment_id}을 최신 조회에서 찾지 못했습니다.`
+        "TARGETED_ORDER_NOT_FOUND"
       );
     }
     if (order.channelStatus !== "DEPARTURE") {
       throw new CarrierInvoiceReplacementError(
         "ORDER_STATUS_NOT_REPLACEABLE",
-        `쿠팡 주문 ${member.external_shipment_id} 상태가 ${order.channelStatus ?? "UNKNOWN"}이므로 송장을 교체할 수 없습니다.`
+        "ORDER_STATUS_NOT_REPLACEABLE"
       );
     }
     if (text(order.invoiceNumber) !== oldTrackingNumber) {
       throw new CarrierInvoiceReplacementError(
         "CURRENT_CHANNEL_INVOICE_CHANGED",
-        `쿠팡 주문 ${member.external_shipment_id}의 현재 송장이 QuickHack 기록과 다릅니다.`
+        "CURRENT_CHANNEL_INVOICE_CHANGED"
       );
     }
     if (order.splitShipping === true) {
       throw new CarrierInvoiceReplacementError(
         "SPLIT_SHIPPING_NOT_SUPPORTED",
-        "분리배송 주문은 자동 송장 교체를 지원하지 않습니다."
+        "SPLIT_SHIPPING_NOT_SUPPORTED"
       );
     }
     const vendorItemId = text(member.allocation.external_vendor_item_id);
@@ -487,7 +435,7 @@ async function resolveFreshReceiver(
     if (!vendorItemId || !activeVendorItemIds.has(vendorItemId)) {
       throw new CarrierInvoiceReplacementError(
         "VENDOR_ITEM_CHANGED",
-        `쿠팡 주문 ${member.external_shipment_id}의 출고 상품 구성이 변경되었습니다.`
+        "VENDOR_ITEM_CHANGED"
       );
     }
     return { member, order, vendorItemId };
@@ -496,7 +444,7 @@ async function resolveFreshReceiver(
   if (receiverKeys.size !== 1) {
     throw new CarrierInvoiceReplacementError(
       "PACKAGE_GROUP_RECEIVER_DIVERGED",
-      "합포장 구성 주문의 최신 배송지가 서로 달라 자동 재발급할 수 없습니다."
+      "PACKAGE_GROUP_RECEIVER_DIVERGED"
     );
   }
   const first = freshMembers[0]?.order;
@@ -508,7 +456,7 @@ async function resolveFreshReceiver(
   ) {
     throw new CarrierInvoiceReplacementError(
       "RECEIVER_REQUIRED_FIELD_MISSING",
-      "새 송장 발급에 필요한 최신 수취인 정보가 부족합니다."
+      "RECEIVER_REQUIRED_FIELD_MISSING"
     );
   }
   const receiver: FreshReceiverSnapshot = {
@@ -692,20 +640,20 @@ async function createReplacementHold(input: {
       if (!group || !group.current_carrier_shipment) {
         throw new CarrierInvoiceReplacementError(
           "CURRENT_INVOICE_NOT_FOUND",
-          "교체할 현재 송장을 찾지 못했습니다."
+          "CURRENT_INVOICE_NOT_FOUND"
         );
       }
       const current = group.current_carrier_shipment;
       if (group.group_status !== "READY") {
         throw new CarrierInvoiceReplacementError(
           "PACKAGE_GROUP_NOT_READY",
-          `합포장 그룹 상태가 ${group.group_status}이므로 송장을 교체할 수 없습니다.`
+          "PACKAGE_GROUP_NOT_READY"
         );
       }
       if (!REPLACEABLE_SHIPMENT_STATUSES.has(current.shipment_status)) {
         throw new CarrierInvoiceReplacementError(
           "SHIPMENT_ALREADY_MOVING",
-          `현재 택배 상태가 ${current.shipment_status}이므로 자동 재발급할 수 없습니다.`
+          "SHIPMENT_ALREADY_MOVING"
         );
       }
       if (
@@ -718,7 +666,7 @@ async function createReplacementHold(input: {
       ) {
         throw new CarrierInvoiceReplacementError(
           "INVENTORY_NOT_DEPARTURE",
-          "합포장 구성 기기가 모두 출고지시 상태일 때만 송장을 교체할 수 있습니다."
+          "INVENTORY_NOT_DEPARTURE"
         );
       }
       const expiredSubjects = await findExpiredPersonalDataSubjects(tx, {
@@ -734,7 +682,7 @@ async function createReplacementHold(input: {
       if (expiredSubjects.length > 0) {
         throw new CarrierInvoiceReplacementError(
           "PERSONAL_DATA_RETENTION_EXPIRED",
-          "개인정보 보존기간이 만료된 주문은 송장을 교체할 수 없습니다."
+          "PERSONAL_DATA_RETENTION_EXPIRED"
         );
       }
       const issueBatch =
@@ -742,7 +690,7 @@ async function createReplacementHold(input: {
       if (!issueBatch) {
         throw new CarrierInvoiceReplacementError(
           "ORIGINAL_ISSUE_BATCH_NOT_FOUND",
-          "현재 송장의 발급 차수를 찾지 못했습니다."
+          "ORIGINAL_ISSUE_BATCH_NOT_FOUND"
         );
       }
       if (input.addressChangeWorkId) {
@@ -759,7 +707,7 @@ async function createReplacementHold(input: {
         ) {
           throw new CarrierInvoiceReplacementError(
             "ADDRESS_CHANGE_WORK_MISMATCH",
-            "배송정보 변경 건이 현재 합포장 그룹과 일치하지 않습니다."
+            "ADDRESS_CHANGE_WORK_MISMATCH"
           );
         }
       }
@@ -824,7 +772,7 @@ async function createReplacementHold(input: {
       if (held.count !== 1) {
         throw new CarrierInvoiceReplacementError(
           "PACKAGE_GROUP_HOLD_CONFLICT",
-          "송장 교체를 시작하기 전에 합포장 그룹 상태가 변경되었습니다."
+          "PACKAGE_GROUP_HOLD_CONFLICT"
         );
       }
       if (input.addressChangeWorkId) {
@@ -883,7 +831,7 @@ async function submitReplacementToCoupang(
   if (!candidate || !row.carrier_invoice_issue_batch_id) {
     throw new CarrierInvoiceReplacementError(
       "REPLACEMENT_CANDIDATE_NOT_FOUND",
-      "쿠팡에 반영할 후보 송장을 찾지 못했습니다."
+      "REPLACEMENT_CANDIDATE_NOT_FOUND"
     );
   }
   if (
@@ -893,7 +841,7 @@ async function submitReplacementToCoupang(
   ) {
     throw new CarrierInvoiceReplacementError(
       "REPLACEMENT_TARGET_CHANGED",
-      "쿠팡 송장 변경 전에 현재 송장 또는 출고 보류 상태가 변경되었습니다."
+      "REPLACEMENT_TARGET_CHANGED"
     );
   }
   const fresh = await resolveFreshReceiver(
@@ -912,7 +860,7 @@ async function submitReplacementToCoupang(
   if (receiverKey(fresh.freshMembers[0].order) !== desiredReceiverKey) {
     throw new CarrierInvoiceReplacementError(
       "RECEIVER_CHANGED_AGAIN",
-      "재발급을 시작한 뒤 배송정보가 다시 변경되었습니다. 새 변경 건을 확인하세요."
+      "RECEIVER_CHANGED_AGAIN"
     );
   }
   const membersByShipment = new Map<
@@ -1097,7 +1045,7 @@ async function continueReplacement(
   ) {
     throw new CarrierInvoiceReplacementError(
       "REPLACEMENT_EXECUTION_OWNERSHIP_LOST",
-      "The replacement execution ownership changed before processing could continue."
+      "REPLACEMENT_EXECUTION_OWNERSHIP_LOST"
     );
   }
   if (
@@ -1117,7 +1065,7 @@ async function continueReplacement(
     if (!originalIssueItem) {
       throw new CarrierInvoiceReplacementError(
         "ORIGINAL_ISSUE_BATCH_NOT_FOUND",
-        "기존 송장의 발급 차수를 찾지 못했습니다."
+        "ORIGINAL_ISSUE_BATCH_NOT_FOUND"
       );
     }
     ownership.workflowVersion = await updateOwnedReplacement({
@@ -1258,7 +1206,7 @@ export async function startCarrierInvoiceReplacement(
   ) {
     throw new CarrierInvoiceReplacementError(
       "INVALID_SOURCE_TYPE",
-      "송장 교체 요청 출처가 올바르지 않습니다.",
+      "INVALID_SOURCE_TYPE",
       400
     );
   }
@@ -1275,7 +1223,7 @@ export async function startCarrierInvoiceReplacement(
   ) {
     throw new CarrierInvoiceReplacementError(
       "ADDRESS_CHANGE_WORK_REQUIRED",
-      "배송정보 변경 건 ID가 필요합니다.",
+      "ADDRESS_CHANGE_WORK_REQUIRED",
       400
     );
   }
@@ -1287,7 +1235,7 @@ export async function startCarrierInvoiceReplacement(
   ) {
     throw new CarrierInvoiceReplacementError(
       "REASON_NOTE_REQUIRED",
-      "수동 재발급 사유를 입력하세요.",
+      "REASON_NOTE_REQUIRED",
       400
     );
   }
@@ -1314,7 +1262,7 @@ export async function startCarrierInvoiceReplacement(
   if (!group?.current_carrier_shipment) {
     throw new CarrierInvoiceReplacementError(
       "CURRENT_INVOICE_NOT_FOUND",
-      "교체할 현재 송장을 찾지 못했습니다."
+      "CURRENT_INVOICE_NOT_FOUND"
     );
   }
   const expiredSubjects = await prisma.$transaction((tx) =>
@@ -1330,7 +1278,7 @@ export async function startCarrierInvoiceReplacement(
   if (expiredSubjects.length > 0) {
     throw new CarrierInvoiceReplacementError(
       "PERSONAL_DATA_RETENTION_EXPIRED",
-      "개인정보 보존기간이 만료된 주문은 송장을 교체할 수 없습니다."
+      "PERSONAL_DATA_RETENTION_EXPIRED"
     );
   }
   const fresh = await resolveFreshReceiver(
@@ -1375,7 +1323,7 @@ export async function startCarrierInvoiceReplacement(
   if (!created.executionToken) {
     throw new CarrierInvoiceReplacementError(
       "REPLACEMENT_EXECUTION_NOT_CLAIMED",
-      "The automatic replacement execution was not claimed."
+      "REPLACEMENT_EXECUTION_NOT_CLAIMED"
     );
   }
   return runOwnedReplacement(
@@ -1407,7 +1355,7 @@ export async function confirmCarrierInvoiceOldHandling(input: {
   ) {
     throw new CarrierInvoiceReplacementError(
       "OLD_INVOICE_HANDLING_NOT_PENDING",
-      "기존 송장 처리 확인을 기다리는 작업이 아닙니다."
+      "OLD_INVOICE_HANDLING_NOT_PENDING"
     );
   }
   const now = nowKstSqlDateTime();
@@ -1530,7 +1478,7 @@ export async function resumeCarrierInvoiceReplacement(input: {
   ) {
     throw new CarrierInvoiceReplacementError(
       "OLD_INVOICE_HANDLING_NOT_CONFIRMED",
-      "Confirm the old invoice handling before resuming the replacement."
+      "OLD_INVOICE_HANDLING_NOT_CONFIRMED"
     );
   }
   let ownership;
@@ -1578,7 +1526,7 @@ export async function cancelCarrierInvoiceReplacement(input: {
   if (row.channel_updated_at) {
     throw new CarrierInvoiceReplacementError(
       "REPLACEMENT_ALREADY_APPLIED",
-      "쿠팡에 새 송장이 반영된 작업은 취소할 수 없습니다."
+      "REPLACEMENT_ALREADY_APPLIED"
     );
   }
   if (TERMINAL_WORK_STATUSES.has(row.work_status)) return toDto(row);
@@ -1632,7 +1580,7 @@ export async function cancelCarrierInvoiceReplacement(input: {
             if (error instanceof CarrierShipmentStateConflictError) {
               throw new CarrierInvoiceReplacementError(
                 "REPLACEMENT_CANDIDATE_STATE_CONFLICT",
-                "The replacement tracking number can no longer be canceled locally."
+                "REPLACEMENT_CANDIDATE_STATE_CONFLICT"
               );
             }
             throw error;
@@ -1649,7 +1597,7 @@ export async function cancelCarrierInvoiceReplacement(input: {
         if (restored.count !== 1) {
           throw new CarrierInvoiceReplacementError(
             "REPLACEMENT_CANCEL_CONFLICT",
-            "송장 교체 작업을 취소하기 전에 현재 송장 또는 그룹 상태가 변경되었습니다."
+            "REPLACEMENT_CANCEL_CONFLICT"
           );
         }
         return nextWorkflowVersion;
@@ -1820,7 +1768,7 @@ export async function finalizePersistedCoupangInvoiceUpdate(input: {
     if (input.replacementWorkflowVersion == null) {
       throw new CarrierInvoiceReplacementError(
         "REPLACEMENT_WORKFLOW_VERSION_REQUIRED",
-        "The owned replacement finalizer requires a workflow version."
+        "REPLACEMENT_WORKFLOW_VERSION_REQUIRED"
       );
     }
     try {
@@ -1856,7 +1804,7 @@ export async function finalizePersistedCoupangInvoiceUpdate(input: {
   if (!parentTransitioned) {
     throw new CarrierInvoiceReplacementError(
       "REPLACEMENT_EXECUTION_OWNERSHIP_LOST",
-      "The replacement workflow changed before the Coupang invoice update was finalized."
+      "REPLACEMENT_EXECUTION_OWNERSHIP_LOST"
     );
   }
   await transitionCarrierInvoiceStatus(input.tx, {

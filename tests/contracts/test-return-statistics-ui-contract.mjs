@@ -15,10 +15,9 @@ const calculationScope = read(
 const view = read(
   "quickhack_client/components/statistics/statistics-view.tsx"
 );
-const menu = read(
-  "quickhack_client/components/app-shell/device-workspace-menu.ts"
-);
 const shared = read("quickhack_shared/statistics/statistics.ts");
+const koStatistics = read("quickhack_client/i18n/catalogs/ko/statistics.ts");
+const koNavigation = read("quickhack_client/i18n/catalogs/ko/navigation.ts");
 
 assert.match(shared, /export type ReturnCustomerOverview/);
 assert.match(shared, /overview: ReturnCustomerOverview/);
@@ -30,12 +29,14 @@ assert.match(panel, /requestId !== requestSequence\.current/);
 assert.match(panel, /buildStatisticsPeriodRequestQuery/);
 assert.match(panel, /requestState\.requestKey === requestKey/);
 assert.match(panel, /retryRevision/);
-assert.match(panel, /다시 시도/);
+assert.match(panel, /t\("loading\.retry"\)/);
+assert.match(panel, /t\("loading\.refresh"\)/);
 assert.match(panel, /cache: "no-store"/);
 assert.match(panel, /aria-busy=/);
 assert.doesNotMatch(panel, /buildPreviewSalesStatistics/);
 assert.match(panel, /StatisticsCalculationScope/);
-assert.match(calculationScope, /한국 시간 기준 어제까지/);
+assert.match(calculationScope, /useTranslations\("statistics\.calculationScope"\)/);
+assert.match(koStatistics, /한국 시간 기준 어제까지/);
 
 for (const section of [
   "데이터 기준과 신뢰도",
@@ -51,7 +52,7 @@ for (const section of [
   "출고 전 취소",
   "교환",
 ]) {
-  assert.match(panel, new RegExp(section));
+  assert.match(koStatistics, new RegExp(section));
 }
 
 for (const forbiddenUserFacingConcept of [
@@ -80,7 +81,7 @@ assert.doesNotMatch(
   /mode === "returns"[\s\S]{0,100}<EmptyStatisticsPanel/
 );
 assert.match(
-  menu,
+  koNavigation,
   /고객 반품, 출고 전 취소, 교환 통계를 확인합니다\./
 );
 

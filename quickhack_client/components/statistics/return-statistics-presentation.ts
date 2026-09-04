@@ -1,65 +1,30 @@
-import type {
-  ReturnAmountMetric,
-  ReturnDurationMetric,
-  ReturnRateMetric,
-} from "@/quickhack_shared/statistics/statistics";
-import {
-  formatStatisticsAmount,
-  formatStatisticsDate,
-  formatStatisticsDuration,
-  formatStatisticsRate,
-  formatStatisticsMonth,
-  type StatisticsMetricPresentation,
-} from "@/quickhack_client/components/statistics/statistics-metric-presentation";
+"use client";
+
+import { useTranslations } from "next-intl";
+import { useStatisticsMetricPresentation, type StatisticsMetricPresentation } from "@/quickhack_client/components/statistics/statistics-metric-presentation";
+import type { ReturnAmountMetric, ReturnDurationMetric, ReturnRateMetric } from "@/quickhack_shared/statistics/statistics";
 
 export type ReturnMetricPresentation = StatisticsMetricPresentation;
 
-const percentFormatter = new Intl.NumberFormat("ko-KR", {
-  maximumFractionDigits: 1,
-});
-
-export function formatReturnRate(
-  metric: ReturnRateMetric,
-  options: { maturityPending?: boolean } = {}
-): ReturnMetricPresentation {
-  return formatStatisticsRate(metric, {
-    unavailableValue: options.maturityPending ? "집계 중" : "-",
-  });
-}
-
-export function formatReturnDelta(
-  percentagePoints: number | null
-): ReturnMetricPresentation {
-  if (percentagePoints === null) {
+export function useReturnStatisticsPresentation() {
+  const t = useTranslations("statistics.returns.presentation");
+  const base = useStatisticsMetricPresentation();
+  const formatDelta = (percentagePoints: number | null): ReturnMetricPresentation => {
+    if (percentagePoints === null) {
+      return { value: t("comparisonUnavailable"), detail: t("comparisonUnavailableDetail") };
+    }
     return {
-      value: "비교 불가",
-      detail: "현재와 직전 성숙 cohort가 모두 있어야 비교할 수 있습니다.",
+      value: `${percentagePoints > 0 ? "+" : ""}${base.formatPercent(percentagePoints)}%p`,
+      detail: t("previousCohort"),
     };
-  }
-
-  const prefix = percentagePoints > 0 ? "+" : "";
-  return {
-    value: `${prefix}${percentFormatter.format(percentagePoints)}%p`,
-    detail: "직전 성숙 cohort 대비",
   };
-}
-
-export function formatReturnAmount(
-  metric: ReturnAmountMetric
-): ReturnMetricPresentation {
-  return formatStatisticsAmount(metric);
-}
-
-export function formatReturnDuration(
-  metric: ReturnDurationMetric
-): ReturnMetricPresentation {
-  return formatStatisticsDuration(metric);
-}
-
-export function formatReturnStatisticsDate(value: string | null) {
-  return formatStatisticsDate(value);
-}
-
-export function formatReturnStatisticsMonth(value: string) {
-  return formatStatisticsMonth(value);
+  return {
+    formatAmount: (metric: ReturnAmountMetric) => base.formatAmount(metric),
+    formatDate: base.formatDate,
+    formatDelta,
+    formatDuration: (metric: ReturnDurationMetric) => base.formatDuration(metric),
+    formatMonth: base.formatMonth,
+    formatRate: (metric: ReturnRateMetric, options: { maturityPending?: boolean } = {}) =>
+      base.formatRate(metric, { unavailableValue: options.maturityPending ? t("aggregating") : "-" }),
+  };
 }

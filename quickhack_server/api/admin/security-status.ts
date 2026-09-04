@@ -44,14 +44,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "LEADER")) {
     return NextResponse.json(
-      { ok: false, message: "보안 점검 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -142,69 +142,65 @@ export async function GET(request: NextRequest) {
   const checks = [
     {
       key: "runtime",
-      label: "실행 모드",
       status: checkStatus(production, environment === "development"),
       value: `${environment} / ${runtimeRole}`,
-      detail: production
-        ? "운영 모드로 실행 중입니다."
-        : "개발 모드입니다. 운영 배포 전 서버 콘솔의 런타임 설정을 확인하세요.",
+      detail: "",
+      detailCode: production ? "RUNTIME_PRODUCTION" : "RUNTIME_DEVELOPMENT",
     },
     {
       key: "coupang-write-api-policy",
-      label: "Coupang 쓰기 API 정책",
       status: runtimeConfig.policies.coupangWriteApiEnabled ? "WARNING" : "OK",
-      value: runtimeConfig.policies.coupangWriteApiEnabled ? "허용" : "금지",
-      detail: runtimeConfig.policies.coupangWriteApiEnabled
-        ? "Coupang 쓰기 API가 허용되어 있습니다."
-        : "Coupang 쓰기 API가 차단되어 있습니다.",
+      value: "",
+      valueCode: runtimeConfig.policies.coupangWriteApiEnabled ? "ALLOWED" : "BLOCKED",
+      detail: "",
+      detailCode: runtimeConfig.policies.coupangWriteApiEnabled ? "COUPANG_WRITE_ALLOWED" : "COUPANG_WRITE_BLOCKED",
     },
     {
       key: "logen-write-api-policy",
-      label: "Logen 쓰기 API 정책",
       status: runtimeConfig.policies.logenWriteApiEnabled ? "WARNING" : "OK",
-      value: runtimeConfig.policies.logenWriteApiEnabled ? "허용" : "금지",
-      detail: runtimeConfig.policies.logenWriteApiEnabled
-        ? "Logen 쓰기 API가 허용되어 있습니다."
-        : "Logen 쓰기 API가 차단되어 있습니다.",
+      value: "",
+      valueCode: runtimeConfig.policies.logenWriteApiEnabled ? "ALLOWED" : "BLOCKED",
+      detail: "",
+      detailCode: runtimeConfig.policies.logenWriteApiEnabled ? "LOGEN_WRITE_ALLOWED" : "LOGEN_WRITE_BLOCKED",
     },
     {
       key: "totp-key",
-      label: "OTP 암호화 키",
       status: checkStatus(totpServer.configured),
-      value: totpServer.configured ? "사용 가능" : "사용 불가",
-      detail: totpServer.configured
-        ? `QuickHack 본서버가 ${totpServer.protection ?? "OS protected credential"}로 보호된 OTP 키를 사용하고 있습니다.`
-        : `OTP 키 상태가 ${totpServer.state}이므로 보호된 작업이 차단됩니다.`,
+      value: "",
+      valueCode: totpServer.configured ? "AVAILABLE" : "UNAVAILABLE",
+      detail: "",
+      detailCode: totpServer.configured ? "TOTP_KEY_AVAILABLE" : "TOTP_KEY_UNAVAILABLE",
+      messageArguments: totpServer.configured
+        ? { protection: totpServer.protection ?? "OS protected credential" }
+        : { state: totpServer.state },
     },
     {
       key: "totp-users",
-      label: "OTP 적용 계정",
       status: checkStatus(
         activeUserCount === 0 || totpEnabledUserCount > 0,
         activeUserCount > 0
       ),
       value: `${totpEnabledUserCount} / ${activeUserCount}`,
-      detail: "활성 계정 중 OTP가 설정된 계정 수입니다.",
+      detail: "",
+      detailCode: "TOTP_USERS",
     },
     {
       key: "backup-encryption",
-      label: "백업 암호화",
       status: checkStatus(backupEncryption.enabled),
-      value: backupEncryption.enabled ? "암호화 적용" : "사용 불가",
+      value: "",
+      valueCode: backupEncryption.enabled ? "ENCRYPTED" : "UNAVAILABLE",
       detail: backupEncryption.message,
     },
     {
       key: "cookie-secure",
-      label: "보안 쿠키",
       status: checkStatus(!production || cookieSecure),
-      value: cookieSecure ? "Secure" : "HTTP 허용",
-      detail: cookieSecure
-        ? "서버 전송 정책이 HTTPS session cookie를 강제합니다."
-        : "직접 HTTP 개발 런타임에서는 Secure 속성을 사용하지 않습니다.",
+      value: "",
+      valueCode: cookieSecure ? "SECURE" : "HTTP_ALLOWED",
+      detail: "",
+      detailCode: cookieSecure ? "COOKIE_SECURE" : "COOKIE_HTTP_ALLOWED",
     },
     {
       key: "coupang-auth",
-      label: "Coupang API credential",
       status: checkStatus(
         coupangAuth.status === "ACTIVE",
         coupangAuth.status === "WARNING"
@@ -217,7 +213,6 @@ export async function GET(request: NextRequest) {
     },
     {
       key: "channel-credential-store",
-      label: "Channel credential status store",
       status: checkStatus(!channelCredentialPersistenceError),
       value: channelCredentialPersistenceError ? "failed" : "synced",
       detail:
@@ -226,7 +221,6 @@ export async function GET(request: NextRequest) {
     },
     {
       key: "logen-auth",
-      label: "Logen API credential",
       status: checkStatus(
         logenAuth.status === "ACTIVE",
         logenAuth.status === "WARNING"
@@ -239,7 +233,6 @@ export async function GET(request: NextRequest) {
     },
     {
       key: "external-api-destination",
-      label: "외부 API 연결 대상",
       status: checkStatus(
         packageFlavor === "OPERATIONAL"
           ? externalApiMode === "live"
@@ -248,17 +241,19 @@ export async function GET(request: NextRequest) {
       value: externalApiMode,
       detail:
         externalApiMode === "mock"
-          ? "시연용 package이며 Coupang과 Logen 모두 Mock API를 사용합니다."
-          : "운영용 package이며 Coupang과 Logen 모두 공식 Live API를 사용합니다.",
+          ? ""
+          : "",
+      detailCode: externalApiMode === "mock" ? "EXTERNAL_API_MOCK" : "EXTERNAL_API_LIVE",
     },
     {
       key: "latest-backup",
-      label: "최근 백업",
       status: checkStatus(latestBackupLog?.status === "SUCCESS", true),
       value: latestBackupLog
         ? `${latestBackupLog.status} / ${latestBackupLog.finished_at || latestBackupLog.created_at}`
-        : "기록 없음",
-      detail: latestBackupLog?.error_message || latestBackupLog?.job_name || "최근 백업 이력이 없습니다.",
+        : "",
+      valueCode: latestBackupLog ? undefined : "NO_RECORD",
+      detail: latestBackupLog?.error_message || latestBackupLog?.job_name || "",
+      detailCode: latestBackupLog?.error_message || latestBackupLog?.job_name ? undefined : "NO_BACKUP_HISTORY",
     },
   ];
   const warningCount = checks.filter((item) => item.status === "WARNING").length;

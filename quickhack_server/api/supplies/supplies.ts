@@ -41,7 +41,7 @@ async function requireStaff(request: NextRequest) {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -51,7 +51,7 @@ async function requireStaff(request: NextRequest) {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { ok: false, message: "비품관리 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문은 JSON 객체여야 합니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       import("@/quickhack_server/supplies/supplies-service"),
     ]);
     let result: unknown = null;
-    let message = "비품관리 작업을 완료했습니다.";
+    let resultCode = "SUPPLIES_ACTION_COMPLETED";
     let receiptOperationId: string | null = null;
     let receiptOutcome: MutationReceiptOutcome =
       MUTATION_RECEIPT_OUTCOMES.committed;
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
 
     if (action === "saveSupply") {
       result = await saveSupply(prisma, body, auth.user);
-      message = "비품 정보를 저장했습니다.";
+      resultCode = "SUPPLY_SAVED";
     } else if (action === "recordMovement") {
       const command = await recordSupplyMovement(prisma, body, auth.user);
       result = command.movement;
@@ -156,19 +156,19 @@ export async function POST(request: NextRequest) {
         ? MUTATION_RECEIPT_OUTCOMES.observed
         : MUTATION_RECEIPT_OUTCOMES.committed;
       receiptCommittedAt = command.movement.created_at;
-      message = "비품 재고 수량 변동을 저장했습니다.";
+      resultCode = "SUPPLY_MOVEMENT_RECORDED";
     } else if (action === "saveConsumptionRule") {
       result = await saveSupplyConsumptionRule(prisma, body, auth.user);
-      message = "비품 소요 계산 규칙을 저장했습니다.";
+      resultCode = "SUPPLY_CONSUMPTION_RULE_SAVED";
     } else if (action === "calculateForecast") {
       result = await calculateSupplyForecasts(prisma, body, auth.user);
-      message = "비품 소요예측을 계산했습니다.";
+      resultCode = "SUPPLY_FORECAST_CALCULATED";
     } else if (action === "createReorderSuggestions") {
       result = await createSuggestedReordersFromForecasts(prisma, body, auth.user);
-      message = "비품 재구매 추천을 생성했습니다.";
+      resultCode = "SUPPLY_REORDER_SUGGESTIONS_CREATED";
     } else {
       return NextResponse.json(
-        { ok: false, message: "지원하지 않는 비품관리 작업입니다." },
+        { ok: false, code: "ACTION_UNSUPPORTED" },
         { status: 400 }
       );
     }
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message,
+      resultCode,
       result,
       ...(refresh.completed ? { data: refresh.value } : {}),
       receipt: refresh.receipt,
@@ -218,7 +218,7 @@ export async function PATCH(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문은 JSON 객체여야 합니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -234,17 +234,17 @@ export async function PATCH(request: NextRequest) {
       import("@/quickhack_server/supplies/supplies-service"),
     ]);
     let result: unknown = null;
-    let message = "비품관리 정보를 수정했습니다.";
+    let resultCode = "SUPPLIES_ACTION_COMPLETED";
 
     if (action === "saveSupply") {
       result = await saveSupply(prisma, body, auth.user);
-      message = "비품 정보를 수정했습니다.";
+      resultCode = "SUPPLY_SAVED";
     } else if (action === "updateReorderRequest") {
       result = await updateSupplyReorderRequest(prisma, body, auth.user);
-      message = "비품 재구매 상태를 수정했습니다.";
+      resultCode = "SUPPLY_REORDER_STATUS_UPDATED";
     } else {
       return NextResponse.json(
-        { ok: false, message: "지원하지 않는 비품관리 수정 작업입니다." },
+        { ok: false, code: "ACTION_UNSUPPORTED" },
         { status: 400 }
       );
     }
@@ -260,7 +260,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message,
+      resultCode,
       result,
       ...(refresh.completed ? { data: refresh.value } : {}),
       receipt: refresh.receipt,

@@ -74,19 +74,18 @@ export function sensitiveActionForMenu(menuId: string): SensitiveAction | null {
 
 export type SensitiveAuthRequiredResponse = {
   ok: false;
-  message: string;
+  code: "SENSITIVE_AUTH_REQUIRED";
   sensitiveAuthRequired: true;
   sensitiveAction?: SensitiveAction;
   sensitiveAuthMaxAgeSeconds?: number;
 };
 
 export function sensitiveAuthRequiredResponse(
-  message: string,
   sensitiveAction: SensitiveAction
 ): SensitiveAuthRequiredResponse {
   return {
     ok: false,
-    message,
+    code: "SENSITIVE_AUTH_REQUIRED",
     sensitiveAuthRequired: true,
     sensitiveAction,
     sensitiveAuthMaxAgeSeconds: SENSITIVE_AUTH_MAX_AGE_SECONDS,

@@ -32,13 +32,13 @@ function positiveInt(value: unknown, label: string) {
   const normalized = text(value).replace(/,/g, "");
 
   if (!/^\d+$/.test(normalized)) {
-    throw inboundBatchInputError(`${label}은 1 이상의 숫자로 입력하세요.`);
+    throw inboundBatchInputError("INBOUND_BATCH_INPUT_INVALID");
   }
 
   const parsed = Number.parseInt(normalized, 10);
 
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw inboundBatchInputError(`${label}은 1 이상의 숫자로 입력하세요.`);
+    throw inboundBatchInputError("INBOUND_BATCH_INPUT_INVALID");
   }
 
   return parsed;
@@ -48,7 +48,7 @@ function batchDate(value: unknown) {
   const normalized = text(value);
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    throw inboundBatchInputError("입고일자는 YYYY-MM-DD 형식으로 입력하세요.");
+    throw inboundBatchInputError("INBOUND_BATCH_INPUT_INVALID");
   }
 
   const parsed = new Date(`${normalized}T00:00:00Z`);
@@ -57,7 +57,7 @@ function batchDate(value: unknown) {
     Number.isNaN(parsed.getTime()) ||
     parsed.toISOString().slice(0, 10) !== normalized
   ) {
-    throw inboundBatchInputError("실제로 존재하는 입고일자를 입력하세요.");
+    throw inboundBatchInputError("INBOUND_BATCH_INPUT_INVALID");
   }
 
   return { text: normalized, value: parsed };
@@ -80,7 +80,7 @@ function expectedRevision(input: InboundBatchInput) {
     ? Number.parseInt(normalized, 10)
     : Number.NaN;
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw inboundBatchInputError("차수 revision이 올바르지 않습니다.");
+    throw inboundBatchInputError("INBOUND_BATCH_INPUT_INVALID");
   }
   return parsed;
 }
@@ -170,7 +170,7 @@ export async function createInboundBatch(
         if (existing) {
           throw publicConflict(
             "INBOUND_BATCH_ALREADY_EXISTS",
-            `${data.batchDateText} ${data.batchNo}차가 이미 등록되어 있습니다.`
+            "INBOUND_BATCH_ALREADY_EXISTS"
           );
         }
 
@@ -205,7 +205,7 @@ export async function createInboundBatch(
     if (isPostgresqlUniqueViolation(error)) {
       throw publicConflict(
         "INBOUND_BATCH_ALREADY_EXISTS",
-        `${data.batchDateText} ${data.batchNo}차가 이미 등록되어 있습니다.`
+        "INBOUND_BATCH_ALREADY_EXISTS"
       );
     }
     throw error;
@@ -219,7 +219,7 @@ export async function updateInboundBatch(
   user: AuthUser
 ) {
   if (!Number.isInteger(id) || id <= 0) {
-    throw inboundBatchInputError("수정할 차수 ID가 올바르지 않습니다.");
+    throw inboundBatchInputError("INBOUND_BATCH_INPUT_INVALID");
   }
 
   const data = normalizeInput(input);
@@ -242,13 +242,13 @@ export async function updateInboundBatch(
         if (!beforeRow) {
           throw publicNotFound(
             "INBOUND_BATCH_NOT_FOUND",
-            "수정할 차수 정보를 찾을 수 없습니다."
+            "INBOUND_BATCH_NOT_FOUND"
           );
         }
         if (beforeRow.revision !== revision) {
           throw publicConflict(
             "INBOUND_BATCH_CHANGED",
-            "차수 정보가 변경되었습니다. 목록을 새로 고친 뒤 다시 시도해 주세요."
+            "INBOUND_BATCH_CHANGED"
           );
         }
 
@@ -265,7 +265,7 @@ export async function updateInboundBatch(
         if (duplicate && duplicate.inbound_batch_id !== id) {
           throw publicConflict(
             "INBOUND_BATCH_ALREADY_EXISTS",
-            `${data.batchDateText} ${data.batchNo}차가 이미 등록되어 있습니다.`
+            "INBOUND_BATCH_ALREADY_EXISTS"
           );
         }
 
@@ -284,14 +284,14 @@ export async function updateInboundBatch(
         if (changed.count !== 1) {
           throw publicConflict(
             "INBOUND_BATCH_CHANGED",
-            "차수 정보가 동시에 변경되었습니다. 목록을 새로 고친 뒤 다시 시도해 주세요."
+            "INBOUND_BATCH_CHANGED"
           );
         }
         const updated = await readBatchById(tx, id);
         if (!updated) {
           throw publicNotFound(
             "INBOUND_BATCH_NOT_FOUND",
-            "수정한 차수 정보를 찾을 수 없습니다."
+            "INBOUND_BATCH_NOT_FOUND"
           );
         }
 
@@ -313,7 +313,7 @@ export async function updateInboundBatch(
     if (isPostgresqlUniqueViolation(error)) {
       throw publicConflict(
         "INBOUND_BATCH_ALREADY_EXISTS",
-        `${data.batchDateText} ${data.batchNo}차가 이미 등록되어 있습니다.`
+        "INBOUND_BATCH_ALREADY_EXISTS"
       );
     }
     throw error;
@@ -327,7 +327,7 @@ export async function deleteInboundBatch(
   user: AuthUser
 ) {
   if (!Number.isInteger(id) || id <= 0) {
-    throw inboundBatchInputError("삭제할 차수 ID가 올바르지 않습니다.");
+    throw inboundBatchInputError("INBOUND_BATCH_INPUT_INVALID");
   }
 
   const timestamp = databaseNow();
@@ -345,20 +345,20 @@ export async function deleteInboundBatch(
     if (!beforeRow) {
       throw publicNotFound(
         "INBOUND_BATCH_NOT_FOUND",
-        "삭제할 차수 정보를 찾을 수 없습니다."
+        "INBOUND_BATCH_NOT_FOUND"
       );
     }
     if (beforeRow.revision !== revision) {
       throw publicConflict(
         "INBOUND_BATCH_CHANGED",
-        "차수 정보가 변경되었습니다. 목록을 새로 고친 뒤 다시 시도해 주세요."
+        "INBOUND_BATCH_CHANGED"
       );
     }
 
     if (beforeRow._count.inbounds > 0) {
       throw publicConflict(
         "INBOUND_BATCH_DELETE_CONFLICT",
-        `입고 기록 ${beforeRow._count.inbounds}건이 연결되어 있어 삭제할 수 없습니다.`
+        "INBOUND_BATCH_DELETE_CONFLICT"
       );
     }
 
@@ -370,7 +370,7 @@ export async function deleteInboundBatch(
     if (deleted.count !== 1) {
       throw publicConflict(
         "INBOUND_BATCH_CHANGED",
-        "차수 정보가 동시에 변경되었습니다. 목록을 새로 고친 뒤 다시 시도해 주세요."
+        "INBOUND_BATCH_CHANGED"
       );
     }
 

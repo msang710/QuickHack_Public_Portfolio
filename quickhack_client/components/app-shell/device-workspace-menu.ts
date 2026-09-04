@@ -173,442 +173,453 @@ export function findShortcutMenuGroup(
 export const menuGroups: MenuGroup[] = [
   {
     id: "main",
-    label: "메인",
+    label: "groups.main.label",
     icon: Menu,
     items: [
       {
         id: "dashboard",
-        label: "대쉬보드",
+        label: "items.dashboard.label",
         minRole: "VIEWER",
         icon: LayoutDashboard,
-        description: "전체 업무 현황을 확인합니다.",
+        description: "items.dashboard.description",
       },
     ],
   },
   {
     id: "inbound",
-    label: "입고",
+    label: "groups.inbound.label",
     icon: PackagePlus,
     items: [
       {
         id: "inbound-appearance",
-        label: "외관 검수",
+        label: "items.inbound-appearance.label",
         minRole: "STAFF",
         icon: ClipboardCheck,
-        description: "입고 기기의 외관 검수 작업 메뉴입니다.",
+        description: "items.inbound-appearance.description",
       },
       {
         id: "inbound-function",
-        label: "기능 검수",
+        label: "items.inbound-function.label",
         minRole: "STAFF",
         icon: Wrench,
-        description: "입고 기기의 기능 검수 작업 메뉴입니다.",
+        description: "items.inbound-function.description",
       },
       {
         id: "inbound-upload-pending",
-        label: "업로드 대기 목록",
+        label: "items.inbound-upload-pending.label",
         minRole: "STAFF",
         icon: ListChecks,
-        description: "검수 후 서버 업로드를 기다리는 목록입니다.",
+        description: "items.inbound-upload-pending.description",
       },
       {
         id: "inbound-batch",
-        label: "차수 지정",
+        label: "items.inbound-batch.label",
         minRole: "STAFF",
         icon: ClipboardList,
-        description: "입고 차수를 지정하는 메뉴입니다.",
+        description: "items.inbound-batch.description",
       },
       {
         id: "inbound-purchase-price",
-        label: "매입가 지정",
+        label: "items.inbound-purchase-price.label",
         minRole: "MANAGER",
         icon: BadgeDollarSign,
-        description: "기기별 매입가를 지정하는 메뉴입니다.",
+        description: "items.inbound-purchase-price.description",
       },
       {
         id: "inbound-purchase-pending",
-        label: "매입 대기 목록",
+        label: "items.inbound-purchase-pending.label",
         minRole: "MANAGER",
         icon: FileDown,
-        description: "검수 완료 후 매입 협상과 중가비 등록을 준비하는 목록입니다.",
+        description: "items.inbound-purchase-pending.description",
       },
     ],
   },
   {
     id: "inventory",
-    label: "재고",
+    label: "groups.inventory.label",
     icon: Warehouse,
     items: [
       {
         id: "inventory-search",
-        label: "재고 조회",
+        label: "items.inventory-search.label",
         minRole: "VIEWER",
         icon: Search,
-        description: "현재 등록된 기기와 재고 상태를 조회합니다.",
+        description: "items.inventory-search.description",
       },
       {
         id: "inventory-audit",
-        label: "재고 실사",
+        label: "items.inventory-audit.label",
         minRole: "STAFF",
         icon: ListChecks,
-        description: "실물 재고와 시스템 재고를 대조하는 메뉴입니다.",
+        description: "items.inventory-audit.description",
       },
       {
         id: "inventory-quantity-ledger",
-        label: "재고 수불 현황",
+        label: "items.inventory-quantity-ledger.label",
         minRole: "STAFF",
         icon: ScrollText,
-        description: "재고 SKU별 현재 수량과 변동 이력을 확인합니다.",
+        description: "items.inventory-quantity-ledger.description",
       },
       {
         id: "inventory-edit",
-        label: "기존 재고 수정",
+        label: "items.inventory-edit.label",
         minRole: "MANAGER",
         icon: PencilLine,
-        description: "기존 재고 데이터를 수정하는 메뉴입니다.",
+        description: "items.inventory-edit.description",
       },
       {
         id: "inventory-manage",
-        label: "재고 추가 / 삭제",
+        label: "items.inventory-manage.label",
         minRole: "MANAGER",
         icon: PackageCheck,
-        description: "재고를 직접 추가하거나 삭제하는 메뉴입니다.",
+        description: "items.inventory-manage.description",
       },
     ],
   },
   {
     id: "shipment",
-    label: "출고",
+    label: "groups.shipment.label",
     icon: Truck,
     items: [
       {
         id: "shipment-all-orders",
-        label: "주문 매칭 작업 목록",
+        label: "items.shipment-all-orders.label",
         minRole: "MANAGER",
         icon: ClipboardList,
-        description: "매칭 worker가 처리하는 주문 작업지시서 목록입니다.",
+        description: "items.shipment-all-orders.description",
       },
       {
         id: "shipment-matched",
-        label: "매칭 완료",
+        label: "items.shipment-matched.label",
         minRole: "STAFF",
         icon: CheckCheck,
-        description: "주문과 재고 매칭이 완료된 목록입니다.",
+        description: "items.shipment-matched.description",
       },
       {
         id: "shipment-delivery-changes",
-        label: "배송 정보 변경 건 조회",
+        label: "items.shipment-delivery-changes.label",
         minRole: "MANAGER",
         icon: PanelRightOpen,
-        description: "배송 정보가 변경된 주문 건을 조회하는 메뉴입니다.",
+        description: "items.shipment-delivery-changes.description",
       },
       {
         id: "shipment-today",
-        label: "오늘의 출고 목록",
+        label: "items.shipment-today.label",
         minRole: "STAFF",
         icon: Send,
-        description: "매칭 완료 목록 출력 시점 기준으로 당일 출고 확인 목록을 조회합니다.",
+        description: "items.shipment-today.description",
       },
       {
         id: "shipment-in-transit",
-        label: "현재 배송 중 목록",
+        label: "items.shipment-in-transit.label",
         minRole: "STAFF",
         icon: Truck,
-        description: "현재 송장 등록·배송 중·배송 예외 상태인 목록입니다.",
+        description: "items.shipment-in-transit.description",
       },
       {
         id: "shipment-delivery-search",
-        label: "전체 배송 건 검색",
+        label: "items.shipment-delivery-search.label",
         minRole: "STAFF",
         icon: Search,
-        description: "기간과 조건을 직접 지정해 배송 건을 검색하는 메뉴입니다.",
+        description: "items.shipment-delivery-search.description",
       },
     ],
   },
   {
     id: "returns",
-    label: "반품관리",
+    label: "groups.returns.label",
     icon: RotateCcw,
     items: [
       {
         id: "return-before-shipment",
-        label: "출고 전 반품 조회",
+        label: "items.return-before-shipment.label",
         minRole: "STAFF",
         icon: ClipboardList,
-        description: "결제완료부터 배송지시까지의 쿠팡 반품 요청을 조회하고 회수 처리합니다.",
+        description: "items.return-before-shipment.description",
       },
       {
         id: "return-after-shipment",
-        label: "출고 후 반품 조회",
+        label: "items.return-after-shipment.label",
         minRole: "STAFF",
         icon: RotateCcw,
-        description: "출고 후 접수된 고객 반품 요청을 조회하는 메뉴입니다.",
+        description: "items.return-after-shipment.description",
       },
     ],
   },
   {
     id: "invoice",
-    label: "송장 관리",
+    label: "groups.invoice.label",
     icon: Send,
     items: [
       {
         id: "invoice-issue-history",
-        label: "송장 발급 이력 조회",
+        label: "items.invoice-issue-history.label",
         minRole: "MANAGER",
         icon: ScrollText,
-        description: "송장 발급 이력을 조회하는 메뉴입니다.",
+        description: "items.invoice-issue-history.description",
       },
       {
         id: "invoice-manual-issue",
-        label: "수동 송장 발급",
+        label: "items.invoice-manual-issue.label",
         minRole: "MANAGER",
         icon: PencilLine,
-        description: "송장을 수동으로 발급하는 메뉴입니다.",
+        description: "items.invoice-manual-issue.description",
       },
       {
         id: "invoice-registration-failures",
-        label: "송장 등록 실패 조회",
+        label: "items.invoice-registration-failures.label",
         minRole: "MANAGER",
         icon: ListChecks,
-        description: "판매 채널 송장 등록에 실패한 건을 조회하는 메뉴입니다.",
+        description: "items.invoice-registration-failures.description",
       },
       {
         id: "invoice-carrier-dispatch-settings",
-        label: "택배사 발송 설정",
+        label: "items.invoice-carrier-dispatch-settings.label",
         minRole: "LEADER",
         icon: Truck,
-        description: "택배사 송장 등록에 사용할 발송자와 기본 포장 정보를 관리합니다.",
+        description: "items.invoice-carrier-dispatch-settings.description",
       },
     ],
   },
   {
     id: "supplies",
-    label: "비품관리",
+    label: "groups.supplies.label",
     icon: PackageCheck,
     items: [
       {
         id: "supplies-inventory",
-        label: "재고관리",
+        label: "items.supplies-inventory.label",
         minRole: "STAFF",
         icon: PackageCheck,
-        description: "비품 재고 현황을 관리하는 메뉴입니다.",
+        description: "items.supplies-inventory.description",
       },
       {
         id: "supplies-forecast",
-        label: "소요예측",
+        label: "items.supplies-forecast.label",
         minRole: "STAFF",
         icon: BarChart3,
-        description: "비품 사용량을 기준으로 향후 소요량을 예측하는 메뉴입니다.",
+        description: "items.supplies-forecast.description",
       },
       {
         id: "supplies-repurchase",
-        label: "재구매",
+        label: "items.supplies-repurchase.label",
         minRole: "STAFF",
         icon: BadgeDollarSign,
-        description: "비품 재구매 대상과 발주 준비 상태를 관리하는 메뉴입니다.",
+        description: "items.supplies-repurchase.description",
       },
     ],
   },
   {
     id: "stats",
-    label: "통계",
+    label: "groups.stats.label",
     icon: BarChart3,
     items: [
       {
         id: "statistics-purchase",
-        label: "매입",
+        label: "items.statistics-purchase.label",
         minRole: "LEADER",
         icon: BadgeDollarSign,
-        description: "매입가, 매입처, 차수 기준 통계를 확인합니다.",
+        description: "items.statistics-purchase.description",
       },
       {
         id: "statistics-inventory",
-        label: "재고",
+        label: "items.statistics-inventory.label",
         minRole: "LEADER",
         icon: Warehouse,
-        description:
-          "현재 재고 구성, 장기 재고 부담, 기간 흐름과 판매 회전율을 확인합니다.",
+        description: "items.statistics-inventory.description",
       },
       {
         id: "statistics-sales",
-        label: "판매",
+        label: "items.statistics-sales.label",
         minRole: "LEADER",
         icon: Store,
-        description: "판매, 주문 매칭, 출고 기준 통계를 확인합니다.",
+        description: "items.statistics-sales.description",
       },
       {
         id: "statistics-returns",
-        label: "반품",
+        label: "items.statistics-returns.label",
         minRole: "LEADER",
         icon: RotateCcw,
-        description: "고객 반품, 출고 전 취소, 교환 통계를 확인합니다.",
+        description: "items.statistics-returns.description",
       },
     ],
   },
   {
     id: "product-management",
-    label: "상품 관리",
+    label: "groups.product-management.label",
     icon: Database,
     items: [
       {
         id: "admin-product-criteria",
-        label: "상품 기준값 관리",
+        label: "items.admin-product-criteria.label",
         minRole: "LEADER",
         icon: Database,
-        description: "검수 드롭박스와 모델코드, 통신사, 공식 색상명, 용량 기준값을 관리합니다.",
+        description: "items.admin-product-criteria.description",
       },
       {
         id: "admin-sales-product-combinations",
-        label: "판매 상품 조합 관리",
+        label: "items.admin-sales-product-combinations.label",
         minRole: "LEADER",
         icon: Store,
-        description: "기종, 용량, 판매등급, 보증 조건으로 구성된 판매용 상품 조합을 관리합니다.",
+        description: "items.admin-sales-product-combinations.description",
       },
     ],
   },
   {
     id: "sales-channel",
-    label: "판매 채널",
+    label: "groups.sales-channel.label",
     icon: Store,
     items: [
       {
         id: "admin-channel-products",
-        label: "채널별 상품 관리",
+        label: "items.admin-channel-products.label",
         minRole: "LEADER",
         icon: Store,
-        description: "판매 채널별 상품 매핑과 상품 정보를 관리하는 메뉴입니다.",
+        description: "items.admin-channel-products.description",
       },
       {
         id: "sales-channel-manual-order-match",
-        label: "주문 변경 요청",
+        label: "items.sales-channel-manual-order-match.label",
         minRole: "STAFF",
         icon: PencilLine,
-        description: "기존 판매채널 주문의 고객 변경 요청에 따라 출고 PG를 직접 조정합니다.",
+        description: "items.sales-channel-manual-order-match.description",
       },
       {
         id: "admin-channel-order-matching",
-        label: "채널별 주문 매칭 관리",
+        label: "items.admin-channel-order-matching.label",
         minRole: "LEADER",
         icon: ListChecks,
-        description: "판매 채널별 주문 매칭 기준을 관리하는 메뉴입니다.",
+        description: "items.admin-channel-order-matching.description",
       },
       {
         id: "admin-order-matching-policy",
-        label: "주문 매칭 정책",
+        label: "items.admin-order-matching-policy.label",
         minRole: "LEADER",
         icon: ShieldCheck,
-        description: "자동 주문 매칭 worker의 고정 조건과 운영 정책 기준을 확인합니다.",
+        description: "items.admin-order-matching-policy.description",
       },
       {
         id: "admin-sales-channel-sync-check",
-        label: "판매 채널 동기화 점검",
+        label: "items.admin-sales-channel-sync-check.label",
         minRole: "STAFF",
         icon: ShieldAlert,
-        description: "외부 채널 쓰기 결과와 재고 수량 불일치·점검 실패를 한 곳에서 확인합니다.",
+        description: "items.admin-sales-channel-sync-check.description",
       },
     ],
   },
   {
     id: "system-admin",
-    label: "시스템 관리",
+    label: "groups.system-admin.label",
     icon: Settings,
     items: [
       {
         id: "admin-users",
-        label: "사용자 계정 관리",
+        label: "items.admin-users.label",
         minRole: "LEADER",
         icon: UsersRound,
-        description: "직원 계정과 권한을 관리하는 메뉴입니다.",
+        description: "items.admin-users.description",
       },
       {
         id: "admin-staff-work-history",
-        label: "직원 작업 이력 조회",
+        label: "items.admin-staff-work-history.label",
         minRole: "LEADER",
         icon: ClipboardList,
-        description: "직원별 주요 작업 이력을 조회하는 메뉴입니다.",
+        description: "items.admin-staff-work-history.description",
       },
       {
         id: "admin-server-logs",
-        label: "서버 작업 로그 조회",
+        label: "items.admin-server-logs.label",
         minRole: "LEADER",
         icon: ScrollText,
-        description: "서버 작업 이력과 오류 로그를 조회하는 메뉴입니다.",
+        description: "items.admin-server-logs.description",
       },
       {
         id: "admin-system-status",
-        label: "시스템 상태",
+        label: "items.admin-system-status.label",
         minRole: "LEADER",
         icon: ServerCog,
-        description: "서버, DB, 연동 상태를 확인하는 메뉴입니다.",
+        description: "items.admin-system-status.description",
       },
       {
         id: "admin-security-status",
-        label: "보안 점검",
+        label: "items.admin-security-status.label",
         minRole: "LEADER",
         icon: ShieldCheck,
-        description: "OTP, 백업, 운영 환경, 보안 worker 상태를 점검하는 메뉴입니다.",
+        description: "items.admin-security-status.description",
       },
     ],
   },
   {
     id: "developer",
-    label: "개발자 메뉴",
+    label: "groups.developer.label",
     icon: Code2,
     items: [
       {
         id: "developer-diagnostics",
-        label: "개발자 진단",
+        label: "items.developer-diagnostics.label",
         minRole: "VIEWER",
         developerOnly: true,
         icon: TerminalSquare,
-        description: "런타임, 서버, DB, 클라이언트 상태를 개발자 관점에서 점검하는 메뉴입니다.",
+        description: "items.developer-diagnostics.description",
       },
       {
         id: "developer-response-performance",
-        label: "응답 성능 측정",
+        label: "items.developer-response-performance.label",
         minRole: "VIEWER",
         developerOnly: true,
         icon: Gauge,
-        description: "사용자 조작 trace의 응답 시간과 DB·트랜잭션 처리 구간을 분석합니다.",
+        description: "items.developer-response-performance.description",
       },
       {
         id: "developer-api-sandbox",
-        label: "API 테스트",
+        label: "items.developer-api-sandbox.label",
         minRole: "VIEWER",
         developerOnly: true,
         icon: ServerCog,
-        description: "외부 API와 내부 API 요청을 안전 모드로 재현하고 응답을 확인하는 메뉴입니다.",
+        description: "items.developer-api-sandbox.description",
       },
       {
         id: "developer-adb-diagnostics",
-        label: "ADB 진단",
+        label: "items.developer-adb-diagnostics.label",
         minRole: "VIEWER",
         developerOnly: true,
         icon: Wrench,
-        description: "ADB 경로, 서버 상태, 연결 기기, offline 장치를 점검하는 메뉴입니다.",
+        description: "items.developer-adb-diagnostics.description",
       },
       {
         id: "developer-db-migrations",
-        label: "DB / 마이그레이션 점검",
+        label: "items.developer-db-migrations.label",
         minRole: "VIEWER",
         developerOnly: true,
         icon: Database,
-        description: "Prisma 스키마, 마이그레이션 적용 상태, 주요 테이블 카운트를 점검하는 메뉴입니다.",
+        description: "items.developer-db-migrations.description",
       },
     ],
   },
 ];
 
+export function localizeMenuGroups(translate: (key: string) => string) {
+  return menuGroups.map((group) => ({
+    ...group,
+    label: translate(group.label),
+    items: group.items.map((item) => ({
+      ...item,
+      label: translate(item.label),
+      description: translate(item.description),
+    })),
+  }));
+}
+
 const menuTextOverrides: Partial<
   Record<MenuItemId, Pick<MenuItem, "label" | "description">>
 > = {
   "return-before-shipment": {
-    label: "출고 전 반품목록",
-    description: "출고 확정 전 취소·반품 신호가 있는 주문 품목을 확인합니다.",
+    label: "items.return-before-shipment.label",
+    description: "items.return-before-shipment.description",
   },
   "return-after-shipment": {
-    label: "출고 후 반품목록",
-    description: "출고 이후 접수된 반품 데이터를 주문·출고 정보와 함께 확인합니다.",
+    label: "items.return-after-shipment.label",
+    description: "items.return-after-shipment.description",
   },
 };
 
@@ -633,10 +644,10 @@ export const sensitiveMenuIds = new Set<MenuItemId>([
 const utilityMenuItems: MenuItem[] = [
   {
     id: "personal-settings",
-    label: "개인 설정",
+    label: "items.personal-settings.label",
     minRole: "VIEWER",
     icon: Settings,
-    description: "사용자별 단축키와 알림 설정을 관리합니다.",
+    description: "items.personal-settings.description",
   },
 ];
 
@@ -648,14 +659,24 @@ export function canAccessMenuItem(user: AuthUser, item: MenuItem) {
   return canAccessRole(user.role, item.minRole);
 }
 
-export function findMenuItem(id: MenuItemId) {
+export function findMenuItem(
+  id: MenuItemId,
+  groups: readonly MenuGroup[] = menuGroups,
+  translate?: (key: string) => string
+) {
   const utilityItem = utilityMenuItems.find((item) => item.id === id);
 
   if (utilityItem) {
-    return utilityItem;
+    return translate
+      ? {
+          ...utilityItem,
+          label: translate(utilityItem.label),
+          description: translate(utilityItem.description),
+        }
+      : utilityItem;
   }
 
-  for (const group of menuGroups) {
+  for (const group of groups) {
     const item = group.items.find((candidate) => candidate.id === id);
 
     if (item) {
@@ -663,11 +684,14 @@ export function findMenuItem(id: MenuItemId) {
     }
   }
 
-  return menuGroups[0].items[0];
+  return groups[0]?.items[0] ?? menuGroups[0].items[0];
 }
 
-export function getAllowedMenuGroups(user: AuthUser) {
-  return menuGroups
+export function getAllowedMenuGroups(
+  user: AuthUser,
+  groups: readonly MenuGroup[] = menuGroups
+) {
+  return groups
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => canAccessMenuItem(user, item)),

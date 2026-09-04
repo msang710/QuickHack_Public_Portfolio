@@ -1,4 +1,5 @@
 import { prisma } from "@/quickhack_server/core/prisma";
+import { publicConflict } from "@/quickhack_server/core/public-error";
 import { digestDomainOperation } from "@/quickhack_server/core/database/aggregate-command";
 import {
   COUPANG_AFTER_SHIPMENT_RETURN_ORDER_STATUSES,
@@ -52,12 +53,6 @@ const ACTIVE_RETURN_ALLOCATION_STATUSES = [
   "SHIPMENT_LIST_PRINTED",
 ] as const;
 const INSPECTION_RESULT_VALUES = new Set<string>(Object.values(INSPECTION_RESULT));
-
-const ACTION_LABELS = {
-  stopShipment: "출고중지완료",
-  receiveConfirm: "입고 확인",
-  approve: "반품 완료",
-} satisfies Record<CoupangReturnAction, string>;
 
 function positiveInt(value: unknown, label: string) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -375,8 +370,10 @@ export async function processCoupangPreShipmentReturnAction(input: {
   }
 
   if (requestedAction !== expectedAction) {
-    throw new Error(
-      `현재 접수상태에서는 '${ACTION_LABELS[expectedAction]}' 작업만 가능합니다.`
+    throw publicConflict(
+      "RETURN_ACTION_MISMATCH",
+      "RETURN_ACTION_MISMATCH",
+      { expectedAction }
     );
   }
 
@@ -688,7 +685,6 @@ export async function processCoupangPreShipmentReturnAction(input: {
 
   return {
     action: requestedAction,
-    actionLabel: ACTION_LABELS[requestedAction],
     externalReceiptId: returnRow.external_receipt_id,
     externalOrderId: returnRow.external_order_id,
     nextReceiptStatus,
