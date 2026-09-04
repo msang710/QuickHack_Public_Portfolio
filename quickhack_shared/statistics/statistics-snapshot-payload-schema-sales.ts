@@ -42,7 +42,6 @@ const leadTimeBucketSchema = objectSchema<SalesLeadTimeBucket>({
     "DAYS_60_89",
     "DAYS_90_PLUS"
   ),
-  label: stringSchema,
   count: finiteNumberSchema,
 });
 

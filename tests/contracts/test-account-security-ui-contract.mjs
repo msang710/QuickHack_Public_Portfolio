@@ -66,7 +66,8 @@ assert.match(sensitiveActionGuards, /enrollmentToken:\s*totpSetup\?\.enrollmentT
 assert.match(accountTotpPanel, /<RecoveryCodeResult/);
 assert.match(sensitiveActionGuards, /<RecoveryCodeResult/);
 assert.match(recoveryCodeResult, /kind:\s*"one-time-result"/);
-assert.match(recoveryCodeResult, /보관 완료/);
+assert.match(recoveryCodeResult, /useTranslations\("common\.recoveryCodes"\)/);
+assert.match(recoveryCodeResult, /acknowledged \? t\("stored"\) : t\("store"\)/);
 assert.match(accountManager, /expectedRevision:\s*selectedUser\.revision/);
 assert.match(workspace, /expectedRevision:\s*accountProfile\.revision/);
 assert.match(
@@ -77,7 +78,7 @@ assert.match(
   forcedScreen,
   /import\s+\{\s*requestQuickHackLogout\s*\}\s+from\s+"@\/quickhack_client\/auth\/logout"/
 );
-assert.match(forcedScreen, /await requestQuickHackLogout\(\)/);
+assert.match(forcedScreen, /await requestQuickHackLogout\(fetch, t\("logoutFailed"\)\)/);
 assert.match(logoutHelper, /fetchImplementation\("\/api\/auth\/logout"/);
 assert.doesNotMatch(forcedScreen, /DeviceWorkspace/);
 assert.match(
@@ -90,11 +91,11 @@ assert.match(
 );
 assert.match(
   accountTotpPanel,
-  /OTP 보안 서비스를 사용할 수 없어 OTP 등록과 보호된 작업이 차단되었습니다/
+  /useTranslations\("settings\.accountTotp"\)[\s\S]*?t\("unavailable"\)/
 );
 assert.match(
   sensitiveActionGuards,
-  /OTP 보안 서비스를 사용할 수 없어 보호된 작업이 차단되었습니다/
+  /useTranslations\("auth\.sensitiveAction"\)[\s\S]*?t\("setup\.unavailable"\)/
 );
 assert.doesNotMatch(
   sensitiveActionGuards,

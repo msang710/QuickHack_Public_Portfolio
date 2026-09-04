@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { PencilLine } from "lucide-react";
 import type {
   DeviceDetailRecords,
@@ -46,15 +48,16 @@ import {
   type InventoryPendingTextDraft,
 } from "@/quickhack_client/components/inventory/inventory-correction-changes";
 import {
+  detailFieldLabel,
   statusBadge,
-  statusMap,
+  statusLabel,
 } from "@/quickhack_client/components/shared/device-detail-sheet";
 import {
   useUnsavedChanges,
   useUnsavedForm,
 } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { cn } from "@/quickhack_shared/core/utils";
-import { POST_WRITE_REFRESH_WARNING } from "@/quickhack_client/lib/post-write-refresh";
+import { POST_WRITE_REFRESH_WARNING_KEY } from "@/quickhack_client/lib/post-write-refresh";
 import {
   requestDeviceDetail,
   requestDeviceHistoryPage,
@@ -93,11 +96,12 @@ type InventoryCorrectionHistoryPages = Partial<
 
 async function requestInventoryCorrectionHistory(
   pgNo: string,
+  fallbackMessage: string,
   signal?: AbortSignal
 ) {
   const pages = await Promise.all(
     INVENTORY_CORRECTION_HISTORY_SECTIONS.map((section) =>
-      requestDeviceHistoryPage(pgNo, section, null, signal)
+      requestDeviceHistoryPage(pgNo, section, fallbackMessage, null, signal)
     )
   );
   return Object.fromEntries(
@@ -162,6 +166,7 @@ function inventoryEditSearchableText(device: DeviceListRow) {
 
 async function requestDeviceDetailsInBatches(
   devices: DeviceListRow[],
+  fallbackMessage: string,
   batchSize = 8
 ) {
   const details: DeviceListItem[] = [];
@@ -170,7 +175,7 @@ async function requestDeviceDetailsInBatches(
       ...(await Promise.all(
         devices
           .slice(index, index + batchSize)
-          .map((device) => requestDeviceDetail(device.pgNo))
+          .map((device) => requestDeviceDetail(device.pgNo, fallbackMessage))
       ))
     );
   }
@@ -186,6 +191,10 @@ export function InventoryEditView({
   isWorkspaceRefreshing?: boolean;
   onInitialPgNoConsumed?: () => void;
 }) {
+  const feedbackT = useTranslations("common.feedback");
+  const t = useTranslations("inventory.edit");
+  const detailT = useTranslations("common.deviceDetail");
+  const queryT = useTranslations("common.deviceQuery");
   const deviceList = useDeviceListQuery({
     endpoint: "/api/inventory/devices",
     queryString: "context=CORRECTION&limit=100",
@@ -325,8 +334,8 @@ export function InventoryEditView({
   useUnsavedForm({
     id: INVENTORY_CORRECTION_FORM_ID,
     label: selectedDevice
-      ? `${selectedDevice.pgNo} 재고 수정`
-      : "재고 수정",
+      ? t("unsaved.device", { pg: selectedDevice.pgNo })
+      : t("unsaved.form"),
     enabled: Boolean(selectedDevice),
     isDirty:
       correctionChanges.length > 0 || normalizedEditReason.length > 0,
@@ -449,8 +458,12 @@ export function InventoryEditView({
 
     try {
       const [device, pages] = await Promise.all([
-        requestDeviceDetail(pgNo, controller.signal),
-        requestInventoryCorrectionHistory(pgNo, controller.signal),
+        requestDeviceDetail(pgNo, queryT("detailFailed"), controller.signal),
+        requestInventoryCorrectionHistory(
+          pgNo,
+          queryT("historyFailed"),
+          controller.signal
+        ),
       ]);
       if (!controller.signal.aborted) applyDeviceSelection(device, pages);
       return device;
@@ -467,7 +480,7 @@ export function InventoryEditView({
     } finally {
       if (!controller.signal.aborted) setIsDetailLoading(false);
     }
-  }, [applyDeviceSelection, clearPendingTextDrafts]);
+  }, [applyDeviceSelection, clearPendingTextDrafts, queryT]);
 
   function selectDevice(device: DeviceListRow) {
     if (device.pgNo === selectedPgNo) {
@@ -477,7 +490,7 @@ export function InventoryEditView({
     runGuardedAction({
       intent: "internal-change",
       formIds: [INVENTORY_CORRECTION_FORM_ID],
-      targetLabel: `${device.pgNo} 재고 열기`,
+      targetLabel: t("unsaved.openDevice", { pg: device.pgNo }),
       action: () => {
         void loadDeviceSelection(device.pgNo).catch(() => undefined);
         onInitialPgNoConsumed?.();
@@ -505,8 +518,8 @@ export function InventoryEditView({
         setSelectedPgNo(normalizedInitialPgNo);
         setMessage(
           isWorkspaceRefreshing
-            ? `${normalizedInitialPgNo} 기기 목록을 갱신하고 있습니다.`
-            : `${normalizedInitialPgNo} PG를 현재 재고 수정 목록에서 찾지 못했습니다. 작업 영역을 새로고침한 뒤 다시 확인하세요.`
+            ? t("message.focusRefreshing", { pg: normalizedInitialPgNo })
+            : t("message.focusNotFound", { pg: normalizedInitialPgNo })
         );
         setMessageTone(isWorkspaceRefreshing ? "neutral" : "warning");
         return;
@@ -521,7 +534,7 @@ export function InventoryEditView({
       runGuardedAction({
         intent: "internal-change",
         formIds: [INVENTORY_CORRECTION_FORM_ID],
-        targetLabel: `${target.pgNo} 재고 열기`,
+        targetLabel: t("unsaved.openDevice", { pg: target.pgNo }),
         action: () => {
           void loadDeviceSelection(target.pgNo).catch(() => undefined);
           onInitialPgNoConsumed?.();
@@ -541,6 +554,7 @@ export function InventoryEditView({
     onInitialPgNoConsumed,
     runGuardedAction,
     loadDeviceSelection,
+    t,
   ]);
 
   React.useEffect(() => {
@@ -624,6 +638,7 @@ export function InventoryEditView({
                 requestDeviceHistoryPage(
                   selectedDevice.pgNo,
                   section,
+                  queryT("historyFailed"),
                   current.nextCursor
                 ),
               ]
@@ -672,8 +687,8 @@ export function InventoryEditView({
   async function refreshDeviceAfterWrite(pgNo: string) {
     const [, updatedDevice, pages] = await Promise.all([
       deviceList.reload(),
-      requestDeviceDetail(pgNo),
-      requestInventoryCorrectionHistory(pgNo),
+      requestDeviceDetail(pgNo, queryT("detailFailed")),
+      requestInventoryCorrectionHistory(pgNo, queryT("historyFailed")),
     ]);
     const refreshedRecords = recordsWithHistoryPages(
       updatedDevice.detailRecords,
@@ -696,13 +711,13 @@ export function InventoryEditView({
 
     const currentState = currentCorrectionState();
     if (currentState.changes.length === 0) {
-      setMessage("저장할 재고 변경사항이 없습니다.");
+      setMessage(t("message.noChanges"));
       setMessageTone("warning");
       return;
     }
 
     if (!normalizedEditReason) {
-      setMessage("수정 사유를 입력해야 저장할 수 있습니다.");
+      setMessage(t("message.reasonRequired"));
       setMessageTone("warning");
       return;
     }
@@ -721,7 +736,10 @@ export function InventoryEditView({
           body: JSON.stringify({
             pgNo: form.pgNo,
             editReason: normalizedEditReason,
-            patches: inventoryCorrectionPatches(currentState.changes),
+            patches: inventoryCorrectionPatches(
+              currentState.changes,
+              t("message.missingRevision")
+            ),
           }),
         }
       );
@@ -730,7 +748,7 @@ export function InventoryEditView({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "기존 재고 수정에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.saveFailed")));
       }
 
       const committedRecords = cloneDeviceDetailRecords(currentState.records);
@@ -738,13 +756,13 @@ export function InventoryEditView({
       setBaselineRecords(committedRecords);
       setEditRecords(committedRecords);
       clearPendingTextDrafts();
-      setMessage(payload.message || "기존 재고 수정 내역을 저장했습니다.");
+      setMessage(t("message.saved"));
       setMessageTone("success");
 
       try {
         await refreshDeviceAfterWrite(form.pgNo);
       } catch {
-        setPostWriteRefreshWarning(POST_WRITE_REFRESH_WARNING);
+        setPostWriteRefreshWarning(feedbackT(POST_WRITE_REFRESH_WARNING_KEY));
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -762,19 +780,19 @@ export function InventoryEditView({
     const currentState = currentCorrectionState();
 
     if (!normalizedEditReason) {
-      setMessage("수정 사유를 입력해야 저장할 수 있습니다.");
+      setMessage(t("message.reasonRequired"));
       setMessageTone("warning");
       return;
     }
 
     if (selectedBulkDevices.length === 0) {
-      setMessage("일괄 수정할 재고를 체크박스로 선택해야 합니다.");
+      setMessage(t("message.selectionRequired"));
       setMessageTone("warning");
       return;
     }
 
     if (currentState.bulkChanges.length === 0) {
-      setMessage("일괄 적용할 변경 컬럼이 없습니다.");
+      setMessage(t("message.noBulkColumns"));
       setMessageTone("warning");
       return;
     }
@@ -787,7 +805,8 @@ export function InventoryEditView({
     let selectedBulkDeviceDetails: DeviceListItem[];
     try {
       selectedBulkDeviceDetails = await requestDeviceDetailsInBatches(
-        selectedBulkDevices
+        selectedBulkDevices,
+        queryT("detailFailed")
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -810,7 +829,10 @@ export function InventoryEditView({
         return result.appliedCount > 0
           ? {
               pgNo: device.pgNo,
-              patches: inventoryCorrectionPatches(targetChanges),
+              patches: inventoryCorrectionPatches(
+                targetChanges,
+                t("message.missingRevision")
+              ),
               records: result.records,
             }
           : null;
@@ -826,7 +848,7 @@ export function InventoryEditView({
       );
 
     if (items.length === 0) {
-      setMessage("선택한 재고에 적용할 수 있는 변경 컬럼이 없습니다.");
+      setMessage(t("message.noApplicableColumns"));
       setMessageTone("warning");
       setIsBulkConfirmOpen(false);
       return;
@@ -846,7 +868,7 @@ export function InventoryEditView({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "기존 재고 일괄 수정에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.bulkSaveFailed")));
       }
 
       const currentCommittedItem = items.find((item) => item.pgNo === form.pgNo);
@@ -860,13 +882,13 @@ export function InventoryEditView({
       setEditRecords(committedRecords);
       setSelectedBulkPgNos(new Set());
       clearPendingTextDrafts();
-      setMessage(payload.message || "선택 재고 수정 내역을 저장했습니다.");
+      setMessage(t("message.bulkSaved"));
       setMessageTone("success");
 
       try {
         await refreshDeviceAfterWrite(form.pgNo);
       } catch {
-        setPostWriteRefreshWarning(POST_WRITE_REFRESH_WARNING);
+        setPostWriteRefreshWarning(feedbackT(POST_WRITE_REFRESH_WARNING_KEY));
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -903,7 +925,7 @@ export function InventoryEditView({
                 checkedCount > 0 && checkedCount < selectableRows.length
               }
               disabled={selectableRows.length === 0}
-              ariaLabel="표시된 재고 전체 선택 또는 해제"
+              ariaLabel={t("selection.allAria")}
               onCheckedChange={(checked) =>
                 setVisibleBulkSelected(selectableRows, checked)
               }
@@ -914,7 +936,7 @@ export function InventoryEditView({
           <div onClick={(event) => event.stopPropagation()}>
             <TableSelectCheckbox
               checked={selectedBulkPgNos.has(device.pgNo)}
-              ariaLabel={`${device.pgNo} 일괄 수정 대상 선택`}
+              ariaLabel={t("selection.itemAria", { pg: device.pgNo })}
               onCheckedChange={(checked) => setBulkSelected(device.pgNo, checked)}
             />
           </div>
@@ -924,16 +946,16 @@ export function InventoryEditView({
         key: "pgNo",
         label: "PG",
         width: "126px",
-        placeholder: "PG 검색",
+        placeholder: t("placeholders.pg"),
         cellClassName: "flex items-center px-3 font-semibold",
         render: (device) => device.pgNo,
         text: (device) => device.pgNo,
       },
       {
         key: "model",
-        label: "모델",
+        label: t("columns.model"),
         width: "minmax(220px,1fr)",
-        placeholder: "모델/용량/색상",
+        placeholder: t("placeholders.model"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (device) => (
           <>
@@ -963,18 +985,18 @@ export function InventoryEditView({
       },
       {
         key: "status",
-        label: "상태",
+        label: t("columns.status"),
         width: "96px",
-        placeholder: "상태 검색",
+        placeholder: t("placeholders.status"),
         cellClassName: "flex items-center px-3",
-        render: (device) => statusBadge(device.displayStatus),
+        render: (device) => statusBadge(device.displayStatus, detailT),
         text: (device) =>
-          [statusMap[device.displayStatus]?.label, device.displayStatus]
+          [statusLabel(device.displayStatus, detailT), device.displayStatus]
             .filter(Boolean)
             .join(" "),
       },
     ],
-    [selectedBulkPgNos]
+    [detailT, selectedBulkPgNos, t]
   );
 
   return (
@@ -985,7 +1007,7 @@ export function InventoryEditView({
       <div className="flex min-h-0 flex-col rounded-md border bg-popover">
         <div className="border-b p-3">
           <SearchInput
-            placeholder="PG, IMEI, 모델 검색"
+            placeholder={t("placeholders.query")}
             value={query}
             onValueChange={setQuery}
           />
@@ -994,7 +1016,7 @@ export function InventoryEditView({
           rows={filteredDevices}
           columns={deviceSelectorColumns}
           rowKey={(device) => device.pgNo}
-          emptyMessage="수정할 기기가 없습니다."
+          emptyMessage={t("empty")}
           selectedRowKey={selectedDevice?.pgNo ?? null}
           onRowClick={selectDevice}
           className="rounded-none border-0"
@@ -1007,11 +1029,13 @@ export function InventoryEditView({
         <div className="grid gap-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">기존 재고 수정</h2>
+              <h2 className="text-sm font-semibold">{t("title")}</h2>
               <p className="text-xs text-muted-foreground">
-                기준 PG {form.pgNo || "-"} / 선택{" "}
-                {selectedBulkDevices.length.toLocaleString("ko-KR")}건 / 변경{" "}
-                {correctionChanges.length.toLocaleString("ko-KR")}개
+                {t("selection.summary", {
+                  changed: correctionChanges.length,
+                  pg: form.pgNo || "-",
+                  selected: selectedBulkDevices.length,
+                })}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1020,7 +1044,7 @@ export function InventoryEditView({
                 onClick={() => setSelectedBulkPgNos(new Set<string>())}
                 disabled={selectedBulkDevices.length === 0 || isSaving}
               >
-                선택 해제
+                {t("actions.clearSelection")}
               </Button>
               <Button
                 variant="outline"
@@ -1034,7 +1058,7 @@ export function InventoryEditView({
                 }
               >
                 <PencilLine className="size-4" />
-                선택 일괄 적용
+                {t("actions.applyBulk")}
               </Button>
               <Button
                 variant="outline"
@@ -1048,51 +1072,54 @@ export function InventoryEditView({
                 }
               >
                 <PencilLine className="size-4" />
-                {isSaving ? "저장중" : "수정 저장"}
+                {isSaving ? t("actions.saving") : t("actions.save")}
               </Button>
             </div>
           </div>
 
           <DangerousConfirmDialog
             open={isSaveConfirmOpen}
-            title="기존 재고 수정 저장"
-            description="선택한 기기의 재고, 입고, 기기 정보를 수동으로 덮어씁니다."
+            title={t("confirm.title")}
+            description={t("confirm.description")}
             detail={
               <>
-                대상 PG <span className="font-mono">{form.pgNo || "-"}</span>의
-                기존 데이터가 즉시 변경됩니다. 수정 사유:{" "}
-                <span className="font-semibold">{normalizedEditReason || "-"}</span>
+                {t("confirm.detail", {
+                  pg: form.pgNo || "-",
+                  reason: normalizedEditReason || "-",
+                })}
               </>
             }
-            confirmLabel="수정 저장"
-            busyLabel="저장중"
+            confirmLabel={t("actions.save")}
+            busyLabel={t("actions.saving")}
             isBusy={isSaving}
             onCancel={() => setIsSaveConfirmOpen(false)}
             onConfirm={() => void saveCorrection()}
           />
           <DangerousConfirmDialog
             open={isBulkConfirmOpen}
-            title="선택 재고 일괄 수정"
-            description="기준 PG에서 실제로 변경한 컬럼만 체크된 재고에 같은 값으로 반영합니다. PG, IMEI, ADB Serial, 고유번호는 일괄 적용에서 제외됩니다."
+            title={t("bulk.title")}
+            description={t("bulk.description")}
             detail={
               <>
-                선택 {selectedBulkDevices.length.toLocaleString("ko-KR")}건 / 변경{" "}
-                {bulkChanges.length.toLocaleString("ko-KR")}개 컬럼
+                {t("bulk.summary", {
+                  changed: bulkChanges.length,
+                  selected: selectedBulkDevices.length,
+                })}
                 <div className="mt-2 grid gap-1 text-xs font-normal">
                   {bulkChanges.slice(0, 6).map((change) => (
                     <div key={`${change.group}-${change.recordIndex}-${change.fieldKey}`}>
-                      {change.label}:{" "}
-                      <span className="font-semibold">{change.value || "(빈 값)"}</span>
+                      {detailFieldLabel(change.fieldKey, detailT)}:{" "}
+                      <span className="font-semibold">{change.value || t("bulk.emptyValue")}</span>
                     </div>
                   ))}
                   {bulkChanges.length > 6 ? (
-                    <div>외 {bulkChanges.length - 6}개 컬럼</div>
+                    <div>{t("bulk.moreColumns", { count: bulkChanges.length - 6 })}</div>
                   ) : null}
                 </div>
               </>
             }
-            confirmLabel="일괄 수정 저장"
-            busyLabel="저장중"
+            confirmLabel={t("bulk.confirm")}
+            busyLabel={t("actions.saving")}
             isBusy={isSaving}
             onCancel={() => setIsBulkConfirmOpen(false)}
             onConfirm={() => void saveBulkCorrection()}
@@ -1122,13 +1149,13 @@ export function InventoryEditView({
 
           {isDetailLoading ? (
             <FeedbackBanner tone="neutral">
-              선택한 기기의 상세 정보를 불러오는 중입니다.
+              {t("loadingDetail")}
             </FeedbackBanner>
           ) : null}
 
           <section className="grid gap-2 rounded-md border bg-popover p-3">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold">수정 기록</h3>
+              <h3 className="text-sm font-semibold">{t("reason.title")}</h3>
               <span
                 className={cn(
                   "text-xs",
@@ -1137,16 +1164,18 @@ export function InventoryEditView({
                     : "text-amber-700"
                 )}
               >
-                {normalizedEditReason ? "저장 가능" : "수정 사유 필요"}
+                {normalizedEditReason
+                  ? t("reason.ready")
+                  : t("reason.required")}
               </span>
             </div>
             <label className="grid gap-1 text-sm">
               <span className="text-xs font-medium text-muted-foreground">
-                수정 사유
+                {t("reason.label")}
               </span>
               <Input
                 value={form.editReason}
-                placeholder="예: 반품 재검수 결과 반영, 거래처 협의 내용 정정"
+                placeholder={t("placeholders.reason")}
                 onChange={(event) => updateForm("editReason", event.target.value)}
               />
             </label>
@@ -1154,7 +1183,7 @@ export function InventoryEditView({
 
           {selectedDevice ? (
             <section className="grid gap-4">
-              <h3 className="text-sm font-semibold">재고 전체 기록</h3>
+              <h3 className="text-sm font-semibold">{t("history.title")}</h3>
               <InventoryRelatedRecordFields
                 records={editRecords}
                 originalRecords={baselineRecords}
@@ -1169,7 +1198,7 @@ export function InventoryEditView({
               ) : null}
               <div className="flex items-center justify-between gap-3 rounded-md border bg-popover p-3 text-xs text-muted-foreground">
                 <span>
-                  입고·검수·주문 이력은 페이지 단위로 조회됩니다.
+                  {t("history.description")}
                 </span>
                 {hasMoreHistory ? (
                   <Button
@@ -1179,11 +1208,11 @@ export function InventoryEditView({
                     onClick={() => void loadMoreHistory()}
                   >
                     {isHistoryLoadingMore
-                      ? "불러오는 중"
-                      : "이전 기록 더 불러오기"}
+                      ? t("actions.loading")
+                      : t("actions.loadMoreHistory")}
                   </Button>
                 ) : (
-                  <span>전체 이력을 불러왔습니다.</span>
+                  <span>{t("history.allLoaded")}</span>
                 )}
               </div>
             </section>

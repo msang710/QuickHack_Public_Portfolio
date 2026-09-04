@@ -34,7 +34,7 @@ async function auth(request: NextRequest, minRole: Role) {
   if (!user) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -43,7 +43,7 @@ async function auth(request: NextRequest, minRole: Role) {
   if (!canAccessRole(user.role, minRole)) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "상품 기준값 관리 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        message: "기본 상품 기준값을 확인했습니다.",
+        resultCode: "PRODUCT_CRITERIA_BOOTSTRAPPED",
         ...(refresh.completed ? { data: refresh.value } : {}),
         receipt: refresh.receipt,
       });
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        message: "연결된 기준값을 저장했습니다.",
+        resultCode: "PRODUCT_CRITERIA_RELATION_SAVED",
         relation,
         ...(refresh.completed ? { data: refresh.value } : {}),
         receipt: refresh.receipt,
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: "상품 기준값을 저장했습니다.",
+      resultCode: "PRODUCT_CRITERIA_SAVED",
       option,
       ...(refresh.completed ? { data: refresh.value } : {}),
       receipt: refresh.receipt,

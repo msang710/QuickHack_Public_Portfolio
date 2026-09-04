@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { CircleX, Search } from "lucide-react";
 import { Input } from "@/quickhack_client/components/ui/input";
 import { cn } from "@/quickhack_shared/core/utils";
@@ -28,6 +29,7 @@ export function SearchInput({
   spellCheck = false,
   ...props
 }: SearchInputProps) {
+  const t = useTranslations("common.searchControl");
   const canClear = !props.disabled && !props.readOnly && value.trim() !== "";
 
   const input = (
@@ -48,8 +50,8 @@ export function SearchInput({
         <button
           type="button"
           className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
-          title="검색어 지우기"
-          aria-label={label ? `${label} 지우기` : "검색어 지우기"}
+          title={t("clearSearch")}
+          aria-label={label ? t("clearLabel", { label }) : t("clearSearch")}
           onClick={() => onValueChange("")}
         >
           <CircleX className="size-4" />

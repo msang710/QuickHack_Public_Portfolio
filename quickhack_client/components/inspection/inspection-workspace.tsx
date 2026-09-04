@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   Loader2,
   Plus,
@@ -51,7 +53,6 @@ import {
   useAppearancePendingColumns,
   useFunctionPendingColumns,
 } from "@/quickhack_client/components/inspection/inspection-record-columns";
-import { statusMessageTone } from "@/quickhack_client/components/inspection/inspection-status-ui";
 import {
   advanceFunctionRowDraftBaseline,
   appearanceDraftSnapshotsEqual,
@@ -89,11 +90,17 @@ import { Tabs, TabsContent } from "@/quickhack_client/components/ui/tabs";
 import type { AuthUser } from "@/quickhack_shared/auth/auth-constants";
 import {
   CLIENT_RECORD_ID,
+  CLIENT_RECORD_KIND_COLUMN,
+  CLIENT_PG_RESERVATION_STATUSES,
   DISCOUNT_CHECK_URL,
   INSPECTION_RECORD_KINDS,
+  PG_RESERVATION_ERROR_COLUMN,
+  PG_RESERVATION_EXPIRES_AT_COLUMN,
+  PG_RESERVATION_STATUS_COLUMN,
   UPLOAD_STATUSES,
   UPLOAD_STATUS_COLUMN,
   createInspectionRecord,
+  createUploadRecord,
   getRecordLabel,
   hasActualDefectText,
   isValidFirstCallDateInput,
@@ -109,6 +116,7 @@ import {
 } from "@/quickhack_shared/inspection/inspection-schema";
 import type { ProductCriteriaPayload } from "@/quickhack_shared/catalog/product-criteria";
 import { cn } from "@/quickhack_shared/core/utils";
+import { ADB_CLIENT_API_MESSAGE_KEYS, isAdbClientApiCode } from "@/quickhack_client/api/adb/client-api-codes";
 
 // QuickHack object: 검수 화면이 로그인 사용자와 업로드 후 새로고침 콜백을 받는 props 타입입니다.
 type InspectionWorkspaceProps = {
@@ -128,7 +136,19 @@ const INSPECTION_FUNCTION_DRAFT_FORM_ID = "inspection.function-draft";
 type UploadResult = {
   ok: boolean;
   label: string;
-  error?: string;
+  clientRecordId?: string;
+  errorCode?: string;
+};
+
+type PgReservationResponse = {
+  ok: boolean;
+  code?: string;
+  result?: {
+    clientRecordId: string;
+    pgNo: string;
+    status: string;
+    expiresAt: string;
+  };
 };
 
 type UploadResponse = {
@@ -140,13 +160,17 @@ type UploadResponse = {
 
 type AdbDevicesResponse = {
   ok: boolean;
+  code?: string;
   message?: string;
+  details?: string;
   devices?: ConnectedAdbDevice[];
 };
 
 type AdbActionResponse = {
   ok: boolean;
+  code?: string;
   message?: string;
+  details?: string;
   successCount?: number;
   failCount?: number;
 };
@@ -167,7 +191,27 @@ export function InspectionWorkspace({
   setSelectedRecordIds,
   onUploadComplete,
 }: InspectionWorkspaceProps) {
-  const [message, setMessage] = React.useState("작업 상태 : 대기 중");
+  const t = useTranslations("inspection.workspace");
+  const barcodeValidationMessage = React.useCallback(
+    (code: "BARCODE_EMPTY" | "PG_INVALID" | "IMEI_INVALID" | "BARCODE_VALID") =>
+      t(`messages.barcode.${code}`),
+    [t]
+  );
+  const remoteT = useTranslations("inspection.remote.actions");
+  const actionLabel = React.useCallback((action: FunctionAction) =>
+    remoteT(action.id.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()) as "refresh"), [remoteT]);
+  const adbT = useTranslations("common.adbApi");
+  const [message, setMessage] = React.useState(() => t("status.idle"));
+  const [messageTone, setMessageTone] = React.useState<"success" | "warning">(
+    "success"
+  );
+  const showMessage = React.useCallback(
+    (value: string, tone: "success" | "warning" = "success") => {
+      setMessage(value);
+      setMessageTone(tone);
+    },
+    []
+  );
   const [isUploading, setIsUploading] = React.useState(false);
   const [productCriteria, setProductCriteria] =
     React.useState<ProductCriteriaPayload>(() => defaultProductCriteria());
@@ -210,8 +254,8 @@ export function InspectionWorkspace({
   const selectedFunctionRowIdRef = React.useRef(selectedFunctionRowId);
   const { runGuardedAction } = useUnsavedChanges();
   const handleFunctionRemotePopupBlocked = React.useCallback(() => {
-    setMessage("작업 상태 : 팝업 창이 차단되었습니다. 브라우저 팝업 허용을 확인하세요.");
-  }, []);
+    showMessage(t("messages.popupBlocked"), "warning");
+  }, [showMessage, t]);
   const {
     isFunctionRemoteOpen,
     functionRemoteRoot,
@@ -269,11 +313,14 @@ export function InspectionWorkspace({
         colors: productCriteria.colors,
         colorModelsByColor: productCriteria.colorModelsByColor,
         rawOptions: productCriteria.rawOptions,
+        formatMoreModels: (visible, remaining) =>
+          t("color.moreModels", { visible, remaining }),
       }),
     [
       productCriteria.colorModelsByColor,
       productCriteria.colors,
       productCriteria.rawOptions,
+      t,
     ]
   );
 
@@ -313,20 +360,20 @@ export function InspectionWorkspace({
 
   useUnsavedForm({
     id: "inspection.appearance-draft",
-    label: "외관검수 입력",
+    label: t("unsaved.appearance"),
     isDirty: appearanceDraftDirty,
     discard: discardAppearanceDraft,
   });
   useUnsavedForm({
     id: INSPECTION_FUNCTION_DRAFT_FORM_ID,
-    label: "기능검수 입력",
+    label: t("unsaved.function"),
     isDirty: functionDraftDirty,
     isBusy: isLoadingDevices || isRunningAdbAction,
     discard: discardFunctionDraft,
   });
   useUnsavedForm({
     id: "inspection.pending-records",
-    label: "검수 업로드 대기 내역",
+    label: t("unsaved.pending"),
     isDirty: pendingRecordsDirty,
     isBusy: isUploading,
     discard: discardPendingRecords,
@@ -396,29 +443,84 @@ export function InspectionWorkspace({
     setRecords(normalizeInspectionRecordKinds);
   }, [setRecords]);
 
+  async function reservePgForRecord(record: InspectionRecordWithStatus) {
+    const recordId = record[CLIENT_RECORD_ID];
+    try {
+      const response = await fetch("/api/inspection-pg-reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientRecordId: recordId,
+          inspectionKind: record[CLIENT_RECORD_KIND_COLUMN],
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | PgReservationResponse
+        | null;
+      if (
+        !response.ok ||
+        !payload?.result?.pgNo ||
+        payload.result.status !== "RESERVED"
+      ) {
+        throw new Error(payload?.code ?? "PG_ISSUANCE_FAILED");
+      }
+      setRecords((current) =>
+        current.map((item) =>
+          item[CLIENT_RECORD_ID] === recordId
+            ? {
+                ...item,
+                PG: payload.result!.pgNo,
+                [PG_RESERVATION_STATUS_COLUMN]: CLIENT_PG_RESERVATION_STATUSES.reserved,
+                [PG_RESERVATION_EXPIRES_AT_COLUMN]: payload.result!.expiresAt,
+                [PG_RESERVATION_ERROR_COLUMN]: undefined,
+              }
+            : item
+        )
+      );
+      showMessage(t("messages.pgIssued", { pg: payload.result.pgNo }));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "PG_ISSUANCE_FAILED";
+      setRecords((current) =>
+        current.map((item) =>
+          item[CLIENT_RECORD_ID] === recordId
+            ? {
+                ...item,
+                [PG_RESERVATION_STATUS_COLUMN]: CLIENT_PG_RESERVATION_STATUSES.failed,
+                [PG_RESERVATION_ERROR_COLUMN]: code,
+              }
+            : item
+        )
+      );
+      showMessage(t("messages.pgIssueFailed", { code }), "warning");
+    }
+  }
+
   function addOrUpdateRecord(
     record: InspectionRecord,
     kind: InspectionRecordKind
   ) {
-    const label = getRecordLabel(record);
+    if (record.PG) {
+      const label = getRecordLabel(record);
+      setRecords((current) => mergeInspectionRecord(current, record, kind).records);
+      showMessage(t("messages.recordApplied", { label }));
+      return;
+    }
 
-    setRecords((current) => mergeInspectionRecord(current, record, kind).records);
-    setMessage(`작업 상태 : ${label} 등록 내역 반영`);
+    const pendingRecord = createUploadRecord(record, kind);
+    setRecords((current) => [...current, pendingRecord]);
+    showMessage(t("messages.pgIssuing"));
+    void reservePgForRecord(pendingRecord);
   }
 
   function handleAddAppearanceRecord() {
     if (batchNo.trim() && !validateBatch(batchNo)) {
-      setMessage("작업 상태 : 차수는 1 이상의 숫자로 입력하세요.");
+      showMessage(t("messages.invalidBatch"), "warning");
       return;
     }
 
-    const validation = validateBarcodeInput(appearancePg, "PG");
-
-    if (!validation.ok) {
-      setMessage(`작업 상태 : ${validation.message}`);
-      setAppearancePg("");
-      return;
-    }
+    const validation = appearancePg.trim()
+      ? validateBarcodeInput(appearancePg, "PG")
+      : { ok: true as const, value: "", code: "BARCODE_VALID" as const };
 
     addOrUpdateRecord(
       createInspectionRecord({
@@ -454,30 +556,30 @@ export function InspectionWorkspace({
   }
 
   function commitFunctionRow(row: FunctionRow) {
-    if (!row.pg || !row.imei) {
-      setMessage("작업 상태 : PG와 IMEI를 모두 입력해야 기능 검수 내역에 반영됩니다.");
+    if (!row.imei) {
+      showMessage(t("messages.functionRequired"), "warning");
       return false;
     }
 
-    const pgValidation = validateBarcodeInput(row.pg, "PG");
+    const pgValidation = row.pg
+      ? validateBarcodeInput(row.pg, "PG")
+      : { ok: true as const, value: "", code: "BARCODE_VALID" as const };
     const imeiValidation = validateBarcodeInput(row.imei, "IMEI");
 
     if (!pgValidation.ok) {
-      setMessage(`작업 상태 : ${pgValidation.message}`);
+      showMessage(barcodeValidationMessage(pgValidation.code), "warning");
       return false;
     }
 
     if (!imeiValidation.ok) {
-      setMessage(`작업 상태 : ${imeiValidation.message}`);
+      showMessage(barcodeValidationMessage(imeiValidation.code), "warning");
       return false;
     }
 
     const normalizedFirstCallDate = normalizeFirstCallDate(row.firstCallDate);
 
     if (!isValidFirstCallDateInput(row.firstCallDate)) {
-      setMessage(
-        "작업 상태 : 최초통화일은 YYYY-MM-DD, YYYYMMDD, 0000-00-00 형식으로 입력하세요."
-      );
+      showMessage(t("messages.invalidFirstCall"), "warning");
       return false;
     }
 
@@ -515,7 +617,7 @@ export function InspectionWorkspace({
     const parsed = parseBarcodeScans(scanValue);
 
     if (!parsed.ok) {
-      setMessage(`작업 상태 : ${parsed.message}`);
+      showMessage(t("messages.invalidBarcode"), "warning");
       setScanValue("");
       return;
     }
@@ -578,16 +680,17 @@ export function InspectionWorkspace({
     setFunctionRows(nextRows);
     setSelectedFunctionRowId(nextSelectedRowId);
     setScanValue("");
-    setMessage(
-      `작업 상태 : 스캔 ${parsed.scans.length}건 반영${
-        completedCount > 0 ? ` / 등록 ${completedCount}건` : ""
-      }`
+    showMessage(
+      t("messages.scansApplied", { scans: parsed.scans.length }) +
+        (completedCount > 0
+          ? t("messages.scansRegistered", { count: completedCount })
+          : "")
     );
   }
 
   function handleApplyFunctionDefect() {
     if (!selectedFunctionRow) {
-      setMessage("작업 상태 : 기능하자를 적용할 행을 선택하세요.");
+      showMessage(t("messages.selectDefectRow"), "warning");
       return;
     }
 
@@ -603,7 +706,7 @@ export function InspectionWorkspace({
       )
     );
     setFunctionDefects({});
-    setMessage("작업 상태 : 기능하자 적용 완료");
+    showMessage(t("messages.defectApplied"));
 
     if (updatedRow.pg && updatedRow.imei) {
       commitFunctionRow(updatedRow);
@@ -614,7 +717,7 @@ export function InspectionWorkspace({
     const row = createFunctionRow();
     setFunctionRows((current) => [...current, row]);
     setSelectedFunctionRowId(row.id);
-    setMessage("작업 상태 : 기능 검수 행 추가");
+    showMessage(t("messages.rowAdded"));
   }
 
   function handleDeleteFunctionRow() {
@@ -634,7 +737,7 @@ export function InspectionWorkspace({
 
   async function loadAdbDevices() {
     setIsLoadingDevices(true);
-    setMessage("작업 상태 : 연결 기기 새로고침 중...");
+    showMessage(t("messages.refreshingDevices"));
 
     try {
       const response = await fetch("/api/adb/devices");
@@ -643,7 +746,8 @@ export function InspectionWorkspace({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "연결 기기 조회에 실패했습니다.");
+        const localized = isAdbClientApiCode(payload?.code) ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code]) : legacyApiMessage(payload, t("messages.adbDeviceLoadFailed"));
+        throw new Error(localized || t("messages.adbDeviceLoadFailed"));
       }
 
       const scannedDevices = payload.devices ?? [];
@@ -674,18 +778,18 @@ export function InspectionWorkspace({
       setConnectedDeviceCount(devices.length);
       setReadyDeviceCount(readyCount);
       setIgnoredAdbDeviceCount(ignoredDevices.length);
-      setMessage(
-        `작업 상태 : ADB 작업 대상 ${devices.length}대 조회 완료 / 작업 가능 ${readyCount}대${
-          ignoredDevices.length > 0
-            ? ` / 가상 포트 ${ignoredDevices.length}개 제외`
-            : ""
-        }`
+      showMessage(
+        t("messages.devicesLoaded", { devices: devices.length, ready: readyCount }) +
+          (ignoredDevices.length > 0
+            ? t("messages.virtualExcluded", { count: ignoredDevices.length })
+            : "")
       );
     } catch (error) {
-      setMessage(
-        `작업 상태 : ${
-          error instanceof Error ? error.message : String(error)
-        }`
+      showMessage(
+        t("messages.raw", {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+        "warning"
       );
     } finally {
       setIsLoadingDevices(false);
@@ -697,7 +801,7 @@ export function InspectionWorkspace({
       runGuardedAction({
         intent: "internal-change",
         formIds: [INSPECTION_FUNCTION_DRAFT_FORM_ID],
-        targetLabel: "ADB 연결 기기 새로고침",
+        targetLabel: t("messages.adbRefresh"),
         action: () => {
           void loadAdbDevices();
         },
@@ -707,7 +811,7 @@ export function InspectionWorkspace({
 
     if (action.id === "discount-check") {
       window.open(DISCOUNT_CHECK_URL, "_blank", "noopener,noreferrer");
-      setMessage("작업 상태 : 약정조회 사이트 열기");
+      showMessage(t("messages.discountOpened"));
       return;
     }
 
@@ -722,29 +826,32 @@ export function InspectionWorkspace({
         : [];
 
     if (serials.length === 0) {
-      setMessage("작업 상태 : ADB 작업을 실행할 연결 기기를 선택하세요.");
+      showMessage(t("messages.selectAdb"), "warning");
       return;
     }
 
     if (!allDevices && selectedFunctionRow?.connectionState !== "device") {
-      setMessage("작업 상태 : ADB 작업은 연결됨 상태의 기기에서만 실행할 수 있습니다.");
+      showMessage(t("messages.connectedOnly"), "warning");
       return;
     }
 
     if (action.id === "reboot-recovery") {
       const preview = serials.slice(0, 5).join(", ");
-      const suffix = serials.length > 5 ? ` 외 ${serials.length - 5}대` : "";
+      const suffix = serials.length > 5
+        ? t("messages.recoveryRemainder", { count: serials.length - 5 })
+        : "";
       const confirmed = window.confirm(
-        `선택한 실제 기기 ${serials.length}대를 리커버리 모드로 재부팅할까요?\n${preview}${suffix}\n계정이 남아 있으면 초기화 후 FRP 잠금이 걸릴 수 있습니다.`
+        t("messages.recoveryConfirm", { count: serials.length, preview, suffix })
       );
       if (!confirmed) {
-        setMessage("작업 상태 : 리커버리 모드 실행 취소");
+        showMessage(t("messages.recoveryCanceled"));
         return;
       }
     }
 
     setIsRunningAdbAction(true);
-    setMessage(`작업 상태 : ${action.label} 실행 중...`);
+    const localizedAction = actionLabel(action);
+    showMessage(t("messages.actionRunning", { action: localizedAction }));
 
     try {
       const response = await fetch("/api/adb/actions", {
@@ -760,22 +867,28 @@ export function InspectionWorkspace({
         | null;
 
       if (!response.ok || !payload) {
-        throw new Error(payload?.message || "ADB 작업 실행에 실패했습니다.");
+        const localized = isAdbClientApiCode(payload?.code) ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code]) : legacyApiMessage(payload, t("messages.adbActionFailed"));
+        throw new Error(localized || t("messages.adbActionFailed"));
       }
 
       const handledCount = (payload.successCount ?? 0) + (payload.failCount ?? 0);
-      setMessage(
-        `작업 상태 : ${action.label} 완료 / 성공 ${
-          payload.successCount ?? 0
-        }대 / 실패 ${payload.failCount ?? 0}대${
-          handledCount === 0 ? " / 작업 가능한 기기 없음" : ""
-        }`
+      showMessage(
+        t("messages.actionComplete", {
+          action: localizedAction,
+          success: payload.successCount ?? 0,
+          failed: payload.failCount ?? 0,
+        }) + (handledCount === 0 ? t("messages.noActionableDevice") : ""),
+        (payload.failCount ?? 0) > 0 || handledCount === 0
+          ? "warning"
+          : "success"
       );
     } catch (error) {
-      setMessage(
-        `작업 상태 : ${action.label} 실패 - ${
-          error instanceof Error ? error.message : String(error)
-        }`
+      showMessage(
+        t("messages.actionFailed", {
+          action: localizedAction,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+        "warning"
       );
     } finally {
       setIsRunningAdbAction(false);
@@ -840,7 +953,7 @@ export function InspectionWorkspace({
         <TableSelectCheckbox
           checked={selectedRecordIds.has(record[CLIENT_RECORD_ID])}
           disabled={isUploading}
-          ariaLabel={`${getRecordLabel(record)} 선택`}
+          ariaLabel={t("record.selectAria", { label: getRecordLabel(record) })}
           onCheckedChange={(checked) =>
             toggleSelectedRecord(
               record[CLIENT_RECORD_ID],
@@ -850,19 +963,43 @@ export function InspectionWorkspace({
         />
       </div>
     );
-  }, [isUploading, selectedRecordIds, toggleSelectedRecord]);
+  }, [isUploading, selectedRecordIds, t, toggleSelectedRecord]);
 
-  function deleteSelectedRecords() {
+  async function deleteSelectedRecords() {
     if (selectedRecordIds.size === 0) {
-      setMessage("작업 상태 : 삭제할 행을 선택하세요.");
+      showMessage(t("messages.selectDelete"), "warning");
       return;
     }
+
+    const reservedRecordIds = records
+      .filter(
+        (record) =>
+          selectedRecordIds.has(record[CLIENT_RECORD_ID]) &&
+          record[PG_RESERVATION_STATUS_COLUMN] === CLIENT_PG_RESERVATION_STATUSES.reserved
+      )
+      .map((record) => record[CLIENT_RECORD_ID]);
+
+    const abandonResults = await Promise.allSettled(
+      reservedRecordIds.map((recordId) =>
+        fetch(`/api/inspection-pg-reservations/${encodeURIComponent(recordId)}`, {
+          method: "DELETE",
+        }).then((response) => {
+          if (!response.ok) throw new Error("PG_RESERVATION_ABANDON_FAILED");
+        })
+      )
+    );
 
     setRecords((current) =>
       current.filter((record) => !selectedRecordIds.has(record[CLIENT_RECORD_ID]))
     );
     setSelectedRecordIds(new Set());
-    setMessage("작업 상태 : 선택 행 삭제 완료");
+    const failedCount = abandonResults.filter((result) => result.status === "rejected").length;
+    showMessage(
+      failedCount
+        ? t("messages.deleteReservationWarning", { count: failedCount })
+        : t("messages.deleteComplete"),
+      failedCount ? "warning" : "success"
+    );
   }
 
   const updateAppearanceReturnYn = React.useCallback((recordId: string, value: "Y" | "N") => {
@@ -873,16 +1010,27 @@ export function InspectionWorkspace({
           : record
       )
     );
-    setMessage(`작업 상태 : 매입처 반품 ${value} 적용`);
-  }, [setRecords]);
+    showMessage(t("messages.supplierReturn", { value }));
+  }, [setRecords, showMessage, t]);
 
   async function uploadRecordIds(recordIds: string[], title: string) {
     if (recordIds.length === 0) {
-      setMessage("작업 상태 : 업로드할 내역이 없습니다.");
+      showMessage(t("messages.noUpload"), "warning");
       return;
     }
 
     const recordIdSet = new Set(recordIds);
+    const reservationPending = records.filter(
+      (record) =>
+        recordIdSet.has(record[CLIENT_RECORD_ID]) &&
+        (!record.PG ||
+          record[PG_RESERVATION_STATUS_COLUMN] === CLIENT_PG_RESERVATION_STATUSES.issuing ||
+          record[PG_RESERVATION_STATUS_COLUMN] === CLIENT_PG_RESERVATION_STATUSES.failed)
+    );
+    if (reservationPending.length > 0) {
+      showMessage(t("messages.pgNotReady", { count: reservationPending.length }), "warning");
+      return;
+    }
     const uploadItems = records
       .filter((record) => recordIdSet.has(record[CLIENT_RECORD_ID]))
       .map((record) => ({
@@ -891,7 +1039,7 @@ export function InspectionWorkspace({
       }));
 
     if (uploadItems.length === 0) {
-      setMessage("작업 상태 : 업로드할 내역이 없습니다.");
+      showMessage(t("messages.noUpload"), "warning");
       return;
     }
 
@@ -917,7 +1065,7 @@ export function InspectionWorkspace({
         | null;
 
       if (!response.ok || !payload) {
-        throw new Error("서버 응답이 올바르지 않습니다.");
+        throw new Error(t("message.invalidServerResponse"));
       }
 
       const resultsByRecordId = new Map(
@@ -944,9 +1092,11 @@ export function InspectionWorkspace({
       if (payload.successCount > 0) {
         await onUploadComplete?.();
       }
-      setMessage(
-        `작업 상태 : ${title} 완료 / 성공 ${payload.successCount}건 / 실패 ${payload.failCount}건`
-      );
+      showMessage(t("messages.uploadComplete", {
+        title,
+        success: payload.successCount,
+        failed: payload.failCount,
+      }), payload.failCount > 0 ? "warning" : "success");
     } catch (error) {
       setRecords((current) =>
         current.map((record) =>
@@ -955,10 +1105,11 @@ export function InspectionWorkspace({
             : record
         )
       );
-      setMessage(
-        `작업 상태 : 업로드 실패 - ${
-          error instanceof Error ? error.message : String(error)
-        }`
+      showMessage(
+        t("messages.uploadFailed", {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+        "warning"
       );
     } finally {
       setIsUploading(false);
@@ -970,7 +1121,7 @@ export function InspectionWorkspace({
       .filter((record) => record[UPLOAD_STATUS_COLUMN] !== UPLOAD_STATUSES.done)
       .map((record) => record[CLIENT_RECORD_ID]);
 
-    void uploadRecordIds(recordIds, "전체 업로드");
+    void uploadRecordIds(recordIds, t("records.uploadAll"));
   }
 
   function uploadSelectedRecords() {
@@ -983,7 +1134,7 @@ export function InspectionWorkspace({
         UPLOAD_STATUSES.done
     );
 
-    void uploadRecordIds(recordIds, "선택 업로드");
+    void uploadRecordIds(recordIds, t("records.uploadSelected"));
   }
 
   const pendingCount = records.filter(
@@ -1012,8 +1163,6 @@ export function InspectionWorkspace({
     setVisibleRecordsSelected,
     visibleRecordSelectionState,
   });
-  const messageTone = statusMessageTone(message);
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <FunctionInspectionRemotePortal
@@ -1042,16 +1191,16 @@ export function InspectionWorkspace({
             {message}
           </span>
           <span className="hidden xl:inline">|</span>
-          <span>오늘 등록 내역 : {records.length}건</span>
-          <span>미업로드 : {pendingCount}건</span>
+          <span>{t("status.todayCount", { count: records.length })}</span>
+          <span>{t("status.pendingCount", { count: pendingCount })}</span>
         </div>
 
         <TabsContent value="appearance" className="m-0 min-h-0 flex-1 p-5">
           <div className="grid h-full min-h-0 gap-4 xl:grid-rows-[auto_1fr]">
             <section className="grid gap-4 rounded-md border bg-background p-4 xl:grid-cols-[340px_1fr]">
               <div className="grid content-start gap-3">
-                <h2 className="text-sm font-semibold">외관검수 입력</h2>
-                <FieldLabel label="차수">
+                <h2 className="text-sm font-semibold">{t("appearance.title")}</h2>
+                <FieldLabel label={t("batch")}>
                   <Input
                     inputMode="numeric"
                     value={batchNo}
@@ -1061,6 +1210,7 @@ export function InspectionWorkspace({
                 <FieldLabel label="PG">
                   <Input
                     value={appearancePg}
+                    placeholder={t("appearance.pgPlaceholder")}
                     onChange={(event) => setAppearancePg(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -1069,25 +1219,25 @@ export function InspectionWorkspace({
                     }}
                   />
                 </FieldLabel>
-                <FieldLabel label="공식 색상명">
+                <FieldLabel label={t("appearance.color")}>
                   <SearchCombobox
                     value={appearanceColor}
                     options={colorOptions}
                     isValidValue={(value) =>
                       isOptionValue(value, criteriaRuntime.colorValues)
                     }
-                    placeholder="공식 색상명 선택"
-                    searchPlaceholder="공식 색상명 검색"
+                    placeholder={t("appearance.colorPlaceholder")}
+                    searchPlaceholder={t("appearance.colorSearch")}
                     onValueChange={setAppearanceColor}
                   />
                 </FieldLabel>
-                <FieldLabel label="외관등급">
+                <FieldLabel label={t("appearance.grade")}>
                   <Select
                     value={appearanceGrade}
                     onValueChange={setAppearanceGrade}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="외관등급" />
+                      <SelectValue placeholder={t("appearance.grade")} />
                     </SelectTrigger>
                     <SelectContent>
                       {productCriteria.grades.map((grade) => (
@@ -1101,7 +1251,7 @@ export function InspectionWorkspace({
                 <div className="flex gap-2 pt-2">
                   <Button type="button" onClick={handleAddAppearanceRecord}>
                     <Plus className="size-4" />
-                    등록
+                    {t("appearance.register")}
                   </Button>
                   <Button
                     type="button"
@@ -1122,17 +1272,17 @@ export function InspectionWorkspace({
                       );
                     }}
                   >
-                    입력 초기화
+                    {t("appearance.reset")}
                   </Button>
                 </div>
               </div>
 
               <DefectSelector
-                title="외관하자"
+                title={t("appearance.defect")}
                 defectMap={productCriteria.appearanceDefectMap}
                 selected={appearanceDefects}
                 onSelectedChange={setAppearanceDefects}
-                emptyLabel="선택된 하자 없음"
+                emptyLabel={t("appearance.defectEmpty")}
               />
             </section>
 
@@ -1143,7 +1293,7 @@ export function InspectionWorkspace({
                 rowKey={(record) =>
                   `${record[CLIENT_RECORD_ID]}-${record.외관검수일시}`
                 }
-                emptyMessage="등록된 외관 검수 내역이 없습니다."
+                emptyMessage={t("appearance.historyEmpty")}
                 className="h-full rounded-none border-0"
                 minWidth="950px"
                 rowHeight={52}
@@ -1157,11 +1307,11 @@ export function InspectionWorkspace({
             <div className="grid min-h-0 gap-4 xl:grid-rows-[auto_auto_1fr]">
               <section className="grid gap-3 rounded-md border bg-background p-4">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
-                  <FieldLabel label="스캔값">
+                  <FieldLabel label={t("function.scan")}>
                     <Input
                       className="xl:w-[520px]"
                       value={scanValue}
-                      placeholder="PG 또는 IMEI 스캔"
+                      placeholder={t("function.scanPlaceholder")}
                       onChange={(event) => setScanValue(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
@@ -1172,7 +1322,7 @@ export function InspectionWorkspace({
                   </FieldLabel>
                   <Button type="button" onClick={handleApplyBarcode}>
                     <Save className="size-4" />
-                    입력 적용
+                    {t("function.apply")}
                   </Button>
                   <Button
                     type="button"
@@ -1183,18 +1333,18 @@ export function InspectionWorkspace({
                     onClick={openFunctionRemoteWindow}
                   >
                     <SlidersHorizontal className="size-4" />
-                    제어 리모컨
+                    {t("function.remote")}
                   </Button>
                 </div>
               </section>
 
               <DefectSelector
-                title="기능하자"
+                title={t("function.defect")}
                 defectMap={productCriteria.functionDefectMap}
                 selected={functionDefects}
                 onSelectedChange={setFunctionDefects}
-                emptyLabel="선택된 기능하자 없음"
-                actionLabel="선택 행에 기능하자 적용"
+                emptyLabel={t("function.defectEmpty")}
+                actionLabel={t("function.applyDefect")}
                 onAction={handleApplyFunctionDefect}
               />
 
@@ -1202,7 +1352,7 @@ export function InspectionWorkspace({
                 <div className="flex items-center gap-2 border-b bg-background px-3 py-2">
                   <Button type="button" size="sm" onClick={handleAddFunctionRow}>
                     <Plus className="size-4" />
-                    행 추가
+                    {t("function.addRow")}
                   </Button>
                   <Button
                     type="button"
@@ -1211,7 +1361,7 @@ export function InspectionWorkspace({
                     onClick={handleDeleteFunctionRow}
                   >
                     <Trash2 className="size-4" />
-                    선택 행 삭제
+                    {t("function.deleteRow")}
                   </Button>
                   <Button
                     type="button"
@@ -1223,7 +1373,7 @@ export function InspectionWorkspace({
                       }
                     }}
                   >
-                    기록 반영
+                    {t("function.commit")}
                   </Button>
                 </div>
                 <FunctionInspectionEditTable
@@ -1244,9 +1394,9 @@ export function InspectionWorkspace({
           <div className="grid h-full min-h-0 grid-rows-[auto_1fr] gap-3">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <h2 className="text-sm font-semibold">오늘 등록 내역</h2>
+                <h2 className="text-sm font-semibold">{t("records.title")}</h2>
                 <p className="text-xs text-muted-foreground">
-                  {records.length}건 / 미업로드 {pendingCount}건
+                  {t("records.summary", { total: records.length, pending: pendingCount })}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1257,7 +1407,7 @@ export function InspectionWorkspace({
                   disabled={isUploading}
                 >
                   <Trash2 className="size-4" />
-                  선택 행 삭제
+                  {t("records.deleteSelected")}
                 </Button>
                 <Button
                   type="button"
@@ -1270,7 +1420,7 @@ export function InspectionWorkspace({
                   ) : (
                     <Upload className="size-4" />
                   )}
-                  선택 업로드
+                  {t("records.uploadSelected")}
                 </Button>
                 <Button
                   type="button"
@@ -1282,7 +1432,7 @@ export function InspectionWorkspace({
                   ) : (
                     <Upload className="size-4" />
                   )}
-                  전체 업로드
+                  {t("records.uploadAll")}
                 </Button>
               </div>
             </div>
@@ -1290,16 +1440,16 @@ export function InspectionWorkspace({
             <div className="grid min-h-0 gap-4 overflow-auto">
               <section className="rounded-md border bg-popover">
                 <div className="flex items-center justify-between border-b bg-background px-3 py-2">
-                  <h3 className="text-sm font-semibold">외관 검수 업로드 대기</h3>
+                  <h3 className="text-sm font-semibold">{t("records.appearancePending")}</h3>
                   <span className="text-xs text-muted-foreground">
-                    {appearancePendingRecords.length}건
+                    {t("records.count", { count: appearancePendingRecords.length })}
                   </span>
                 </div>
                 <VirtualizedDataGrid
                   rows={appearancePendingRecords}
                   columns={appearancePendingColumns}
                   rowKey={(record) => record[CLIENT_RECORD_ID]}
-                  emptyMessage="외관 검수 업로드 대기 내역이 없습니다."
+                  emptyMessage={t("records.appearanceEmpty")}
                   className="h-64 flex-none rounded-none border-0"
                   minWidth="1280px"
                   rowHeight={48}
@@ -1308,16 +1458,16 @@ export function InspectionWorkspace({
 
               <section className="rounded-md border bg-popover">
                 <div className="flex items-center justify-between border-b bg-background px-3 py-2">
-                  <h3 className="text-sm font-semibold">기능 검수 업로드 대기</h3>
+                  <h3 className="text-sm font-semibold">{t("records.functionPending")}</h3>
                   <span className="text-xs text-muted-foreground">
-                    {functionPendingRecords.length}건
+                    {t("records.count", { count: functionPendingRecords.length })}
                   </span>
                 </div>
                 <VirtualizedDataGrid
                   rows={functionPendingRecords}
                   columns={functionPendingColumns}
                   rowKey={(record) => record[CLIENT_RECORD_ID]}
-                  emptyMessage="기능 검수 업로드 대기 내역이 없습니다."
+                  emptyMessage={t("records.functionEmpty")}
                   className="h-64 flex-none rounded-none border-0"
                   minWidth="1500px"
                   rowHeight={48}

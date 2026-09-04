@@ -9,17 +9,6 @@ export const SHIPMENT_DELIVERY_DATE_BASIS = {
 export type ShipmentDeliveryDateBasis =
   (typeof SHIPMENT_DELIVERY_DATE_BASIS)[keyof typeof SHIPMENT_DELIVERY_DATE_BASIS];
 
-export const SHIPMENT_DELIVERY_DATE_BASIS_LABELS: Record<
-  ShipmentDeliveryDateBasis,
-  string
-> = {
-  ORDERED_AT: "주문일",
-  OUTBOUND_CONFIRMED_AT: "출고 확정일",
-  INVOICE_ALLOCATED_AT: "송장 발급일",
-  CARRIER_REGISTERED_AT: "로젠 등록일",
-  TRACKING_SCANNED_AT: "배송 스캔일",
-};
-
 export const SHIPMENT_DELIVERY_STAGE = {
   preparing: "PREPARING",
   invoiceAllocated: "INVOICE_ALLOCATED",
@@ -33,20 +22,6 @@ export const SHIPMENT_DELIVERY_STAGE = {
 
 export type ShipmentDeliveryStage =
   (typeof SHIPMENT_DELIVERY_STAGE)[keyof typeof SHIPMENT_DELIVERY_STAGE];
-
-export const SHIPMENT_DELIVERY_STAGE_LABELS: Record<
-  ShipmentDeliveryStage,
-  string
-> = {
-  PREPARING: "송장 준비",
-  INVOICE_ALLOCATED: "송장 발급",
-  REGISTERED: "송장 등록",
-  IN_TRANSIT: "배송 중",
-  DELIVERED: "배송 완료",
-  ON_HOLD: "출고 보류",
-  EXCEPTION: "배송 예외",
-  CLOSED: "종료·취소",
-};
 
 export const SHIPMENT_PACKING_TYPE = {
   single: "SINGLE",
@@ -140,7 +115,6 @@ export type ShipmentDeliveryWorkflow = {
     | "CHANNEL_WRITE"
     | "CARRIER_REGISTRATION"
     | "INVOICE_REPLACEMENT";
-  label: string;
   status: string;
   occurredAt: string | null;
   errorCode: string | null;

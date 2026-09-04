@@ -21,11 +21,11 @@ export async function GET(
   );
   const user = await getAuthUserFromRequest(request);
   if (!user) {
-    return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ ok: false, code: "AUTH_REQUIRED" }, { status: 401 });
   }
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "배송 추적 이력 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }

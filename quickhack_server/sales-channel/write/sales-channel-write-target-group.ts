@@ -127,7 +127,7 @@ export function findSalesChannelWriteTargetGroup<
   if (!group) {
     throw publicConflict(
       "SALES_CHANNEL_TARGET_GROUP_NOT_FOUND",
-      "선택한 판매 채널 처리 대상 그룹을 찾을 수 없습니다. 화면을 새로고침한 뒤 다시 시도하세요."
+      "SALES_CHANNEL_TARGET_GROUP_NOT_FOUND"
     );
   }
 

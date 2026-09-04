@@ -53,8 +53,19 @@ export type ConnectedAdbDevice = {
   storage: string;
   firstCallDate: string;
   account: string;
+  accountStatus: "UNKNOWN" | "NONE" | "PRESENT" | "QUERY_FAILED";
   cameraCheck: string;
   warning: string;
+  warningCodes: Array<
+    | "CARRIER_REVIEW"
+    | "ACCOUNT_REVIEW"
+    | "ACCOUNT_QUERY_FAILED"
+    | "ADB_OFFLINE"
+    | "ADB_UNAUTHORIZED"
+    | "ADB_CONNECTION_UNKNOWN"
+    | "ADB_QUERY_FAILED"
+  >;
+  warningDetail: string | null;
 };
 
 export type AdbActionResult = {
@@ -191,39 +202,47 @@ function formatActDate(raw: string) {
 }
 
 function checkWarning({ csc, account }: { csc: string; account: string }) {
-  const warnings = [];
+  const warningCodes: ConnectedAdbDevice["warningCodes"] = [];
 
   if (["0000", "Unknown", "-", ""].includes(csc)) {
-    warnings.push("통신사 확인 필요");
+    warningCodes.push("CARRIER_REVIEW");
   }
 
   if (account === "있음") {
-    warnings.push("계정 확인 필요");
+    warningCodes.push("ACCOUNT_REVIEW");
   }
 
   if (account === "확인 실패") {
-    warnings.push("계정 조회 실패");
+    warningCodes.push("ACCOUNT_QUERY_FAILED");
   }
 
-  return warnings.length > 0 ? `재확인:\n${warnings.join("\n")}` : "정상";
+  return {
+    warningCodes,
+  };
 }
 
-function getConnectionWarning(connectionState: string) {
-  if (connectionState === "offline") {
-    return "ADB 상태: offline\nUSB 연결을 다시 꽂거나 ADB 서버를 재시작하세요.";
-  }
+function accountStatus(account: string): ConnectedAdbDevice["accountStatus"] {
+  if (account === "없음") return "NONE";
+  if (account === "있음") return "PRESENT";
+  if (account === "확인 실패") return "QUERY_FAILED";
+  return "UNKNOWN";
+}
 
-  if (connectionState === "unauthorized") {
-    return "ADB 상태: unauthorized\n휴대폰에서 USB 디버깅 허용을 승인하세요.";
-  }
-
-  return `ADB 상태: ${connectionState || "unknown"}`;
+function connectionWarningCode(
+  connectionState: string
+): ConnectedAdbDevice["warningCodes"][number] {
+  if (connectionState === "offline") return "ADB_OFFLINE";
+  if (connectionState === "unauthorized") return "ADB_UNAUTHORIZED";
+  return "ADB_CONNECTION_UNKNOWN";
 }
 
 function createUnreadyDevice(
   device: AdbDeviceEntry,
   index: number,
-  warning = getConnectionWarning(device.connectionState)
+  warningCodes: ConnectedAdbDevice["warningCodes"] = [
+    connectionWarningCode(device.connectionState),
+  ],
+  warningDetail: string | null = device.connectionState || null
 ): ConnectedAdbDevice {
   return {
     serial: device.serial,
@@ -235,8 +254,11 @@ function createUnreadyDevice(
     storage: "-",
     firstCallDate: "-",
     account: "-",
+    accountStatus: "UNKNOWN",
     cameraCheck: "-",
-    warning,
+    warning: "",
+    warningCodes,
+    warningDetail,
   };
 }
 
@@ -302,6 +324,7 @@ async function inspectDevice(
   const product = MODEL_MAP[modelCode] ?? modelCode;
   const cameraCheck = getCameraCheckByModelCode(modelCode);
 
+  const warningResult = checkWarning({ csc, account });
   return {
     serial,
     index: index + 1,
@@ -312,8 +335,11 @@ async function inspectDevice(
     storage,
     firstCallDate,
     account,
+    accountStatus: accountStatus(account),
     cameraCheck,
-    warning: checkWarning({ csc, account }),
+    warning: "",
+    warningCodes: warningResult.warningCodes,
+    warningDetail: null,
   };
 }
 
@@ -342,18 +368,23 @@ async function connectedSerials() {
 async function resolveTargetSerials(serials: string[]) {
   const ordered = getOrderedDevices(await connectedSerials());
   if (serials.length === 0) {
-    throw new AdbError("ADB 작업 대상 기기 목록이 비어 있습니다.", 400);
+    throw new AdbError("SERIALS_REQUIRED", 400, "SERIALS_REQUIRED");
   }
   const requested = [...new Set(serials.map((serial) => serial.trim()))];
   if (requested.some((serial) => !serial || isAdbVirtualSerial(serial))) {
-    throw new AdbError("ADB 작업은 실제 연결 기기만 대상으로 지정할 수 있습니다.", 400);
+    throw new AdbError(
+      "PHYSICAL_DEVICE_REQUIRED",
+      400,
+      "PHYSICAL_DEVICE_REQUIRED"
+    );
   }
   const ready = new Set(ordered.filter((serial) => !isAdbVirtualSerial(serial)));
   const disconnected = requested.filter((serial) => !ready.has(serial));
   if (disconnected.length > 0) {
     throw new AdbError(
-      `선택한 ADB 기기가 더 이상 준비 상태가 아닙니다: ${disconnected.join(", ")}`,
-      409
+      disconnected.join(", "),
+      409,
+      "ADB_TARGET_NOT_READY"
     );
   }
   return requested;
@@ -369,7 +400,7 @@ async function runForDevices(
       return {
         serial,
         ok: true,
-        message: "완료",
+        message: "COMPLETED",
       };
     } catch (error) {
       return {
@@ -502,7 +533,7 @@ function sleep(ms: number) {
 
 function assertKnownAction(action: string): asserts action is AdbActionId {
   if (!ADB_ACTION_IDS.includes(action as AdbActionId)) {
-    throw new AdbError("지원하지 않는 ADB 작업입니다.", 400);
+    throw new AdbError("ADB_ACTION_UNSUPPORTED", 400, "ADB_ACTION_UNSUPPORTED");
   }
 }
 
@@ -520,12 +551,12 @@ export async function getConnectedAdbDevices() {
       try {
         return await inspectDevice(device.serial, index);
       } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
         return createUnreadyDevice(
           device,
           index,
-          `ADB 조회 실패:\n${
-            error instanceof Error ? error.message : String(error)
-          }`
+          ["ADB_QUERY_FAILED"],
+          detail
         );
       }
     }
@@ -691,7 +722,7 @@ export function toAdbErrorResponse(error: unknown) {
   if (error instanceof AdbError) {
     return {
       status: error.status,
-      body: { ok: false, code: error.code, message: error.message },
+      body: { ok: false, code: error.code },
     };
   }
 
@@ -700,7 +731,6 @@ export function toAdbErrorResponse(error: unknown) {
     body: {
       ok: false,
       code: "ADB_EXECUTION_FAILED",
-      message: "ADB command failed unexpectedly.",
     },
   };
 }

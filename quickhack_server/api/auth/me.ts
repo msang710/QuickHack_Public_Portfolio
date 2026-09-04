@@ -116,7 +116,7 @@ function cleanOptionalDate(value: unknown, label: string) {
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
     throw new AccountProfileUpdateError(
-      `${label}은 YYYY-MM-DD 형식으로 입력해야 합니다.`
+      "ACCOUNT_PROFILE_UPDATE_FAILED"
     );
   }
 
@@ -130,7 +130,7 @@ function validateAccountProfileUpdate(body: Record<string, unknown>) {
 
   if (unsupportedKey) {
     throw new AccountProfileUpdateError(
-      `현재 사용자가 변경할 수 없는 항목입니다: ${unsupportedKey}`
+      "ACCOUNT_PROFILE_UPDATE_FAILED"
     );
   }
 
@@ -144,27 +144,27 @@ function validateAccountProfileUpdate(body: Record<string, unknown>) {
 
   if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
     throw new AccountProfileUpdateError(
-      "아이디는 영문 소문자, 숫자, 점, 밑줄, 하이픈으로 3~32자만 입력할 수 있습니다."
+      "ACCOUNT_PROFILE_UPDATE_FAILED"
     );
   }
 
   if (!displayName || displayName.length > 40) {
     throw new AccountProfileUpdateError(
-      "직원 표시 이름은 1~40자로 입력해야 합니다."
+      "ACCOUNT_PROFILE_UPDATE_FAILED"
     );
   }
 
   if (phone && !/^[0-9+\-()\s]{7,30}$/.test(phone)) {
-    throw new AccountProfileUpdateError("전화번호 형식이 올바르지 않습니다.");
+    throw new AccountProfileUpdateError("ACCOUNT_PROFILE_UPDATE_FAILED");
   }
 
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new AccountProfileUpdateError("이메일 형식이 올바르지 않습니다.");
+    throw new AccountProfileUpdateError("ACCOUNT_PROFILE_UPDATE_FAILED");
   }
 
   if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
     throw new AccountProfileUpdateError(
-      "계정 정보의 수정 기준 시각이 없습니다. 화면을 새로고침한 뒤 다시 시도하세요."
+      "ACCOUNT_PROFILE_UPDATE_FAILED"
     );
   }
 
@@ -342,7 +342,7 @@ async function handleAccountProfilePatch(
 
   if (!session) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
@@ -351,7 +351,7 @@ async function handleAccountProfilePatch(
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "계정 정보 저장 요청 형식이 올바르지 않습니다." },
+      { ok: false, code: "ACCOUNT_INPUT_INVALID" },
       { status: 400 }
     );
   }
@@ -373,7 +373,7 @@ async function handleAccountProfilePatch(
       });
 
       if (!before) {
-        throw new AccountProfileUpdateError("계정을 찾을 수 없습니다.", 404);
+        throw new AccountProfileUpdateError("ACCOUNT_PROFILE_UPDATE_FAILED", 404);
       }
 
       if (
@@ -381,7 +381,7 @@ async function handleAccountProfilePatch(
         before.credential_revision !== session.credential_revision
       ) {
         throw new AccountProfileUpdateError(
-          "다른 화면에서 계정 정보가 먼저 변경되었습니다. 화면을 새로고침한 뒤 다시 입력하세요.",
+          "ACCOUNT_PROFILE_UPDATE_FAILED",
           409
         );
       }
@@ -392,7 +392,7 @@ async function handleAccountProfilePatch(
       });
 
       if (duplicate && duplicate.user_id !== before.user_id) {
-        throw new AccountProfileUpdateError("이미 사용 중인 아이디입니다.", 409);
+        throw new AccountProfileUpdateError("ACCOUNT_PROFILE_UPDATE_FAILED", 409);
       }
 
       const user = await tx.users.update({
@@ -494,7 +494,7 @@ async function handleAccountProfilePatch(
 
     const response = NextResponse.json({
       ok: true,
-      message: "계정 정보를 저장했습니다.",
+      resultCode: "ACCOUNT_SAVED",
       user,
       profile,
       receipt: enrichment.receipt,
@@ -520,7 +520,6 @@ async function handleAccountProfilePatch(
             : status === 409
               ? "ACCOUNT_PROFILE_CONFLICT"
               : "INVALID_ACCOUNT_PROFILE",
-        message: updateError.message,
         cause: updateError,
       });
     }

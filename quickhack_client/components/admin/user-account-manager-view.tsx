@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   CheckCircle2,
   CircleOff,
@@ -15,7 +17,6 @@ import {
   UsersRound,
 } from "lucide-react";
 import {
-  ROLE_LABELS,
   ROLE_RANK,
   ROLES,
   type Role,
@@ -49,6 +50,7 @@ import {
 import { DetailRow, formatDate } from "@/quickhack_client/components/shared/device-detail-sheet";
 import { cn } from "@/quickhack_shared/core/utils";
 import { isAdbVirtualSerial } from "@/quickhack_shared/adb/adb-target-policy";
+import { ADB_CLIENT_API_MESSAGE_KEYS, isAdbClientApiCode } from "@/quickhack_client/api/adb/client-api-codes";
 import {
   AccountFieldLabel,
   AccountInformationFields,
@@ -92,6 +94,10 @@ type UserAccountDto = {
 
 type UserAccountsApiResponse = {
   ok: boolean;
+  resultCode?:
+    | "ACCOUNT_CREATED"
+    | "ACCOUNT_AND_PASSWORD_SAVED"
+    | "ACCOUNT_SAVED";
   message?: string;
   items?: UserAccountDto[];
   item?: UserAccountDto;
@@ -118,7 +124,9 @@ type MobileRegisteredDeviceDto = {
 
 type MobileDevicesApiResponse = {
   ok: boolean;
+  code?: string;
   message?: string;
+  details?: string;
   items?: MobileRegisteredDeviceDto[];
   item?: MobileRegisteredDeviceDto;
   nextCursor?: string | null;
@@ -133,7 +141,9 @@ type AdbDeviceDto = {
 
 type AdbDevicesApiResponse = {
   ok: boolean;
+  code?: string;
   message?: string;
+  details?: string;
   devices?: AdbDeviceDto[];
 };
 
@@ -182,13 +192,6 @@ const USER_ACCOUNT_TARGET_FORM_IDS = [
 ] as const;
 const userTableCellClassName = "flex h-full min-w-0 items-center px-3";
 
-const roleDescriptions: Record<Role, string> = {
-  LEADER: "전체 관리 메뉴와 주요 운영 설정을 다룰 수 있습니다.",
-  MANAGER: "매입가, 재고 수정, 출고 관리 등 관리자 업무를 처리합니다.",
-  STAFF: "검수, 업로드 대기 목록, 출고 확인 같은 실무 메뉴를 사용합니다.",
-  VIEWER: "조회 중심 메뉴만 접근하는 계정입니다.",
-};
-
 function isRole(value: string): value is Role {
   return (ROLES as readonly string[]).includes(value);
 }
@@ -197,12 +200,16 @@ function normalizeRole(value: string): Role {
   return isRole(value) ? value : "VIEWER";
 }
 
-function roleLabel(role: string) {
+function roleLabel(role: string, labels: Record<Role, string>) {
   const normalized = normalizeRole(role);
-  return ROLE_LABELS[normalized] ?? normalized;
+  return labels[normalized] ?? normalized;
 }
 
-function userSearchText(user: UserAccountDto) {
+function userSearchText(
+  user: UserAccountDto,
+  labels: Record<Role, string>,
+  keywords: { developer: string; packing: string; active: string; inactive: string; passwordChange: string; otpConfigured: string; otpUnconfigured: string }
+) {
   return [
     user.username,
     user.displayName,
@@ -210,13 +217,13 @@ function userSearchText(user: UserAccountDto) {
     user.email,
     user.birthDate,
     user.hireDate,
-    roleLabel(user.role),
+    roleLabel(user.role, labels),
     user.role,
-    user.isDeveloper ? "개발자" : "",
-    user.mobilePackingEnabled ? "포장검수 모바일 packing mobile" : "",
-    user.isActive ? "활성" : "비활성",
-    user.mustChangePassword ? "비밀번호 변경 필요 임시 비밀번호" : "",
-    user.totpEnabled ? "OTP 설정" : "OTP 미설정",
+    user.isDeveloper ? keywords.developer : "",
+    user.mobilePackingEnabled ? keywords.packing : "",
+    user.isActive ? keywords.active : keywords.inactive,
+    user.mustChangePassword ? keywords.passwordChange : "",
+    user.totpEnabled ? keywords.otpConfigured : keywords.otpUnconfigured,
   ]
     .filter(Boolean)
     .join(" ")
@@ -240,33 +247,41 @@ function draftFromUser(user: UserAccountDto): UserAccountDraft {
 }
 
 function UserStatusBadge({ user }: { user: UserAccountDto }) {
+  const t = useTranslations("admin.userAccount");
   return (
     <div className="flex items-center gap-1.5">
       <Badge variant={user.isActive ? "success" : "neutral"}>
-        {user.isActive ? "활성" : "비활성"}
+        {user.isActive ? t("common.active") : t("common.inactive")}
       </Badge>
       {user.mustChangePassword ? (
-        <Badge variant="warning">비밀번호 변경 필요</Badge>
+        <Badge variant="warning">{t("common.passwordChange")}</Badge>
       ) : null}
     </div>
   );
 }
 
 function UserRoleBadge({ user }: { user: UserAccountDto }) {
+  const t = useTranslations("admin.userAccount");
+  const labels: Record<Role, string> = { LEADER: t("role.leader"), MANAGER: t("role.manager"), STAFF: t("role.staff"), VIEWER: t("role.viewer") };
   return (
     <div className="flex items-center gap-1.5">
       <Badge variant={user.role === "LEADER" ? "default" : "secondary"}>
-        {roleLabel(user.role)}
+        {roleLabel(user.role, labels)}
       </Badge>
-      {user.isDeveloper ? <Badge variant="warning">개발자</Badge> : null}
+      {user.isDeveloper ? <Badge variant="warning">{t("common.developer")}</Badge> : null}
       {user.mobilePackingEnabled ? (
-        <Badge variant="success">포장검수</Badge>
+        <Badge variant="success">{t("common.packing")}</Badge>
       ) : null}
     </div>
   );
 }
 
 export function UserAccountManagerView() {
+  const t = useTranslations("admin.userAccount");
+  const adbT = useTranslations("common.adbApi");
+  const locale = useLocale();
+  const roleLabels: Record<Role, string> = React.useMemo(() => ({ LEADER: t("role.leader"), MANAGER: t("role.manager"), STAFF: t("role.staff"), VIEWER: t("role.viewer") }), [t]);
+  const roleDescriptions: Record<Role, string> = React.useMemo(() => ({ LEADER: t("role.leaderDescription"), MANAGER: t("role.managerDescription"), STAFF: t("role.staffDescription"), VIEWER: t("role.viewerDescription") }), [t]);
   const { runGuardedAction } = useUnsavedChanges();
   const [users, setUsers] = React.useState<UserAccountDto[]>([]);
   const [query, setQuery] = React.useState("");
@@ -315,8 +330,8 @@ export function UserAccountManagerView() {
   useUnsavedForm({
     id: USER_ACCOUNT_FORM_ID,
     label: selectedUser
-      ? `${selectedUser.displayName} 계정 정보`
-      : "새 사용자 계정",
+      ? `${selectedUser.displayName} · ${t("detail.title")}`
+      : t("detail.newAccount"),
     enabled: selectedUser !== null || isNewDraft,
     isDirty: isDraftDirty,
     isBusy: isSaving,
@@ -345,8 +360,8 @@ export function UserAccountManagerView() {
   useUnsavedForm({
     id: MOBILE_REGISTRATION_FORM_IDS.admin,
     label: selectedUser
-      ? `${selectedUser.displayName} 모바일 기기 등록`
-      : "사용자 모바일 기기 등록",
+      ? `${selectedUser.displayName} · ${t("mobile.title")}`
+      : t("mobile.title"),
     enabled: selectedUser !== null,
     isDirty: !mobileRegistrationDraftsEqual(
       mobileRegistrationBaseline,
@@ -359,8 +374,8 @@ export function UserAccountManagerView() {
   useUnsavedForm({
     id: ONE_TIME_RESULT_FORM_IDS.adminRecoveryCodes,
     label: selectedUser
-      ? `${selectedUser.displayName} OTP 복구코드`
-      : "사용자 OTP 복구코드",
+      ? `${selectedUser.displayName} · ${t("otp.issue")}`
+      : t("otp.issue"),
     kind: "one-time-result",
     enabled: selectedUser !== null,
     isDirty: oneTimeResultIsPending(
@@ -385,7 +400,7 @@ export function UserAccountManagerView() {
       | null;
 
     if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.message || "모바일 등록기기 목록을 불러오지 못했습니다.");
+      throw new Error(legacyApiMessage(payload, t("message.mobileDevicesLoadFailed")));
     }
 
     setMobileDevices((current) =>
@@ -394,7 +409,7 @@ export function UserAccountManagerView() {
     setMobileDevicesNextCursor(
       payload.hasMore ? payload.nextCursor ?? null : null
     );
-  }, []);
+  }, [t]);
 
   const loadUsers = React.useCallback(async () => {
     setIsLoading(true);
@@ -407,7 +422,7 @@ export function UserAccountManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "사용자 계정 목록을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.usersLoadFailed")));
       }
 
       const items = payload.items ?? [];
@@ -451,7 +466,7 @@ export function UserAccountManagerView() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -496,7 +511,12 @@ export function UserAccountManagerView() {
           return true;
         }
 
-        return userSearchText(user).includes(normalizedQuery);
+        return userSearchText(user, roleLabels, {
+          developer: t("searchKeyword.developer"), packing: t("searchKeyword.packing"),
+          active: t("searchKeyword.active"), inactive: t("searchKeyword.inactive"),
+          passwordChange: t("searchKeyword.passwordChange"), otpConfigured: t("searchKeyword.otpConfigured"),
+          otpUnconfigured: t("searchKeyword.otpUnconfigured"),
+        }).includes(normalizedQuery);
       })
       .sort((left, right) => {
         if (left.isActive !== right.isActive) {
@@ -510,12 +530,12 @@ export function UserAccountManagerView() {
           return roleResult;
         }
 
-        return left.username.localeCompare(right.username, "ko-KR", {
+        return left.username.localeCompare(right.username, locale, {
           numeric: true,
           sensitivity: "base",
         });
       });
-  }, [query, roleFilter, statusFilter, users]);
+  }, [locale, query, roleFilter, roleLabels, statusFilter, t, users]);
 
   const summary = React.useMemo(
     () => ({
@@ -533,7 +553,7 @@ export function UserAccountManagerView() {
     () => [
       {
         key: "username",
-        label: "아이디",
+        label: t("columns.username"),
         width: "1.2fr",
         cellClassName: "flex h-full min-w-0 items-center pl-4 pr-3",
         text: (user) => user.username,
@@ -543,7 +563,7 @@ export function UserAccountManagerView() {
       },
       {
         key: "displayName",
-        label: "이름",
+        label: t("columns.name"),
         width: "1.2fr",
         cellClassName: userTableCellClassName,
         text: (user) => user.displayName,
@@ -551,7 +571,7 @@ export function UserAccountManagerView() {
       },
       {
         key: "contact",
-        label: "연락처",
+        label: t("columns.contact"),
         width: "1.5fr",
         cellClassName: userTableCellClassName,
         text: (user) => [user.phone, user.email].filter(Boolean).join(" "),
@@ -566,19 +586,19 @@ export function UserAccountManagerView() {
       },
       {
         key: "role",
-        label: "권한",
+        label: t("columns.role"),
         width: "1.3fr",
         cellClassName: userTableCellClassName,
-        text: (user) => `${roleLabel(user.role)} ${user.role}`,
+        text: (user) => `${roleLabel(user.role, roleLabels)} ${user.role}`,
         sortValue: (user) => ROLE_RANK[normalizeRole(user.role)],
         render: (user) => <UserRoleBadge user={user} />,
       },
       {
         key: "status",
-        label: "상태",
+        label: t("columns.status"),
         width: "0.8fr",
         cellClassName: userTableCellClassName,
-        text: (user) => (user.isActive ? "활성" : "비활성"),
+        text: (user) => (user.isActive ? t("common.active") : t("common.inactive")),
         render: (user) => <UserStatusBadge user={user} />,
       },
       {
@@ -586,19 +606,19 @@ export function UserAccountManagerView() {
         label: "OTP",
         width: "0.9fr",
         cellClassName: userTableCellClassName,
-        text: (user) => (user.totpEnabled ? "OTP 설정" : "OTP 미설정"),
+        text: (user) => (user.totpEnabled ? t("searchKeyword.otpConfigured") : t("searchKeyword.otpUnconfigured")),
         render: (user) => (
           <Badge variant={user.totpEnabled ? "success" : "neutral"}>
-            {user.totpEnabled ? "설정" : "미설정"}
+            {user.totpEnabled ? t("common.configured") : t("common.unconfigured")}
           </Badge>
         ),
       },
       {
         key: "developer",
-        label: "개발자",
+        label: t("columns.developer"),
         width: "0.8fr",
         cellClassName: userTableCellClassName,
-        text: (user) => (user.isDeveloper ? "개발자" : "일반"),
+        text: (user) => (user.isDeveloper ? t("searchKeyword.developer") : t("searchKeyword.regular")),
         render: (user) => (
           <span className="text-sm text-muted-foreground">
             {user.isDeveloper ? "Y" : "-"}
@@ -607,7 +627,7 @@ export function UserAccountManagerView() {
       },
       {
         key: "updatedAt",
-        label: "수정일시",
+        label: t("columns.updated"),
         width: "1.2fr",
         cellClassName: "flex h-full min-w-0 items-center pl-3 pr-4",
         text: (user) => user.updatedAt,
@@ -618,7 +638,7 @@ export function UserAccountManagerView() {
         ),
       },
     ],
-    []
+    [roleLabels, t]
   );
 
   function resetAccountTargetSecurityState() {
@@ -649,7 +669,7 @@ export function UserAccountManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: USER_ACCOUNT_TARGET_FORM_IDS,
-      targetLabel: "새 사용자 계정 작성",
+      targetLabel: t("detail.newAccount"),
       action: applyNewDraft,
     });
   }
@@ -669,7 +689,7 @@ export function UserAccountManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: USER_ACCOUNT_TARGET_FORM_IDS,
-      targetLabel: `${user.displayName} 계정 열기`,
+      targetLabel: `${user.displayName} · ${t("detail.title")}`,
       action: () => applySelectedUser(user),
     });
   }
@@ -678,7 +698,7 @@ export function UserAccountManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: USER_ACCOUNT_TARGET_FORM_IDS,
-      targetLabel: "사용자 계정 목록 새로고침",
+      targetLabel: t("filter.refresh"),
       action: () => {
         void loadUsers();
       },
@@ -721,7 +741,7 @@ export function UserAccountManagerView() {
       | null;
 
     if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.message || "사용자 계정 작업에 실패했습니다.");
+      throw new Error(legacyApiMessage(payload, t("message.userActionFailed")));
     }
 
     return payload;
@@ -738,7 +758,7 @@ export function UserAccountManagerView() {
       | null;
 
     if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.message || "모바일 기기 등록 작업에 실패했습니다.");
+      throw new Error(legacyApiMessage(payload, t("message.mobileActionFailed")));
     }
 
     return payload;
@@ -746,7 +766,7 @@ export function UserAccountManagerView() {
 
   async function postUsbProvision(device?: MobileRegisteredDeviceDto) {
     if (!selectedUser) {
-      throw new Error("기기를 등록할 계정을 선택하세요.");
+      throw new Error(t("message.selectAccount"));
     }
     const response = await fetch("/api/adb/mobile-provision", {
       method: "POST",
@@ -768,7 +788,8 @@ export function UserAccountManagerView() {
       | MobileDevicesApiResponse
       | null;
     if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.message || "USB 기기 등록에 실패했습니다.");
+      const localized = isAdbClientApiCode(payload?.code) ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code]) : t("message.adbLoadFailed");
+      throw new Error([localized || t("message.usbProvisionFailed"), payload?.details].filter(Boolean).join(" "));
     }
     return payload;
   }
@@ -784,7 +805,8 @@ export function UserAccountManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "ADB 기기 목록을 불러오지 못했습니다.");
+        const localized = isAdbClientApiCode(payload?.code) ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code]) : t("message.usbProvisionFailed");
+        throw new Error(localized || t("message.adbLoadFailed"));
       }
 
       const devices = (payload.devices ?? []).filter(
@@ -804,7 +826,7 @@ export function UserAccountManagerView() {
       setMobileDeviceLabel(nextRegistrationState.current.label);
       setMobileRegistrationBaseline(nextRegistrationState.baseline);
       setMobileDeviceMessage(
-        devices.length ? "ADB 기기 목록을 갱신했습니다." : "연결된 ADB 기기가 없습니다."
+        devices.length ? t("message.adbUpdated") : t("message.adbEmpty")
       );
     } catch (error) {
       setMobileDeviceMessage(error instanceof Error ? error.message : String(error));
@@ -819,12 +841,12 @@ export function UserAccountManagerView() {
     }
 
     if (!selectedUser.mobilePackingEnabled) {
-      setMobileDeviceMessage("먼저 계정 저장으로 포장 검수 앱 접근 권한을 켜야 합니다.");
+      setMobileDeviceMessage(t("message.enablePackingFirst"));
       return;
     }
 
     if (!selectedAdbSerial.trim()) {
-      setMobileDeviceMessage("ADB 목록을 갱신하고 실제 USB 기기를 선택하세요.");
+      setMobileDeviceMessage(t("message.selectUsbDevice"));
       return;
     }
 
@@ -842,7 +864,7 @@ export function UserAccountManagerView() {
       setSelectedAdbSerial(emptyMobileDraft.adbSerial);
       setMobileDeviceLabel(emptyMobileDraft.label);
       setMobileRegistrationBaseline(emptyMobileDraft);
-      setMobileDeviceMessage(payload.message || "선택한 USB 기기로 등록 정보를 전달했습니다.");
+      setMobileDeviceMessage(isAdbClientApiCode(payload.code) ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code]) : t("message.usbProvisioned"));
     } catch (error) {
       setMobileDeviceMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -861,7 +883,7 @@ export function UserAccountManagerView() {
     try {
       const payload = await postUsbProvision(device);
       await loadMobileDevices(selectedUser.userId);
-      setMobileDeviceMessage(payload.message || "선택한 USB 기기로 재등록 정보를 전달했습니다.");
+      setMobileDeviceMessage(isAdbClientApiCode(payload.code) ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code]) : t("message.usbReprovisioned"));
     } catch (error) {
       setMobileDeviceMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -878,13 +900,13 @@ export function UserAccountManagerView() {
     setMobileDeviceMessage("");
 
     try {
-      const payload = await postMobileDeviceAction({
+      await postMobileDeviceAction({
         action: "revoke",
         deviceId: device.deviceId,
         expectedRegistrationRevision: device.registrationRevision,
       });
       await loadMobileDevices(selectedUser.userId);
-      setMobileDeviceMessage(payload.message || "모바일 기기 등록을 폐기했습니다.");
+      setMobileDeviceMessage(t("message.mobileRevoked"));
     } catch (error) {
       setMobileDeviceMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -903,7 +925,7 @@ export function UserAccountManagerView() {
   function requestRevokeMobileDevice(device: MobileRegisteredDeviceDto) {
     if (
       !window.confirm(
-        `${device.label || device.adbSerialPreview} 등록을 폐기할까요?`
+        t("mobile.revokeConfirm", { label: device.label || device.adbSerialPreview })
       )
     ) {
       return;
@@ -943,7 +965,13 @@ export function UserAccountManagerView() {
         applySavedUser(payload.item);
       }
 
-      setMessage(payload.message || "계정 정보를 저장했습니다.");
+      setMessage(
+        payload.resultCode === "ACCOUNT_CREATED"
+          ? t("message.accountCreated")
+          : payload.resultCode === "ACCOUNT_AND_PASSWORD_SAVED"
+            ? t("message.accountAndPasswordSaved")
+            : t("message.accountSaved")
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -971,7 +999,7 @@ export function UserAccountManagerView() {
       }
 
       discardRecoveryCodes();
-      setMessage(payload.message || "OTP 설정을 초기화했습니다.");
+      setMessage(t("message.otpReset"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1000,7 +1028,7 @@ export function UserAccountManagerView() {
 
       setRecoveryCodes(payload.recoveryCodes ?? []);
       setRecoveryCodesAcknowledged(!(payload.recoveryCodes?.length));
-      setMessage(payload.message || "OTP 복구코드를 발급했습니다.");
+      setMessage(t("message.recoveryIssued"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1012,7 +1040,7 @@ export function UserAccountManagerView() {
     if (
       !selectedUser ||
       !window.confirm(
-        `${selectedUser.displayName} 계정의 OTP와 복구코드를 초기화할까요?\n대상 계정의 로그인 세션도 종료됩니다.`
+        t("otp.resetConfirm", { name: selectedUser.displayName })
       )
     ) {
       return;
@@ -1021,7 +1049,7 @@ export function UserAccountManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [ONE_TIME_RESULT_FORM_IDS.adminRecoveryCodes],
-      targetLabel: "사용자 OTP 초기화",
+      targetLabel: t("otp.reset"),
       action: () => {
         void resetSelectedUserTotp();
       },
@@ -1032,7 +1060,7 @@ export function UserAccountManagerView() {
     if (
       !selectedUser ||
       !window.confirm(
-        `${selectedUser.displayName} 계정의 기존 복구코드를 폐기하고 새 복구코드를 발급할까요?\n새 코드는 지금 화면에서 한 번만 표시됩니다.`
+        t("otp.issueConfirm", { name: selectedUser.displayName })
       )
     ) {
       return;
@@ -1041,7 +1069,7 @@ export function UserAccountManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [ONE_TIME_RESULT_FORM_IDS.adminRecoveryCodes],
-      targetLabel: "사용자 OTP 복구코드 재발급",
+      targetLabel: t("otp.issue"),
       action: () => {
         void generateSelectedUserRecoveryCodes();
       },
@@ -1053,7 +1081,7 @@ export function UserAccountManagerView() {
       return;
     }
 
-    if (!window.confirm(`${selectedUser.displayName} 계정을 비활성화할까요?`)) {
+    if (!window.confirm(t("deactivateConfirm", { name: selectedUser.displayName }))) {
       return;
     }
 
@@ -1071,7 +1099,7 @@ export function UserAccountManagerView() {
         applySavedUser(payload.item);
       }
 
-      setMessage(payload.message || "계정을 비활성화했습니다.");
+      setMessage(t("message.accountDeactivated"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1082,20 +1110,20 @@ export function UserAccountManagerView() {
   return (
     <WorkspacePageFrame className="gap-4 p-5">
       <SummaryStrip className="grid-cols-2 xl:grid-cols-6">
-        <SummaryCard icon={UsersRound} label="전체 계정" value={summary.total} />
-        <SummaryCard icon={ShieldCheck} label="활성 계정" value={summary.active} />
-        <SummaryCard icon={UsersRound} label="리더급" value={summary.leader} />
-        <SummaryCard icon={KeyRound} label="OTP 설정" value={summary.otp} />
-        <SummaryCard icon={Smartphone} label="포장검수 앱" value={summary.mobilePacking} />
-        <SummaryCard icon={KeyRound} label="개발자 권한" value={summary.developer} />
+        <SummaryCard icon={UsersRound} label={t("summary.total")} value={summary.total} />
+        <SummaryCard icon={ShieldCheck} label={t("summary.active")} value={summary.active} />
+        <SummaryCard icon={UsersRound} label={t("summary.leaders")} value={summary.leader} />
+        <SummaryCard icon={KeyRound} label={t("summary.otp")} value={summary.otp} />
+        <SummaryCard icon={Smartphone} label={t("summary.packing")} value={summary.mobilePacking} />
+        <SummaryCard icon={KeyRound} label={t("summary.developer")} value={summary.developer} />
       </SummaryStrip>
 
       <MasterDetailLayout className="grid-cols-[minmax(620px,1fr)_420px] gap-4">
         <WorkspacePanel>
           <PanelToolbar className="grid-cols-[minmax(240px,1fr)_160px_160px_auto]">
             <SearchInput
-              aria-label="사용자 검색"
-              placeholder="아이디, 이름, 연락처, 권한 검색"
+              aria-label={t("filter.search")}
+              placeholder={t("filter.placeholder")}
               value={query}
               onValueChange={setQuery}
             />
@@ -1107,10 +1135,10 @@ export function UserAccountManagerView() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">전체 권한</SelectItem>
+                <SelectItem value="ALL">{t("common.allRoles")}</SelectItem>
                 {ROLES.map((role) => (
                   <SelectItem key={role} value={role}>
-                    {ROLE_LABELS[role]}
+                    {roleLabels[role]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1125,9 +1153,9 @@ export function UserAccountManagerView() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">전체 상태</SelectItem>
-                <SelectItem value="ACTIVE">활성</SelectItem>
-                <SelectItem value="INACTIVE">비활성</SelectItem>
+                <SelectItem value="ALL">{t("common.allStatuses")}</SelectItem>
+                <SelectItem value="ACTIVE">{t("common.active")}</SelectItem>
+                <SelectItem value="INACTIVE">{t("common.inactive")}</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -1136,7 +1164,7 @@ export function UserAccountManagerView() {
               disabled={isLoading}
             >
               <RefreshCcw className="size-4" />
-              새로고침
+              {t("filter.refresh")}
             </Button>
           </PanelToolbar>
 
@@ -1151,7 +1179,7 @@ export function UserAccountManagerView() {
             columns={columns}
             rowKey={(user) => user.userId}
             emptyMessage={
-              isLoading ? "사용자 계정 목록을 불러오는 중입니다." : "조회된 계정이 없습니다."
+              isLoading ? t("grid.loading") : t("grid.empty")
             }
             selectedRowKey={typeof selectedUserId === "number" ? selectedUserId : null}
             onRowClick={selectUser}
@@ -1166,34 +1194,34 @@ export function UserAccountManagerView() {
           <div className="flex shrink-0 items-center justify-between border-b p-4">
             <div>
               <h2 className="text-sm font-semibold">
-                {isNewDraft ? "새 계정 초안" : "계정 상세"}
+                {isNewDraft ? t("detail.newDraft") : t("detail.title")}
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                계정 생성, 권한 변경, 비밀번호 초기화를 처리합니다.
+                {t("detail.subtitle")}
               </p>
             </div>
             <Button variant="outline" onClick={startNewDraft}>
               <UserPlus className="size-4" />
-              새 계정
+              {t("detail.newAccount")}
             </Button>
           </div>
 
           <div className="min-h-0 flex-1 overflow-auto p-4">
             {!selectedUser && !isNewDraft ? (
               <div className="grid h-full place-items-center rounded-md border border-dashed text-sm text-muted-foreground">
-                왼쪽 목록에서 계정을 선택하세요.
+                {t("detail.select")}
               </div>
             ) : (
               <div className="grid gap-4">
                 <div className="grid gap-3 rounded-md border p-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">기본 정보</h3>
+                    <h3 className="text-sm font-semibold">{t("detail.basic")}</h3>
                     <div className="flex items-center gap-1.5">
                       <Badge variant={isNewDraft ? "warning" : "neutral"}>
-                        {isNewDraft ? "신규" : "편집"}
+                        {isNewDraft ? t("common.new") : t("common.edit")}
                       </Badge>
                       {selectedUser?.mustChangePassword ? (
-                        <Badge variant="warning">비밀번호 변경 필요</Badge>
+                        <Badge variant="warning">{t("common.passwordChange")}</Badge>
                       ) : null}
                     </div>
                   </div>
@@ -1204,7 +1232,7 @@ export function UserAccountManagerView() {
                   />
 
                   <div className="grid grid-cols-2 gap-3">
-                    <AccountFieldLabel label="권한">
+                    <AccountFieldLabel label={t("detail.role")}>
                       <Select
                         value={draft.role}
                         onValueChange={(value) =>
@@ -1217,14 +1245,14 @@ export function UserAccountManagerView() {
                         <SelectContent>
                           {ROLES.map((role) => (
                             <SelectItem key={role} value={role}>
-                              {ROLE_LABELS[role]}
+                              {roleLabels[role]}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </AccountFieldLabel>
 
-                    <AccountFieldLabel label="계정 상태">
+                    <AccountFieldLabel label={t("detail.status")}>
                       <Select
                         value={draft.isActive ? "ACTIVE" : "INACTIVE"}
                         onValueChange={(value) =>
@@ -1235,8 +1263,8 @@ export function UserAccountManagerView() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="ACTIVE">활성</SelectItem>
-                          <SelectItem value="INACTIVE">비활성</SelectItem>
+                          <SelectItem value="ACTIVE">{t("common.active")}</SelectItem>
+                          <SelectItem value="INACTIVE">{t("common.inactive")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </AccountFieldLabel>
@@ -1250,7 +1278,7 @@ export function UserAccountManagerView() {
                         updateDraft("isDeveloper", event.target.checked)
                       }
                     />
-                    개발자 메뉴 접근 허용
+                    {t("detail.developerAccess")}
                   </label>
 
                   <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
@@ -1261,7 +1289,7 @@ export function UserAccountManagerView() {
                         updateDraft("mobilePackingEnabled", event.target.checked)
                       }
                     />
-                    포장 검수 앱 접근 허용
+                    {t("detail.packingAccess")}
                   </label>
                 </div>
 
@@ -1269,28 +1297,28 @@ export function UserAccountManagerView() {
                   <div className="grid gap-3 rounded-md border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <h3 className="text-sm font-semibold">OTP 2차 인증</h3>
+                        <h3 className="text-sm font-semibold">{t("otp.title")}</h3>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          휴대폰 교체, 앱 삭제, 분실 시 초기화하거나 복구코드를 발급합니다.
+                          {t("otp.subtitle")}
                         </p>
                       </div>
                       <Badge variant={selectedUser.totpEnabled ? "success" : "neutral"}>
-                        {selectedUser.totpEnabled ? "설정됨" : "미설정"}
+                        {selectedUser.totpEnabled ? t("common.enabled") : t("common.unconfigured")}
                       </Badge>
                     </div>
 
                     <div className="grid gap-1 text-xs text-muted-foreground">
                       <DetailRow
-                        label="OTP 등록일시"
+                        label={t("otp.verifiedAt")}
                         value={formatDate(selectedUser.totpVerifiedAt)}
                       />
                       <DetailRow
-                        label="잠금 만료"
+                        label={t("otp.lockedUntil")}
                         value={formatDate(selectedUser.totpLockedUntil)}
                       />
                       <DetailRow
-                        label="남은 복구코드"
-                        value={`${selectedUser.recoveryCodeCount}개`}
+                        label={t("otp.remaining")}
+                        value={t("common.count", { count: selectedUser.recoveryCodeCount })}
                       />
                     </div>
 
@@ -1301,7 +1329,7 @@ export function UserAccountManagerView() {
                         disabled={isSaving || !selectedUser.totpEnabled}
                       >
                         <ShieldCheck className="size-4" />
-                        복구코드 발급
+                        {t("otp.issue")}
                       </Button>
                       <Button
                         variant="outline"
@@ -1310,14 +1338,14 @@ export function UserAccountManagerView() {
                         className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
                       >
                         <ShieldOff className="size-4" />
-                        OTP 초기화
+                        {t("otp.reset")}
                       </Button>
                     </div>
 
                     {recoveryCodes.length > 0 ? (
                       <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
                         <div className="text-xs font-semibold">
-                          복구코드는 지금 한 번만 표시됩니다.
+                          {t("otp.once")}
                         </div>
                         <div className="grid grid-cols-2 gap-1 font-mono text-xs">
                           {recoveryCodes.map((code) => (
@@ -1335,7 +1363,7 @@ export function UserAccountManagerView() {
                           onClick={() => setRecoveryCodesAcknowledged(true)}
                         >
                           <CheckCircle2 className="size-4" />
-                          {recoveryCodesAcknowledged ? "보관 완료됨" : "보관 완료"}
+                          {recoveryCodesAcknowledged ? t("otp.stored") : t("otp.store")}
                         </Button>
                       </div>
                     ) : null}
@@ -1346,19 +1374,19 @@ export function UserAccountManagerView() {
                   <div className="grid gap-3 rounded-md border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <h3 className="text-sm font-semibold">포장 검수 USB 기기 등록</h3>
+                        <h3 className="text-sm font-semibold">{t("mobile.title")}</h3>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          현재 연결된 실제 USB 기기에만 보안 등록 정보를 전달합니다.
+                          {t("mobile.subtitle")}
                         </p>
                       </div>
                       <Badge variant={selectedUser.mobilePackingEnabled ? "success" : "neutral"}>
-                        {selectedUser.mobilePackingEnabled ? "권한 허용" : "권한 없음"}
+                        {selectedUser.mobilePackingEnabled ? t("common.permissionAllowed") : t("common.permissionDenied")}
                       </Badge>
                     </div>
 
                     {!selectedUser.mobilePackingEnabled ? (
                       <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        먼저 위의 `포장 검수 앱 접근 허용`을 켜고 계정을 저장해야 기기를 등록할 수 있습니다.
+                        {t("mobile.permissionRequired")}
                       </div>
                     ) : null}
 
@@ -1382,7 +1410,7 @@ export function UserAccountManagerView() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="NONE">ADB 기기 선택</SelectItem>
+                              <SelectItem value="NONE">{t("mobile.selectAdb")}</SelectItem>
                               {adbDevices
                                 .filter((device) => String(device.serial ?? "").trim())
                                 .map((device) => (
@@ -1396,7 +1424,7 @@ export function UserAccountManagerView() {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Input value="" placeholder="ADB 목록을 먼저 갱신하세요" readOnly disabled />
+                          <Input value="" placeholder={t("mobile.refreshFirst")} readOnly disabled />
                         )}
                       </AccountFieldLabel>
                       <Button
@@ -1410,10 +1438,10 @@ export function UserAccountManagerView() {
                       </Button>
                     </div>
 
-                    <AccountFieldLabel label="기기 라벨">
+                    <AccountFieldLabel label={t("mobile.label")}>
                       <Input
                         value={mobileDeviceLabel}
-                        placeholder="예: 포장라인 1번 휴대폰"
+                        placeholder={t("mobile.labelPlaceholder")}
                         onChange={(event) =>
                           setMobileDeviceLabel(event.target.value)
                         }
@@ -1431,7 +1459,7 @@ export function UserAccountManagerView() {
                       }
                     >
                       <Smartphone className="size-4" />
-                      선택한 USB 기기 등록
+                      {t("mobile.register")}
                     </Button>
 
                     <div className="grid gap-2">
@@ -1460,21 +1488,21 @@ export function UserAccountManagerView() {
                                 }
                               >
                                 {device.registrationState === "ACTIVE"
-                                  ? "활성"
+                                  ? t("common.active")
                                   : device.registrationState === "PROVISIONING"
-                                    ? "앱 로그인 대기"
+                                    ? t("mobile.provisioning")
                                     : device.registrationState === "REAUTH_REQUIRED"
-                                      ? "재등록 필요"
-                                      : "폐기됨"}
+                                      ? t("mobile.reauth")
+                                      : t("mobile.revoked")}
                               </Badge>
                             </div>
                             <div className="grid gap-1 text-muted-foreground">
                               <DetailRow
-                                label="활성화"
+                                label={t("mobile.activated")}
                                 value={formatDate(device.activatedAt)}
                               />
                               <DetailRow
-                                label="마지막 호출"
+                                label={t("mobile.lastSeen")}
                                 value={formatDate(device.lastSeenAt)}
                               />
                             </div>
@@ -1485,7 +1513,7 @@ export function UserAccountManagerView() {
                                   onClick={() => requestRenewMobileDevice(device)}
                                   disabled={isMobileDeviceBusy || !selectedAdbSerial}
                                 >
-                                  선택 USB로 재등록
+                                  {t("mobile.renew")}
                                 </Button>
                                 <Button
                                   variant="outline"
@@ -1493,7 +1521,7 @@ export function UserAccountManagerView() {
                                   onClick={() => requestRevokeMobileDevice(device)}
                                   disabled={isMobileDeviceBusy}
                                 >
-                                  폐기
+                                  {t("mobile.revoke")}
                                 </Button>
                               </div>
                             ) : null}
@@ -1501,7 +1529,7 @@ export function UserAccountManagerView() {
                         ))
                       ) : (
                         <div className="rounded-md border border-dashed px-3 py-3 text-center text-xs text-muted-foreground">
-                          이 계정에 등록된 포장 검수 앱 기기가 없습니다.
+                          {t("mobile.empty")}
                         </div>
                       )}
                       {mobileDevicesNextCursor ? (
@@ -1516,7 +1544,7 @@ export function UserAccountManagerView() {
                             )
                           }
                         >
-                          다음 등록 불러오기
+                          {t("mobile.more")}
                         </Button>
                       ) : null}
                     </div>
@@ -1524,13 +1552,13 @@ export function UserAccountManagerView() {
                 ) : null}
 
                 <div className="grid gap-3 rounded-md border p-3">
-                  <h3 className="text-sm font-semibold">비밀번호</h3>
-                  <AccountFieldLabel label="임시 비밀번호">
+                  <h3 className="text-sm font-semibold">{t("password.title")}</h3>
+                  <AccountFieldLabel label={t("password.temporary")}>
                     <Input
                       type="password"
                       autoComplete="new-password"
                       value={draft.tempPassword}
-                      placeholder="초기화 시 새 비밀번호 입력"
+                      placeholder={t("password.placeholder")}
                       onChange={(event) =>
                         updateDraft("tempPassword", event.target.value)
                       }
@@ -1538,31 +1566,31 @@ export function UserAccountManagerView() {
                   </AccountFieldLabel>
                   <Button variant="outline" disabled>
                     <KeyRound className="size-4" />
-                    비밀번호는 계정 저장 시 함께 초기화됩니다.
+                    {t("password.note")}
                   </Button>
                 </div>
 
                 <div className="grid gap-2 rounded-md border p-3 text-sm">
-                  <h3 className="font-semibold">권한 설명</h3>
+                  <h3 className="font-semibold">{t("permission.title")}</h3>
                   <p className="text-muted-foreground">
                     {roleDescriptions[draft.role]}
                   </p>
                   {draft.isDeveloper ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                      개발자 권한은 일반 업무 권한과 별개로 개발자 메뉴를 표시합니다.
+                      {t("permission.developer")}
                     </div>
                   ) : null}
                   {draft.mobilePackingEnabled ? (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
-                      포장 검수 앱 권한은 일반 업무 권한과 별개로 모바일 검수 API 호출만 허용합니다.
+                      {t("permission.packing")}
                     </div>
                   ) : null}
                 </div>
 
                 {selectedUser ? (
                   <div className="grid gap-1 rounded-md border p-3">
-                    <DetailRow label="생성일시" value={formatDate(selectedUser.createdAt)} />
-                    <DetailRow label="수정일시" value={formatDate(selectedUser.updatedAt)} />
+                    <DetailRow label={t("detail.created")} value={formatDate(selectedUser.createdAt)} />
+                    <DetailRow label={t("detail.updated")} value={formatDate(selectedUser.updatedAt)} />
                   </div>
                 ) : null}
               </div>
@@ -1576,7 +1604,7 @@ export function UserAccountManagerView() {
               disabled={isSaving || (!selectedUser && !isNewDraft)}
             >
               <Save className="size-4" />
-              {isSaving ? "저장 중" : "계정 저장"}
+              {isSaving ? t("detail.saving") : t("detail.save")}
             </Button>
             <Button
               variant="outline"
@@ -1584,11 +1612,11 @@ export function UserAccountManagerView() {
               disabled={isSaving || !selectedUser || !selectedUser.isActive}
             >
               <CircleOff className="size-4" />
-              비활성화
+              {t("detail.deactivate")}
             </Button>
             <Button variant="outline" disabled>
               <ShieldCheck className="size-4" />
-              권한 이력
+              {t("detail.history")}
             </Button>
           </div>
         </WorkspacePanel>

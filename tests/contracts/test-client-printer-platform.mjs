@@ -321,7 +321,27 @@ assert.doesNotMatch(
   printerServiceSource,
   /node:child_process|process\.platform|PowerShell|powershell|\bCUPS\b/i
 );
-assert.match(printerServiceSource, /platform\.printerBackend\.submit/);
+assert.match(printerServiceSource, /requestNativeBroker\("printer\.list"/);
+assert.match(printerServiceSource, /requestNativeBroker\("printer\.print"/);
+assert.doesNotMatch(printerServiceSource, /platform\.printerBackend\.submit/);
+
+const shipmentOrderListSource = readFileSync(
+  path.join(
+    projectRoot,
+    "quickhack_client",
+    "components",
+    "shipment",
+    "shipment-order-list-view.tsx"
+  ),
+  "utf8"
+);
+assert.match(shipmentOrderListSource, /function localPrintErrorKey/);
+assert.match(shipmentOrderListSource, /localPrintErrorMessage\(\s*job\?\.errorCode/);
+assert.match(shipmentOrderListSource, /localPrintErrorMessage\(\s*payload\.job\.errorCode/);
+assert.doesNotMatch(
+  shipmentOrderListSource,
+  /throw new Error\(\s*job\?\.errorMessage/
+);
 const spoolCoreSource = readFileSync(
   path.join(projectRoot, "tools", "client-print-spool-core.mjs"),
   "utf8"

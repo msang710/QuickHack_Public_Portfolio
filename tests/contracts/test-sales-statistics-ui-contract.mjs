@@ -25,6 +25,7 @@ const service = read(
 const legacyService = read(
   "quickhack_server/statistics/statistics-service.ts"
 );
+const koStatistics = read("quickhack_client/i18n/catalogs/ko/statistics.ts");
 
 assert.match(panel, /\/api\/statistics\/sales/);
 assert.match(panel, /new AbortController\(\)/);
@@ -33,7 +34,8 @@ assert.match(panel, /requestId !== requestSequence\.current/);
 assert.match(panel, /buildStatisticsPeriodRequestQuery/);
 assert.match(panel, /requestState\.requestKey === requestKey/);
 assert.match(panel, /retryRevision/);
-assert.match(panel, /다시 시도/);
+assert.match(panel, /t\("loading\.retry"\)/);
+assert.match(panel, /t\("loading\.refresh"\)/);
 assert.match(panel, /cache: "no-store"/);
 assert.match(panel, /aria-busy=/);
 assert.doesNotMatch(panel, /buildPreviewSalesStatistics/);
@@ -53,7 +55,7 @@ for (const section of [
   "판매 소요기간 구성",
   "판매 채널 성과",
 ]) {
-  assert.match(panel, new RegExp(section));
+  assert.match(koStatistics, new RegExp(section));
 }
 
 for (const forbiddenConcept of [
@@ -78,10 +80,10 @@ assert.match(panel, /formatSalesGrossProfit/);
 assert.match(panel, /formatSalesLeadTime/);
 assert.match(panel, /StatisticsCoverageItem/);
 assert.match(panel, /StatisticsCalculationScope/);
-assert.match(calculationScope, /실시간 계산/);
-assert.match(calculationScope, /집계 기간/);
-assert.match(calculationScope, /비교 기간/);
-assert.match(calculationScope, /데이터 마감/);
+assert.match(calculationScope, /useTranslations\("statistics\.calculationScope"\)/);
+for (const label of ["실시간 계산", "집계 기간", "비교 기간", "데이터 마감"]) {
+  assert.match(koStatistics, new RegExp(label));
+}
 assert.match(panel, /minWidth=\{1700\}/);
 assert.match(panel, /maxHeight=\{560\}/);
 assert.match(panel, /gridTemplateColumns=/);
@@ -89,7 +91,7 @@ assert.match(
   panel,
   /md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6/
 );
-assert.match(presentation, /formatStatisticsAmount/);
+assert.match(presentation, /base\.formatAmount/);
 assert.match(presentation, /metric\.marginPercent === null/);
 
 assert.match(

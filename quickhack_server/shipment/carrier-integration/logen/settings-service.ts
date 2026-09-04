@@ -55,7 +55,7 @@ function requiredText(value: unknown, fieldName: string) {
   if (!normalized) {
     throw publicBadRequest(
       "LOGEN_INTEGRATION_SETTING_REQUIRED",
-      `택배사 발송 설정의 ${fieldName} 항목을 입력하세요.`,
+      "LOGEN_INTEGRATION_SETTING_REQUIRED",
       { fieldName }
     );
   }
@@ -67,7 +67,7 @@ function expectedRevision(value: unknown) {
   if (!Number.isSafeInteger(revision) || revision < 0) {
     throw publicBadRequest(
       "LOGEN_INTEGRATION_SETTING_REVISION_INVALID",
-      "택배사 발송 설정의 버전 값이 올바르지 않습니다."
+      "LOGEN_INTEGRATION_SETTING_REVISION_INVALID"
     );
   }
   return revision;
@@ -114,7 +114,7 @@ export async function requireLogenIntegrationSettings(
   if (!settings.configured) {
     throw publicConflict(
       "LOGEN_INTEGRATION_SETTINGS_REQUIRED",
-      "택배사 발송 설정이 등록되지 않아 로젠 송장 등록을 진행할 수 없습니다. 송장 관리의 택배사 발송 설정에서 먼저 등록하세요."
+      "LOGEN_INTEGRATION_SETTINGS_REQUIRED"
     );
   }
   return settings;
@@ -151,7 +151,7 @@ export async function saveLogenIntegrationSettings(
     if ((before?.revision ?? 0) !== revision) {
       throw publicConflict(
         "LOGEN_INTEGRATION_SETTINGS_STALE",
-        "다른 작업자가 택배사 발송 설정을 먼저 변경했습니다. 최신 설정을 다시 불러온 뒤 저장하세요.",
+        "LOGEN_INTEGRATION_SETTINGS_STALE",
         { expectedRevision: revision, currentRevision: before?.revision ?? 0 }
       );
     }
@@ -202,7 +202,7 @@ export async function saveLogenIntegrationSettings(
       if (!inserted[0]) {
         throw publicConflict(
           "LOGEN_INTEGRATION_SETTINGS_STALE",
-          "다른 작업자가 로젠 발송 설정을 먼저 등록했습니다. 최신 설정을 다시 불러와 수정하세요.",
+          "LOGEN_INTEGRATION_SETTINGS_STALE",
           { expectedRevision: 0 }
         );
       }
@@ -225,7 +225,7 @@ export async function saveLogenIntegrationSettings(
       if (updated.count !== 1) {
         throw publicConflict(
           "LOGEN_INTEGRATION_SETTINGS_STALE",
-          "다른 작업자가 택배사 발송 설정을 먼저 변경했습니다. 최신 설정을 다시 불러온 뒤 저장하세요."
+          "LOGEN_INTEGRATION_SETTINGS_STALE"
         );
       }
 

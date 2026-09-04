@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -26,7 +28,8 @@ import {
   TabsTrigger,
 } from "@/quickhack_client/components/ui/tabs";
 import { SaleGradeBadge } from "@/quickhack_client/components/ui/sale-grade-badge";
-import { statusMap } from "@/quickhack_client/components/shared/device-detail-sheet";
+import { invoiceOperationStatusLabel } from "@/quickhack_client/components/invoice/invoice-status-presentation";
+import { statusLabel, statusMap } from "@/quickhack_client/components/shared/device-detail-sheet";
 import {
   type DataGridColumn,
   VirtualizedDataGrid,
@@ -44,13 +47,7 @@ import {
 } from "@/quickhack_shared/core/mutation-receipt";
 import {
   INVENTORY_STATUS,
-  inventoryStatusLabel,
 } from "@/quickhack_shared/inventory/inventory-status";
-import {
-  channelOrderMappingFailureReasonLabel,
-  inventoryMatchFailureReasonLabel,
-  inventoryMatchStatusLabel,
-} from "@/quickhack_shared/sales-channel/order-matching";
 import {
   firstShipmentPackageGroupRows,
   shipmentPackageCandidateKey,
@@ -386,6 +383,42 @@ type LocalPrintApiResponse = {
   job?: LocalPrintJob | null;
 };
 
+function localPrintErrorKey(code: string | null | undefined) {
+  switch (code) {
+    case "INVALID_PRINT_REQUEST":
+    case "INVALID_PRINT_REQUEST_KEY":
+    case "INVALID_PRINT_PAYLOAD_HASH":
+    case "INVALID_PRINT_RESOLUTION":
+      return "printerError.invalidRequest" as const;
+    case "INVALID_PRINTER_NAME":
+      return "printerError.invalidPrinter" as const;
+    case "PRINTER_QUEUE_NOT_FOUND":
+      return "printerError.queueNotFound" as const;
+    case "DEPENDENCY_MISSING":
+      return "printerError.dependencyMissing" as const;
+    case "DEPENDENCY_INVALID":
+    case "PRINTER_VALIDATION_FAILED":
+      return "printerError.dependencyInvalid" as const;
+    case "LINUX_SPOOL_REJECTED":
+    case "WINDOWS_SPOOL_REJECTED":
+      return "printerError.spoolRejected" as const;
+    case "PRINTER_SUBMIT_TIMEOUT":
+    case "PRINTER_SUBMIT_SIGNALLED":
+    case "PRINTER_ACCEPTANCE_UNKNOWN":
+    case "PRINTER_BACKEND_RESULT_UNKNOWN":
+      return "printerError.resultUnknown" as const;
+    case "PRINT_SPOOL_CLEANUP_FAILED":
+      return "printerError.cleanupFailed" as const;
+    case "PRINT_LEDGER_PERSIST_FAILED":
+      return "printerError.ledgerFailed" as const;
+    case "PRINT_REQUEST_CONFLICT":
+    case "ORPHANED_PRINT_SPOOL_CONFLICT":
+      return "printerError.requestConflict" as const;
+    default:
+      return null;
+  }
+}
+
 class ReturnProcessingRequiredClientError extends Error {
   constructor(
     message: string,
@@ -466,7 +499,6 @@ type MatchedShipmentColumnKey =
 
 type MatchedWarrantyTab = {
   key: MatchedWarrantyTabKey;
-  label: string;
   warrantyKeyword: "2년" | "1년";
   source: "coupang" | "external";
 };
@@ -474,25 +506,21 @@ type MatchedWarrantyTab = {
 const MATCHED_WARRANTY_TABS: MatchedWarrantyTab[] = [
   {
     key: "coupang-2y",
-    label: "2년 보증",
     warrantyKeyword: "2년",
     source: "coupang",
   },
   {
     key: "coupang-1y",
-    label: "1년 보증",
     warrantyKeyword: "1년",
     source: "coupang",
   },
   {
     key: "external-2y",
-    label: "2년 보증(쿠팡 외)",
     warrantyKeyword: "2년",
     source: "external",
   },
   {
     key: "external-1y",
-    label: "1년 보증(쿠팡 외)",
     warrantyKeyword: "1년",
     source: "external",
   },
@@ -500,18 +528,7 @@ const MATCHED_WARRANTY_TABS: MatchedWarrantyTab[] = [
 
 const PRINT_READY_ALLOCATION_STATUSES = new Set(["API_ACKED"]);
 
-const MODE_LABELS: Record<ShipmentOrderListMode, string> = {
-  all: "\uC804\uCCB4 \uC8FC\uBB38 \uAC74",
-  matched: "\uB9E4\uCE6D \uC644\uB8CC",
-};
 const SHIPMENT_LIST_SELECT_LIMIT = 30;
-
-const PRINT_BATCH_STATUS_LABELS: Record<ShipmentPrintBatchStatus, string> = {
-  PENDING: "출력 대기",
-  PRINT_DIALOG_CLOSED: "확인 대기",
-  CONFIRMED: "확정",
-  CANCELED: "차수 폐기",
-};
 
 function isActivePrintBatchStatus(status: ShipmentPrintBatchStatus) {
   return status !== "CANCELED";
@@ -549,18 +566,51 @@ function statusVariant(value: string) {
   return "neutral" as const;
 }
 
-function inventoryMatchStatusText(row: ShipmentOrderRow) {
+type ShipmentOrderTranslator = ReturnType<typeof useTranslations<"shipment.orderList">>;
+
+function inventoryMatchStatusLabel(value: string, t: ShipmentOrderTranslator) {
+  if (value === "UNMATCHED") return t("matching.status.unmatched");
+  if (value === "MATCHED") return t("matching.status.matched");
+  if (value === "PARTIAL") return t("matching.status.partial");
+  if (value === "FAILED") return t("matching.status.failed");
+  if (value === "SKIPPED") return t("matching.status.skipped");
+  if (value === "EXPIRED") return t("matching.status.expired");
+  return value || "-";
+}
+
+function inventoryMatchFailureReasonLabel(value: string | null, t: ShipmentOrderTranslator) {
+  if (value === "NO_CHANNEL_SALES_OFFER") return t("matching.reason.noChannelSalesOffer");
+  if (value === "INSUFFICIENT_INVENTORY") return t("matching.reason.insufficientInventory");
+  if (value === "ORDER_CANCELED") return t("matching.reason.orderCanceled");
+  if (value === "NO_AVAILABLE_QUANTITY") return t("matching.reason.noAvailableQuantity");
+  if (value === "AUTO_MATCH_DISABLED") return t("matching.reason.autoMatchDisabled");
+  if (value === "ACTIVE_ALLOCATION_QUANTITY_EXCEEDED") return t("matching.reason.activeAllocationExceeded");
+  if (value === "NO_MODEL_CANDIDATE") return t("matching.reason.noModelCandidate");
+  if (value === "SYNC_WINDOW_EXPIRED") return t("matching.reason.syncWindowExpired");
+  return value ?? "";
+}
+
+function channelOrderMappingFailureReasonLabel(value: string | null, t: ShipmentOrderTranslator) {
+  if (value === "NO_CHANNEL_PRODUCT_MAPPING") return t("matching.reason.noChannelProductMapping");
+  if (value === "SALES_OFFER_NOT_MAPPED") return t("matching.reason.salesOfferNotMapped");
+  if (value === "SALES_OFFER_NOT_FOUND") return t("matching.reason.salesOfferNotFound");
+  if (value === "SALES_OFFER_INACTIVE") return t("matching.reason.salesOfferInactive");
+  return value ?? "";
+}
+
+function inventoryMatchStatusText(row: ShipmentOrderRow, missingMappingLabel: string, t: ShipmentOrderTranslator) {
   return [
-    inventoryMatchStatusLabel(row.inventoryMatchStatus),
-    inventoryMatchReasonText(row),
+    inventoryMatchStatusLabel(row.inventoryMatchStatus, t),
+    inventoryMatchReasonText(row, missingMappingLabel, t),
   ]
     .filter(Boolean)
     .join(" ");
 }
 
-function inventoryMatchReasonText(row: ShipmentOrderRow) {
+function inventoryMatchReasonText(row: ShipmentOrderRow, missingMappingLabel: string, t: ShipmentOrderTranslator) {
   const inventoryReason = inventoryMatchFailureReasonLabel(
-    row.inventoryMatchingFailureReason
+    row.inventoryMatchingFailureReason,
+    t
   );
 
   if (inventoryReason) {
@@ -568,7 +618,8 @@ function inventoryMatchReasonText(row: ShipmentOrderRow) {
   }
 
   const mappingReason = channelOrderMappingFailureReasonLabel(
-    row.matchingFailureReason
+    row.matchingFailureReason,
+    t
   );
 
   if (mappingReason) {
@@ -576,7 +627,7 @@ function inventoryMatchReasonText(row: ShipmentOrderRow) {
   }
 
   if (row.mappingStatus !== "MAPPED" || !row.salesOfferId) {
-    return "SKU 매핑 없음";
+    return missingMappingLabel;
   }
 
   return "";
@@ -620,15 +671,19 @@ function matchedUniqueNoLineText(row: ShipmentOrderRow) {
   );
 }
 
-function matchedInventoryStatusLineText(row: ShipmentOrderRow) {
+function matchedInventoryStatusLineText(
+  row: ShipmentOrderRow,
+  translate: Parameters<typeof statusLabel>[1]
+) {
   return lineText(
     row.matchedDevices
-      .map((device) => inventoryStatusLabel(device.inventoryStatus))
+      .map((device) => statusLabel(device.inventoryStatus ?? "", translate))
       .filter((value) => value !== "-")
   );
 }
 
 function InventoryStatusBadgeList({ row }: { row: ShipmentOrderRow }) {
+  const detailT = useTranslations("common.deviceDetail");
   const statuses = row.matchedDevices
     .map((device) => String(device.inventoryStatus ?? "").trim())
     .filter(Boolean);
@@ -641,7 +696,7 @@ function InventoryStatusBadgeList({ row }: { row: ShipmentOrderRow }) {
     <div className="flex min-w-0 flex-col items-start gap-1 leading-4">
       {statuses.map((status, index) => {
         const mapped = statusMap[status];
-        const label = mapped?.label ?? inventoryStatusLabel(status);
+        const label = statusLabel(status, detailT);
 
         return (
           <Badge
@@ -848,11 +903,17 @@ function buildShipmentListPrintHtml({
   printedAt,
   tabLabel,
   batchLabel,
+  title,
+  locale,
+  labels,
 }: {
   rows: MatchedShipmentRow[];
   printedAt: string;
   tabLabel: string;
   batchLabel: string;
+  title: string;
+  locale: string;
+  labels: { printedAt: string; targetCount: (count: number) => string; uniqueNo: string; warranty: string; saleGrade: string; model: string; storage: string; color: string; receiver: string; address: string };
 }) {
   const bodyRows = rows
     .map(
@@ -873,7 +934,8 @@ function buildShipmentListPrintHtml({
     .join("");
 
   return buildPrintHtmlDocument({
-    title: "출고 목록",
+    title,
+    locale,
     styles: `
       @page { size: A4 landscape; margin: 8mm; }
       * { box-sizing: border-box; }
@@ -945,12 +1007,12 @@ function buildShipmentListPrintHtml({
       <main class="print-page">
         <header class="print-header">
           <div>
-            <h1>출고 목록</h1>
+            <h1>${escapePrintHtml(title)}</h1>
             <div>${escapePrintHtml(batchLabel || tabLabel)}</div>
           </div>
           <div class="meta">
-            <div>출력일시 ${escapePrintHtml(formatPrintDateTime(printedAt))}</div>
-            <div>출력 대상 ${rows.length.toLocaleString("ko-KR")}건</div>
+            <div>${escapePrintHtml(labels.printedAt)} ${escapePrintHtml(formatPrintDateTime(printedAt))}</div>
+            <div>${escapePrintHtml(labels.targetCount(rows.length))}</div>
           </div>
         </header>
         <table>
@@ -970,14 +1032,14 @@ function buildShipmentListPrintHtml({
             <tr>
               <th>No</th>
               <th>PG</th>
-              <th>고유번호</th>
-              <th>보증서</th>
-              <th>판매등급</th>
-              <th>기종</th>
-              <th>용량</th>
-              <th>색상</th>
-              <th>수신인</th>
-              <th>주소</th>
+              <th>${escapePrintHtml(labels.uniqueNo)}</th>
+              <th>${escapePrintHtml(labels.warranty)}</th>
+              <th>${escapePrintHtml(labels.saleGrade)}</th>
+              <th>${escapePrintHtml(labels.model)}</th>
+              <th>${escapePrintHtml(labels.storage)}</th>
+              <th>${escapePrintHtml(labels.color)}</th>
+              <th>${escapePrintHtml(labels.receiver)}</th>
+              <th>${escapePrintHtml(labels.address)}</th>
             </tr>
           </thead>
           <tbody>${bodyRows}</tbody>
@@ -1010,6 +1072,34 @@ export function ShipmentOrderListView({
   onOpenPreShipmentReturns?: () => void;
   onOpenWriteReview?: (requestId: number) => void;
 }) {
+  const t = useTranslations("shipment.orderList");
+  const invoiceHistoryT = useTranslations("shipment.invoiceHistory");
+  const detailT = useTranslations("common.deviceDetail");
+  const printT = useTranslations("common.printing");
+  const locale = useLocale();
+
+  const localPrintErrorMessage = React.useCallback(
+    (code: string | null | undefined, fallback?: string | null) => {
+      const key = localPrintErrorKey(code);
+      return key ? t(key) : fallback || t("messages.labelPrintFailed");
+    },
+    [t]
+  );
+
+  const warrantyTabLabel = React.useCallback((key: MatchedWarrantyTabKey) => {
+    if (key === "coupang-1y") return t("tabs.coupang1y");
+    if (key === "external-2y") return t("tabs.external2y");
+    if (key === "external-1y") return t("tabs.external1y");
+    return t("tabs.coupang2y");
+  }, [t]);
+
+  const printBatchStatusLabel = React.useCallback((status: ShipmentPrintBatchStatus) => {
+    if (status === "PRINT_DIALOG_CLOSED") return t("printBatchStatus.waitingConfirmation");
+    if (status === "CONFIRMED") return t("printBatchStatus.confirmed");
+    if (status === "CANCELED") return t("printBatchStatus.canceled");
+    return t("printBatchStatus.pending");
+  }, [t]);
+
   const [rows, setRows] = React.useState<ShipmentOrderRow[]>([]);
   const [summary, setSummary] =
     React.useState<ShipmentOrdersApiResponse["summary"]>(undefined);
@@ -1077,13 +1167,13 @@ export function ShipmentOrderListView({
   );
   const requestLabelConfirmationClose = useGuardedDialogClose({
     formIds: labelConfirmationFormIds,
-    targetLabel: "송장 실물 출력 확인",
+    targetLabel: t("unsaved.labelConfirmation"),
     onClose: closeLabelConfirmation,
   });
 
   useUnsavedForm({
     id: "shipment.printer-calibration",
-    label: "TSC DA200 송장 출력 교정 설정",
+    label: t("printer.calibrationForm"),
     enabled: Boolean(
       persistedPrinterSettings || printerSettings || isPrinterSaving
     ),
@@ -1095,8 +1185,8 @@ export function ShipmentOrderListView({
   useUnsavedForm({
     id: labelConfirmationFormId,
     label: invoiceIssueBatch
-      ? `송장 출력 작업 #${invoiceIssueBatch.issueBatchId} 실패 선택`
-      : "송장 출력 실패 선택",
+      ? t("unsaved.labelFailureTarget", { id: invoiceIssueBatch.issueBatchId })
+      : t("unsaved.labelFailure"),
     enabled: Boolean(labelConfirmationOpen && invoiceIssueBatch),
     isDirty: failedLabelSelectionIsDirty(failedLabelIds),
     isBusy: isLabelPrinting,
@@ -1149,7 +1239,7 @@ export function ShipmentOrderListView({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "주문 목록을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("messages.ordersLoadFailed")));
       }
 
       const nextRows = payload.items ?? [];
@@ -1172,7 +1262,7 @@ export function ShipmentOrderListView({
       if (append) setIsLoadingMore(false);
       else setIsLoading(false);
     }
-  }, [mode]);
+  }, [mode, t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -1317,8 +1407,8 @@ export function ShipmentOrderListView({
     !isPrinting &&
     !isReprinting;
   const shipmentListPrintButtonLabel = selectedPrintBatch
-    ? "출고 목록 재출력"
-    : "출고 목록 출력";
+    ? t("unsaved.shipmentListReprint")
+    : t("unsaved.shipmentListPrint");
 
   const loadPrintBatches = React.useCallback(async () => {
     if (mode !== "matched" || selectedMatchedTabInfo.source !== "coupang") {
@@ -1329,7 +1419,7 @@ export function ShipmentOrderListView({
       ) {
         setSelectedPrintBatchKey("current");
         setOutputFocusError(
-          "재발급 송장 출력은 쿠팡 매칭 완료 탭에서만 열 수 있습니다."
+          t("messages.reissueCoupangOnly")
         );
         setPendingOutputFocus(null);
         onFocusedOutputConsumed?.();
@@ -1363,7 +1453,9 @@ export function ShipmentOrderListView({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "출력 차수 목록을 불러오지 못했습니다.");
+        throw new Error(
+          legacyApiMessage(payload, t("messages.printBatchesLoadFailed"))
+        );
       }
 
       const nextBatches = payload.batches ?? [];
@@ -1384,7 +1476,7 @@ export function ShipmentOrderListView({
         } else {
           setSelectedPrintBatchKey("current");
           setOutputFocusError(
-            `${pendingOutputFocus.batchLabel}을 찾지 못했습니다. 차수가 폐기됐거나 현재 계정에서 조회할 수 없습니다.`
+            t("messages.focusBatchNotFound", { batch: pendingOutputFocus.batchLabel })
           );
         }
         setPendingOutputFocus(null);
@@ -1421,6 +1513,7 @@ export function ShipmentOrderListView({
     pendingOutputFocus,
     selectedMatchedTab,
     selectedMatchedTabInfo.source,
+    t,
   ]);
 
   React.useEffect(() => {
@@ -1442,7 +1535,7 @@ export function ShipmentOrderListView({
         | null;
       if (!response.ok || !payload?.ok) {
         throw new Error(
-          payload?.message || "Windows 프린터 목록을 불러오지 못했습니다."
+          t("messages.printersLoadFailed")
         );
       }
       setPrinters(payload.printers ?? []);
@@ -1454,7 +1547,7 @@ export function ShipmentOrderListView({
     } finally {
       setIsPrinterLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const loadInvoiceWorkflow = React.useCallback(
     async (
@@ -1473,7 +1566,7 @@ export function ShipmentOrderListView({
           | null;
         if (!response.ok || !payload?.ok) {
           throw new Error(
-            payload?.message || "송장 처리 상태를 불러오지 못했습니다."
+            t("messages.invoiceStatusLoadFailed")
           );
         }
         const issueBatches = payload.issueBatches ?? [];
@@ -1483,7 +1576,7 @@ export function ShipmentOrderListView({
         );
         if (preferredIssueBatchId && !issueBatch) {
           throw new Error(
-            `재발급 송장 작업 #${preferredIssueBatchId}을 출력 차수에서 찾지 못했습니다.`
+            t("messages.reissueBatchNotFound", { id: preferredIssueBatchId })
           );
         }
         setInvoiceIssueBatch(issueBatch);
@@ -1502,7 +1595,7 @@ export function ShipmentOrderListView({
           | null;
         if (!labelResponse.ok || !labelPayload?.ok || !labelPayload.labelPrint) {
           throw new Error(
-            labelPayload?.message || "송장 출력 상태를 불러오지 못했습니다."
+            labelPayload?.message || t("messages.labelStatusLoadFailed")
           );
         }
         setLabelPrint(labelPayload.labelPrint);
@@ -1520,7 +1613,7 @@ export function ShipmentOrderListView({
         if (!quiet) setIsInvoiceWorkflowLoading(false);
       }
     },
-    []
+    [t]
   );
 
   const startInvoiceWorkflow = React.useCallback(
@@ -1537,19 +1630,19 @@ export function ShipmentOrderListView({
           | null;
         if (!payload?.issueBatch) {
           throw new Error(
-            payload?.message || "송장 채번 작업을 시작하지 못했습니다."
+            t("messages.invoiceStartFailed")
           );
         }
         setInvoiceIssueBatch(payload.issueBatch);
         await loadInvoiceWorkflow(shipmentListPrintBatchId, true);
         if (mutationWakeDeferred(payload.receipt)) {
           setMessage(
-            "송장 작업은 저장되었습니다. 백그라운드 후속 작업은 다음 실행 주기에 계속됩니다."
+            t("messages.deferred")
           );
         }
         if (!response.ok && response.status !== 202) {
           throw new Error(
-            payload.message || "송장 처리 과정에서 오류가 발생했습니다."
+            t("messages.invoiceProcessFailed")
           );
         }
         return payload.issueBatch;
@@ -1557,7 +1650,7 @@ export function ShipmentOrderListView({
         setIsInvoiceWorkflowLoading(false);
       }
     },
-    [loadInvoiceWorkflow]
+    [loadInvoiceWorkflow, t]
   );
 
   React.useEffect(() => {
@@ -1579,7 +1672,7 @@ export function ShipmentOrderListView({
         ).then((issueBatch) => {
           if (preferredIssueBatchId && !issueBatch) {
             setOutputFocusError(
-              `재발급 송장 작업 #${preferredIssueBatchId}을 출력 차수에서 찾지 못했습니다.`
+              t("messages.reissueBatchNotFound", { id: preferredIssueBatchId })
             );
           } else if (preferredIssueBatchId) {
             setOutputFocusError("");
@@ -1588,7 +1681,7 @@ export function ShipmentOrderListView({
       }
     }, 0);
     return () => window.clearTimeout(timerId);
-  }, [activeOutputFocus, loadInvoiceWorkflow, selectedPrintBatch]);
+  }, [activeOutputFocus, loadInvoiceWorkflow, selectedPrintBatch, t]);
 
   React.useEffect(() => {
     if (
@@ -1740,7 +1833,7 @@ export function ShipmentOrderListView({
           payload.conflicts
         ) {
           throw new ReturnProcessingRequiredClientError(
-            payload.message || "반품 처리가 필요한 주문이 포함되어 있습니다.",
+            t("messages.returnConflict"),
             payload.conflicts
           );
         }
@@ -1751,47 +1844,52 @@ export function ShipmentOrderListView({
           SHIPMENT_PRINT_BATCH_REFRESH_CONFLICT_CODES.has(payload.code)
         ) {
           throw new ShipmentPrintBatchStateConflictClientError(
-            payload.message ||
-              "출고 출력 차수 상태가 변경되었습니다. 최신 상태를 다시 불러옵니다.",
+            t("messages.printBatchChanged"),
             payload.details?.currentStatus ?? null
           );
         }
 
-        throw new Error(payload?.message || "출력 차수 상태를 바꾸지 못했습니다.");
+        throw new Error(
+          legacyApiMessage(payload, t("messages.printBatchUpdateFailed"))
+        );
       }
 
       if (!payload.batch) {
-        throw new Error("출력 차수 정보를 받지 못했습니다.");
+        throw new Error(t("messages.printBatchMissing"));
       }
 
       return payload.batch;
     },
-    []
+    [t]
   );
 
   const printShipmentBatchDocument = React.useCallback(
     async (batch: ShipmentPrintBatch) => {
       await printHtmlDocument({
-        title: "출고 목록",
+        title: t("document.title"),
         html: buildShipmentListPrintHtml({
           rows: shipmentPrintBatchRows(batch),
           printedAt: batch.printedAt,
           tabLabel: batch.tabLabel,
           batchLabel: batch.batchLabel,
+          title: t("document.title"),
+          locale,
+          labels: { printedAt: t("document.printedAt"), targetCount: (count) => t("document.targetCount", { count }), uniqueNo: t("columns.uniqueNo"), warranty: t("columns.warranty"), saleGrade: t("columns.saleGrade"), model: t("columns.model"), storage: t("columns.storage"), color: t("columns.color"), receiver: t("columns.receiver"), address: t("columns.address") },
         }),
+        messages: { browserOnly: printT("browserOnly"), documentUnavailable: printT("documentUnavailable") },
       });
     },
-    []
+    [locale, printT, t]
   );
 
   const printShipmentList = React.useCallback(async () => {
     if (selectedMatchedTabInfo.source !== "coupang") {
-      setMessage("쿠팡 외 플랫폼은 아직 출고 목록 출력을 지원하지 않습니다.");
+      setMessage(t("messages.externalUnsupported"));
       return;
     }
 
     if (selectedCurrentRowsForPrint.length === 0) {
-      setMessage("출력할 출고 목록을 체크해주세요.");
+      setMessage(t("messages.selectRows"));
       return;
     }
 
@@ -1823,13 +1921,15 @@ export function ShipmentOrderListView({
         payload.conflicts
       ) {
         throw new ReturnProcessingRequiredClientError(
-          payload.message || "반품 처리가 필요한 주문이 포함되어 있습니다.",
+          t("messages.returnConflict"),
           payload.conflicts
         );
       }
 
       if (!response.ok || !payload?.ok || !payload.printedAt || !payload.batchId) {
-        throw new Error(payload?.message || "출고 목록 출력 시각을 기록하지 못했습니다.");
+        throw new Error(
+          legacyApiMessage(payload, t("messages.printTimeSaveFailed"))
+        );
       }
 
       const printRows =
@@ -1838,19 +1938,23 @@ export function ShipmentOrderListView({
           : selectedCurrentRowsForPrint;
 
       await printHtmlDocument({
-        title: "출고 목록",
+        title: t("document.title"),
         html: buildShipmentListPrintHtml({
           rows: printRows,
           printedAt: payload.printedAt,
-          tabLabel: selectedMatchedTabInfo.label,
-          batchLabel: payload.batchLabel ?? selectedMatchedTabInfo.label,
+          tabLabel: warrantyTabLabel(selectedMatchedTabInfo.key),
+          batchLabel: payload.batchLabel ?? warrantyTabLabel(selectedMatchedTabInfo.key),
+          title: t("document.title"),
+          locale,
+          labels: { printedAt: t("document.printedAt"), targetCount: (count) => t("document.targetCount", { count }), uniqueNo: t("columns.uniqueNo"), warranty: t("columns.warranty"), saleGrade: t("columns.saleGrade"), model: t("columns.model"), storage: t("columns.storage"), color: t("columns.color"), receiver: t("columns.receiver"), address: t("columns.address") },
         }),
+        messages: { browserOnly: printT("browserOnly"), documentUnavailable: printT("documentUnavailable") },
       });
 
       const updatedBatch = await updatePrintBatch(payload.batchId, "dialogClosed");
 
       setMessage(
-        `${updatedBatch.batchLabel} 합포장 ${payload.packageGroupCount ?? updatedBatch.packageGroupCount}박스 · PG ${payload.printedCount ?? printRows.length}대를 출력했습니다. 출력물 확인을 완료해주세요.`
+        t("messages.printed", { batch: updatedBatch.batchLabel, packages: payload.packageGroupCount ?? updatedBatch.packageGroupCount, devices: payload.printedCount ?? printRows.length })
       );
       setSelectedAllocationIdsByTab((current) => ({
         ...current,
@@ -1881,10 +1985,14 @@ export function ShipmentOrderListView({
   }, [
     loadPrintBatches,
     loadRows,
+    locale,
+    printT,
     selectedCurrentRowsForPrint,
     selectedMatchedTab,
     selectedMatchedTabInfo,
+    t,
     updatePrintBatch,
+    warrantyTabLabel,
   ]);
 
   const confirmPrintBatch = React.useCallback(async (batchToConfirm: ShipmentPrintBatch) => {
@@ -1893,20 +2001,14 @@ export function ShipmentOrderListView({
 
     try {
       const batch = await updatePrintBatch(batchToConfirm.batchId, "confirm");
-      let invoiceMessage = " 송장 채번과 채널 등록을 시작했습니다.";
+      let invoiceMessage = t("messages.invoiceStarted");
       try {
         await startInvoiceWorkflow(batch.batchId);
       } catch (error) {
-        invoiceMessage = ` 송장 처리는 시작하지 못했습니다: ${
-          error instanceof Error ? error.message : String(error)
-        }`;
+        invoiceMessage = t("messages.invoiceFailed", { error: error instanceof Error ? error.message : String(error) });
       }
       setMessage(
-        `${batch.batchLabel}을 출력 완료로 확정했습니다.${invoiceMessage}${
-          batch.returnExcludedCount > 0
-            ? ` 반품 ${batch.returnExcludedCount.toLocaleString("ko-KR")}대는 상태 변경에서 제외했습니다.`
-            : ""
-        }`
+        t("messages.confirmed", { batch: batch.batchLabel, invoice: invoiceMessage, returns: batch.returnExcludedCount > 0 ? t("messages.returnsExcluded", { count: batch.returnExcludedCount }) : "" })
       );
       setPrintConfirmationBatch((current) =>
         current?.batchId === batchToConfirm.batchId ? null : current
@@ -1936,6 +2038,7 @@ export function ShipmentOrderListView({
     loadPrintBatches,
     loadRows,
     startInvoiceWorkflow,
+    t,
     updatePrintBatch,
   ]);
 
@@ -1961,7 +2064,7 @@ export function ShipmentOrderListView({
           | null;
         if (!response.ok || !payload?.ok || !payload.settings) {
           throw new Error(
-            payload?.message || "프린터 설정을 저장하지 못했습니다."
+            t("messages.printerSettingsSaveFailed")
           );
         }
         setPrinterSettings(payload.settings);
@@ -1971,7 +2074,7 @@ export function ShipmentOrderListView({
         setIsPrinterSaving(false);
       }
     },
-    []
+    [t]
   );
 
   const requestPrinterChange = React.useCallback(
@@ -1979,7 +2082,7 @@ export function ShipmentOrderListView({
       runGuardedAction({
         intent: "internal-change",
         formIds: ["shipment.printer-calibration"],
-        targetLabel: "다른 송장 프린터",
+        targetLabel: t("unsaved.otherPrinter"),
         action: () => {
           const nextSettings = {
             ...(persistedPrinterSettings ??
@@ -1999,6 +2102,7 @@ export function ShipmentOrderListView({
       persistPrinterSettings,
       printerSettings,
       runGuardedAction,
+      t,
     ]
   );
 
@@ -2006,10 +2110,10 @@ export function ShipmentOrderListView({
     runGuardedAction({
       intent: "internal-change",
       formIds: ["shipment.printer-calibration"],
-      targetLabel: "프린터 목록 새로고침",
+      targetLabel: t("unsaved.refreshPrinters"),
       action: () => void loadPrinters(),
     });
-  }, [loadPrinters, runGuardedAction]);
+  }, [loadPrinters, runGuardedAction, t]);
 
   const requestMatchedTabChange = React.useCallback(
     (nextTab: MatchedWarrantyTabKey) => {
@@ -2017,11 +2121,11 @@ export function ShipmentOrderListView({
       runGuardedAction({
         intent: "internal-change",
         formIds: [labelConfirmationFormId],
-        targetLabel: "다른 매칭 완료 탭",
+        targetLabel: t("unsaved.otherMatchedTab"),
         action: () => setSelectedMatchedTab(nextTab),
       });
     },
-    [labelConfirmationFormId, runGuardedAction, selectedMatchedTab]
+    [labelConfirmationFormId, runGuardedAction, selectedMatchedTab, t]
   );
 
   const requestPrintBatchChange = React.useCallback(
@@ -2030,11 +2134,11 @@ export function ShipmentOrderListView({
       runGuardedAction({
         intent: "internal-change",
         formIds: [labelConfirmationFormId],
-        targetLabel: "다른 송장 출력 차수",
+        targetLabel: t("unsaved.otherPrintBatch"),
         action: () => setSelectedPrintBatchKey(nextBatchKey),
       });
     },
-    [labelConfirmationFormId, runGuardedAction, selectedPrintBatchKey]
+    [labelConfirmationFormId, runGuardedAction, selectedPrintBatchKey, t]
   );
 
   const requestRetryOutputFocus = React.useCallback(() => {
@@ -2042,29 +2146,29 @@ export function ShipmentOrderListView({
     runGuardedAction({
       intent: "internal-change",
       formIds: [labelConfirmationFormId],
-      targetLabel: "재발급 송장 출력 대상 다시 찾기",
+      targetLabel: t("unsaved.retryReissueFocus"),
       action: () => {
         setOutputFocusError("");
         setPendingOutputFocus(activeOutputFocus);
         setSelectedMatchedTab(activeOutputFocus.tabKey);
       },
     });
-  }, [activeOutputFocus, labelConfirmationFormId, runGuardedAction]);
+  }, [activeOutputFocus, labelConfirmationFormId, runGuardedAction, t]);
 
   const savePrinterCalibration = React.useCallback(async () => {
     if (!printerSettings) return;
     try {
       await persistPrinterSettings(printerSettings);
-      setMessage("프린터 교정값을 저장했습니다.");
+      setMessage(t("messages.calibrationSaved"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }
-  }, [persistPrinterSettings, printerSettings]);
+  }, [persistPrinterSettings, printerSettings, t]);
 
   const printCalibration = React.useCallback(async () => {
     const printerName = printerSettings?.printerName.trim();
     if (!printerName) {
-      setMessage("먼저 TSC DA200 Windows 프린터를 선택하세요.");
+      setMessage(t("messages.selectPrinter"));
       return;
     }
     setIsLabelPrinting(true);
@@ -2079,20 +2183,23 @@ export function ShipmentOrderListView({
         | null;
       if (!payload?.job || payload.job.status !== "SPOOLED") {
         throw new Error(
-          payload?.job?.errorMessage ||
-            payload?.message ||
-            "송장 출력 교정본을 인쇄 대기열에 전달하지 못했습니다."
+          payload?.job
+            ? localPrintErrorMessage(
+                payload.job.errorCode,
+                payload.job.errorMessage
+              )
+            : t("messages.calibrationQueueFailed")
         );
       }
       setMessage(
-        "송장 출력 교정본을 전송했습니다. 간격과 원점이 맞는지 출력물을 확인하세요."
+        t("messages.calibrationSent")
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsLabelPrinting(false);
     }
-  }, [printerSettings?.printerName]);
+  }, [localPrintErrorMessage, printerSettings?.printerName, t]);
 
   const updateCentralLabelPrint = React.useCallback(
     async (
@@ -2138,13 +2245,13 @@ export function ShipmentOrderListView({
           }
         }
         throw new Error(
-          payload?.message || "중앙 서버에 송장 출력 결과를 반영하지 못했습니다."
+          t("messages.centralPrintResultFailed")
         );
       }
       setLabelPrint(payload.labelPrint);
       return payload.labelPrint;
     },
-    []
+    [t]
   );
 
   const acknowledgeLocalLabelPrint = React.useCallback(
@@ -2165,12 +2272,12 @@ export function ShipmentOrderListView({
         | null;
       if (!response.ok || !payload?.ok || !payload.job) {
         throw new Error(
-          payload?.message || "로컬 출력 확인 기록을 저장하지 못했습니다."
+          t("messages.localPrintRecordFailed")
         );
       }
       return payload.job;
     },
-    []
+    [t]
   );
 
   const resolveUnknownLabelPrint = React.useCallback(
@@ -2179,8 +2286,8 @@ export function ShipmentOrderListView({
       const requestKey = labelPrint.activeRequestKey;
       const confirmed = window.confirm(
         printed
-          ? "관리자 판정으로 이 작업의 송장이 실제 출력되었다고 확정합니다. 같은 송장을 다시 출력하지 않습니다. 계속할까요?"
-          : "관리자 판정으로 이 작업의 송장이 출력되지 않았다고 확정합니다. 동일 송장번호 복구 출력 대상으로 되돌릴까요?"
+          ? t("messages.confirmUnknownPrinted")
+          : t("messages.confirmUnknownNotPrinted")
       );
       if (!confirmed) return;
 
@@ -2202,7 +2309,7 @@ export function ShipmentOrderListView({
           | null;
         if (!response.ok || !payload?.ok || !payload.labelPrint) {
           throw new Error(
-            payload?.message || "불명확한 출력 결과를 판정하지 못했습니다."
+            t("messages.unknownPrintResolveFailed")
           );
         }
         setLabelPrint(payload.labelPrint);
@@ -2217,12 +2324,12 @@ export function ShipmentOrderListView({
           );
         } catch {
           localWarning =
-            " 로컬 확인 기록은 저장되지 않아 관련 파일을 자동 삭제하지 않습니다.";
+            t("messages.localRecordWarning");
         }
         setMessage((
           printed
-            ? "관리자 판정으로 실물 출력 완료를 확정했습니다."
-            : "관리자 판정으로 출력되지 않음을 확정하고 복구 출력 대상으로 되돌렸습니다."
+            ? t("messages.unknownPrintedResolved")
+            : t("messages.unknownNotPrintedResolved")
         ) + localWarning);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : String(error));
@@ -2230,17 +2337,17 @@ export function ShipmentOrderListView({
         setIsLabelPrinting(false);
       }
     },
-    [acknowledgeLocalLabelPrint, invoiceIssueBatch, labelPrint]
+    [acknowledgeLocalLabelPrint, invoiceIssueBatch, labelPrint, t]
   );
 
   const printLogenLabels = React.useCallback(async () => {
     if (!invoiceIssueBatch || !labelPrint?.ready) {
-      setMessage("아직 송장을 출력할 수 없습니다.");
+      setMessage(t("messages.labelNotReady"));
       return;
     }
     const printerName = printerSettings?.printerName.trim();
     if (!printerName) {
-      setMessage("먼저 TSC DA200 Windows 프린터를 선택하세요.");
+      setMessage(t("messages.selectPrinter"));
       return;
     }
 
@@ -2280,7 +2387,7 @@ export function ShipmentOrderListView({
         printAttemptCount <= 0
       ) {
         throw new Error(
-          startPayload?.message || "송장 출력 요청을 준비하지 못했습니다."
+          startPayload?.message || t("messages.labelPrintPrepareFailed")
         );
       }
       activeRequest = {
@@ -2290,7 +2397,15 @@ export function ShipmentOrderListView({
         labels: start.labels,
       };
       setLabelPrint(start);
-      const rendered = start.labels.map(renderLogenLabelBitmap);
+      const rendered = start.labels.map((label) =>
+        renderLogenLabelBitmap(
+          label,
+          t("label.combinedParcel", {
+            count: label.parcel.packageMemberCount,
+            pgs: label.parcel.pgNos.join(", "),
+          })
+        )
+      );
       const localResponse = await fetch("/api/client/label-print", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2321,7 +2436,7 @@ export function ShipmentOrderListView({
         setFailedLabelIds([]);
         setLabelConfirmationOpen(true);
         setMessage(
-          `${view.items.filter((item) => item.printStatus === "SPOOLED").length}장 전송을 완료했습니다. 실물 출력 결과를 확인하세요.`
+          t("messages.labelsSent", { count: view.items.filter((item) => item.printStatus === "SPOOLED").length })
         );
         return;
       }
@@ -2338,9 +2453,10 @@ export function ShipmentOrderListView({
         }
       );
       throw new Error(
-        job?.errorMessage ||
-          localPayload?.message ||
-          "송장 출력에 실패했습니다."
+        localPrintErrorMessage(
+          job?.errorCode || localPayload?.code,
+          job?.errorMessage || localPayload?.message
+        )
       );
     } catch (error) {
       if (activeRequest) {
@@ -2385,7 +2501,7 @@ export function ShipmentOrderListView({
               {
                 errorCode: "LOCAL_RESULT_UNAVAILABLE",
                 errorMessage:
-                  "로컬 출력 결과를 확인하지 못해 자동 재출력을 차단했습니다.",
+                  t("messages.localResultUnknownBlocked"),
               }
             );
           }
@@ -2402,6 +2518,8 @@ export function ShipmentOrderListView({
     labelPrint?.ready,
     printerSettings?.printerName,
     labelPrintPreviewToken,
+    t,
+    localPrintErrorMessage,
     updateCentralLabelPrint,
   ]);
 
@@ -2429,13 +2547,13 @@ export function ShipmentOrderListView({
         await acknowledgeLocalLabelPrint(requestKey, "CONFIRMED");
       } catch {
         localWarning =
-          " 로컬 확인 기록은 저장되지 않아 관련 파일을 자동 삭제하지 않습니다.";
+          t("messages.localRecordWarning");
       }
       closeLabelConfirmation();
       setMessage(
         view.labelPrintStatus === "CONFIRMED"
-          ? `모든 송장의 실물 출력을 확인했습니다.${localWarning}`
-          : `출력에 실패한 송장 ${failedLabelIds.length}장을 복구 출력 대상으로 남겼습니다.${localWarning}`
+          ? t("messages.allLabelsConfirmed", { warning: localWarning })
+          : t("messages.failedLabelsRetained", { count: failedLabelIds.length, warning: localWarning })
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -2448,6 +2566,7 @@ export function ShipmentOrderListView({
     labelPrint,
     acknowledgeLocalLabelPrint,
     closeLabelConfirmation,
+    t,
     updateCentralLabelPrint,
   ]);
 
@@ -2516,7 +2635,7 @@ export function ShipmentOrderListView({
 
     try {
       const batch = await updatePrintBatch(batchToCancel.batchId, "cancel");
-      setMessage(`${batch.batchLabel}을 폐기했습니다.`);
+      setMessage(t("messages.batchCanceled", { batch: batch.batchLabel }));
       setPrintConfirmationBatch((current) =>
         current?.batchId === batchToCancel.batchId ? null : current
       );
@@ -2536,7 +2655,7 @@ export function ShipmentOrderListView({
     } finally {
       setIsPrintBatchUpdating(false);
     }
-  }, [loadPrintBatches, loadRows, updatePrintBatch]);
+  }, [loadPrintBatches, loadRows, t, updatePrintBatch]);
 
   const cancelSelectedPrintBatch = React.useCallback(async () => {
     if (!selectedPrintBatch) {
@@ -2553,14 +2672,14 @@ export function ShipmentOrderListView({
 
       try {
         await printShipmentBatchDocument(batchToPrint);
-        setMessage(`${batchToPrint.batchLabel}을 다시 출력했습니다. 출력물 확인을 완료해주세요.`);
+        setMessage(t("messages.batchReprinted", { batch: batchToPrint.batchLabel }));
       } catch (error) {
         setMessage(error instanceof Error ? error.message : String(error));
       } finally {
         setIsReprinting(false);
       }
     },
-    [printShipmentBatchDocument]
+    [printShipmentBatchDocument, t]
   );
 
   const handleShipmentListPrint = React.useCallback(async () => {
@@ -2578,7 +2697,7 @@ export function ShipmentOrderListView({
     () => [
       {
         key: "select",
-        label: "선택",
+        label: t("columns.select"),
         width: "109px",
         headerClassName: "justify-center px-2",
         cellClassName: "flex items-center justify-center px-0",
@@ -2617,14 +2736,14 @@ export function ShipmentOrderListView({
                   selectedTopCount < topGroupRows.length
                 }
                 disabled={disabled}
-                ariaLabel={`위에서부터 합포장 그룹 ${SHIPMENT_LIST_SELECT_LIMIT}개 선택`}
-                title={`위에서부터 합포장 그룹 ${SHIPMENT_LIST_SELECT_LIMIT}개 선택`}
+                ariaLabel={t("package.selectTop", { count: SHIPMENT_LIST_SELECT_LIMIT })}
+                title={t("package.selectTop", { count: SHIPMENT_LIST_SELECT_LIMIT })}
                 onCheckedChange={(checked) =>
                   toggleTopMatchedRows(displayRows, checked)
                 }
               />
               <span className="whitespace-nowrap pr-0.5 text-[11px] italic text-muted-foreground">
-                #최대 30박스
+                {t("package.maxSelection", { count: SHIPMENT_LIST_SELECT_LIMIT })}
               </span>
             </div>
           );
@@ -2632,7 +2751,7 @@ export function ShipmentOrderListView({
         text: () => "",
         render: (row) =>
           selectedPrintBatch && row.allocationStatus === "CANCELED" ? (
-            <Badge variant="warning">반품 제외</Badge>
+            <Badge variant="warning">{t("returnExcluded")}</Badge>
           ) : (
             <TableSelectCheckbox
               checked={
@@ -2640,7 +2759,7 @@ export function ShipmentOrderListView({
                 selectedCurrentAllocationIds.has(row.allocationId)
               }
               disabled={Boolean(selectedPrintBatch)}
-              ariaLabel={`${row.pgNo} 선택`}
+              ariaLabel={t("selection.pg", { pg: row.pgNo })}
               onCheckedChange={(checked) =>
                 toggleMatchedRowSelection(row.allocationId, checked)
               }
@@ -2649,18 +2768,18 @@ export function ShipmentOrderListView({
       },
       {
         key: "packageGroup",
-        label: "합포장",
+        label: t("columns.packageGroup"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) =>
           row.packageGroupSize > 1
-            ? `합포장 ${row.packageGroupSize}대`
-            : "단독",
+            ? t("package.combined", { count: row.packageGroupSize })
+            : t("package.single"),
         render: (row) =>
           row.packageGroupSize > 1 ? (
-            <Badge variant="secondary">합포장 {row.packageGroupSize}대</Badge>
+            <Badge variant="secondary">{t("package.combined", { count: row.packageGroupSize })}</Badge>
           ) : (
-            <span className="text-muted-foreground">단독</span>
+            <span className="text-muted-foreground">{t("package.single")}</span>
           ),
       },
       {
@@ -2673,7 +2792,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "uniqueNo",
-        label: "고유번호",
+        label: t("columns.uniqueNo"),
         width: "120px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.uniqueNo,
@@ -2681,7 +2800,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "warranty",
-        label: "보증서",
+        label: t("columns.warranty"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.warranty,
@@ -2689,7 +2808,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "saleGrade",
-        label: "판매등급",
+        label: t("columns.saleGrade"),
         width: "110px",
         cellClassName: "flex items-center px-3",
         text: (row) => row.saleGrade,
@@ -2698,7 +2817,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "model",
-        label: "기종",
+        label: t("columns.model"),
         width: "minmax(160px,1fr)",
         cellClassName: "flex min-w-0 items-center px-3",
         text: (row) => row.model,
@@ -2706,7 +2825,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "storage",
-        label: "용량",
+        label: t("columns.storage"),
         width: "100px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.storage,
@@ -2714,7 +2833,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "color",
-        label: "색상",
+        label: t("columns.color"),
         width: "120px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.color,
@@ -2722,7 +2841,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "receiverName",
-        label: "수신인",
+        label: t("columns.receiver"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverName,
@@ -2730,7 +2849,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "receiverAddress",
-        label: "주소",
+        label: t("columns.address"),
         width: "minmax(280px,1.5fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverAddress,
@@ -2743,6 +2862,7 @@ export function ShipmentOrderListView({
       selectedPrintBatch,
       toggleMatchedRowSelection,
       toggleTopMatchedRows,
+      t,
     ]
   );
 
@@ -2752,12 +2872,12 @@ export function ShipmentOrderListView({
     () => [
       {
         key: "inventoryMatchStatus",
-        label: "재고 매칭",
+        label: t("columns.inventoryMatch"),
         width: "150px",
         cellClassName: "min-w-0 px-3 py-2",
-        text: inventoryMatchStatusText,
+        text: (row) => inventoryMatchStatusText(row, t("values.missingSkuMapping"), t),
         render: (row) => {
-          const reasonText = inventoryMatchReasonText(row);
+          const reasonText = inventoryMatchReasonText(row, t("values.missingSkuMapping"), t);
 
           return (
             <div className="min-w-0">
@@ -2768,11 +2888,11 @@ export function ShipmentOrderListView({
                   onClick={() => onOpenWriteReview?.(row.writeRequestId!)}
                 >
                   <TriangleAlert className="size-3.5 shrink-0" />
-                  <span className="truncate">API 확인 필요</span>
+                  <span className="truncate">{t("reviewRequired")}</span>
                 </button>
               ) : null}
               <Badge variant={statusVariant(row.inventoryMatchStatus)}>
-                {inventoryMatchStatusLabel(row.inventoryMatchStatus)}
+                {inventoryMatchStatusLabel(row.inventoryMatchStatus, t)}
               </Badge>
               {reasonText ? (
                 <div className="mt-1 truncate text-xs text-muted-foreground">
@@ -2785,10 +2905,10 @@ export function ShipmentOrderListView({
       },
       {
         key: "inventoryStatus",
-        label: "상태",
+        label: t("columns.inventoryStatus"),
         width: "140px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
-        text: matchedInventoryStatusLineText,
+        text: (row) => matchedInventoryStatusLineText(row, detailT),
         render: (row) => <InventoryStatusBadgeList row={row} />,
       },
       {
@@ -2801,7 +2921,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "uniqueNo",
-        label: "고유번호",
+        label: t("columns.uniqueNo"),
         width: "140px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: matchedUniqueNoLineText,
@@ -2809,7 +2929,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "externalOrderId",
-        label: "주문번호",
+        label: t("columns.orderId"),
         width: "170px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.externalOrderId,
@@ -2817,7 +2937,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "product",
-        label: "상품",
+        label: t("columns.product"),
         width: "minmax(300px,1.15fr)",
         cellClassName: "min-w-0 px-3 py-2",
         text: productText,
@@ -2832,7 +2952,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "quantity",
-        label: "수량",
+        label: t("columns.quantity"),
         width: "80px",
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
@@ -2842,7 +2962,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "receiverName",
-        label: "수신인",
+        label: t("columns.receiver"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverName,
@@ -2850,7 +2970,7 @@ export function ShipmentOrderListView({
       },
       {
         key: "receiverAddress",
-        label: "주소",
+        label: t("columns.address"),
         width: "minmax(300px,1fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverAddress,
@@ -2859,14 +2979,14 @@ export function ShipmentOrderListView({
         ),
       },
     ],
-    [onOpenWriteReview]
+    [detailT, onOpenWriteReview, t]
   );
 
   const renderMatchedTabContent = (tab: MatchedWarrantyTab) => {
     if (tab.source === "external") {
       return (
         <div className="grid min-h-0 flex-1 place-items-center px-4 py-10 text-sm text-muted-foreground">
-          다른 플랫폼 연동 후 표시됩니다.
+          {t("empty.external")}
         </div>
       );
     }
@@ -2875,8 +2995,8 @@ export function ShipmentOrderListView({
         ? selectedVisibleRows
         : currentRowsByTab[tab.key];
     const emptyText = selectedPrintBatch
-      ? `${selectedPrintBatch.batchLabel}에 포함된 PG가 없습니다.`
-      : `${tab.label} 출력 대기 PG가 없습니다.`;
+      ? t("empty.selectedBatch", { batch: selectedPrintBatch.batchLabel })
+      : t("empty.waiting", { tab: warrantyTabLabel(tab.key) });
 
     return (
       <VirtualizedDataGrid
@@ -2885,7 +3005,7 @@ export function ShipmentOrderListView({
         rowKey={(row) => row.id}
         emptyMessage={
           isLoading
-            ? "매칭 완료 목록을 불러오는 중입니다."
+            ? t("empty.matched")
             : emptyText
         }
         minWidth="1260px"
@@ -2899,19 +3019,19 @@ export function ShipmentOrderListView({
     <WorkspacePageFrame className="p-5">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{MODE_LABELS[mode]} 목록</h2>
+          <h2 className="text-sm font-semibold">{mode === "matched" ? t("mode.matched") : t("mode.all")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {mode === "matched"
               ? selectedPrintBatch
-                ? `${selectedPrintBatch.batchLabel} \u00B7 합포장 ${selectedPrintBatch.packageGroupCount}박스 \u00B7 원 출력 ${selectedPrintBatch.itemCount}대 \u00B7 반품 제외 ${selectedPrintBatch.returnExcludedCount}대 \u00B7 작업 대상 ${selectedPrintBatch.effectiveItemCount}대`
-                : `주문 ${summary?.orderCount ?? 0}건 \u00B7 출력 가능 PG ${summary?.matchedDeviceCount ?? 0}대 \u00B7 표시 ${matchedRows.length}대 \u00B7 출력 선택 ${selectedCurrentPackageGroupCount}박스 / ${selectedCurrentRowsForPrint.length}대`
-              : `주문 ${summary?.orderCount ?? 0}건 \u00B7 주문 아이템 ${summary?.orderItemCount ?? rows.length}건 \u00B7 매칭 PG ${summary?.matchedDeviceCount ?? 0}대`}
+                ? t("summary.batch", { batch: selectedPrintBatch.batchLabel, boxes: selectedPrintBatch.packageGroupCount, original: selectedPrintBatch.itemCount, excluded: selectedPrintBatch.returnExcludedCount, effective: selectedPrintBatch.effectiveItemCount })
+                : t("summary.matched", { orders: summary?.orderCount ?? 0, devices: summary?.matchedDeviceCount ?? 0, visible: matchedRows.length, boxes: selectedCurrentPackageGroupCount, selected: selectedCurrentRowsForPrint.length })
+              : t("summary.all", { orders: summary?.orderCount ?? 0, items: summary?.orderItemCount ?? rows.length, devices: summary?.matchedDeviceCount ?? 0 })}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {mode === "matched" && selectedPrintBatch && selectedPrintBatchStatus ? (
             <Badge variant={printBatchStatusVariant(selectedPrintBatchStatus)}>
-              {PRINT_BATCH_STATUS_LABELS[selectedPrintBatchStatus]}
+              {printBatchStatusLabel(selectedPrintBatchStatus)}
             </Badge>
           ) : null}
           {mode === "matched" && canConfirmPrintBatch ? (
@@ -2921,7 +3041,7 @@ export function ShipmentOrderListView({
               disabled={!canConfirmPrintBatch}
             >
               <CheckCircle2 className="size-4" />
-              출력 완료 확정
+              {t("actions.confirmPrinted")}
             </Button>
           ) : null}
           {mode === "matched" && canCancelPrintBatch ? (
@@ -2932,7 +3052,7 @@ export function ShipmentOrderListView({
               disabled={!canCancelPrintBatch}
             >
               <XCircle className="size-4" />
-              출력한 차수 폐기
+              {t("actions.cancelBatch")}
             </Button>
           ) : null}
           {mode === "matched" ? (
@@ -2952,7 +3072,7 @@ export function ShipmentOrderListView({
               onClick={() => void loadRows(nextCursor, true)}
               disabled={isLoading || isLoadingMore}
             >
-              {isLoadingMore ? "불러오는 중" : "다음 대상 불러오기"}
+              {isLoadingMore ? t("actions.loading") : t("actions.loadMore")}
             </Button>
           ) : null}
           <Button
@@ -2961,7 +3081,7 @@ export function ShipmentOrderListView({
             disabled={isLoading}
           >
             <RefreshCcw className="size-4" />
-            목록 새로고침
+            {t("actions.refresh")}
           </Button>
         </div>
       </div>
@@ -2976,11 +3096,10 @@ export function ShipmentOrderListView({
         >
           <div className="min-w-0 flex-1">
             <div className="font-semibold">
-              송장 재발급 #{activeOutputFocus.replacementWorkId} ·{" "}
-              {activeOutputFocus.batchLabel}
+              {t("focus.title", { id: activeOutputFocus.replacementWorkId, batch: activeOutputFocus.batchLabel })}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              송장번호 {activeOutputFocus.trackingNumber}
+              {t("focus.invoice", { trackingNumber: activeOutputFocus.trackingNumber })}
               {outputFocusError ? ` · ${outputFocusError}` : ""}
             </div>
           </div>
@@ -2993,7 +3112,7 @@ export function ShipmentOrderListView({
               onClick={requestRetryOutputFocus}
             >
               <RefreshCcw className="size-4" />
-              대상 다시 찾기
+              {t("actions.retryFocus")}
             </Button>
           ) : null}
           {onReturnFromFocusedOutput ? (
@@ -3006,7 +3125,7 @@ export function ShipmentOrderListView({
               }
             >
               <ArrowLeft className="size-4" />
-              재발급 진행 화면으로 돌아가기
+              {t("actions.returnToReissue")}
             </Button>
           ) : null}
         </div>
@@ -3023,10 +3142,9 @@ export function ShipmentOrderListView({
         <div className="mb-3 grid shrink-0 gap-3 rounded-md border bg-popover p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold">로젠 송장 처리·출력</div>
+              <div className="text-sm font-semibold">{t("invoiceWorkflow.title")}</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                출고 차수의 합포장 순서대로 채번·채널 반영·로젠 등록·송장 출력을
-                진행합니다.
+                {t("invoiceWorkflow.subtitle")}
               </div>
             </div>
             {!invoiceIssueBatch ? (
@@ -3044,8 +3162,8 @@ export function ShipmentOrderListView({
               >
                 <RefreshCcw className="size-4" />
                 {isInvoiceWorkflowLoading
-                  ? "송장 처리 시작 중"
-                  : "송장 처리 시작"}
+                  ? t("invoiceWorkflow.starting")
+                  : t("invoiceWorkflow.start")}
               </Button>
             ) : (
               <Badge
@@ -3057,7 +3175,12 @@ export function ShipmentOrderListView({
                       : "neutral"
                 }
               >
-                송장 출력 {labelPrint?.labelPrintStatus ?? "준비 중"}
+                {t("invoiceWorkflow.labelOutput")}{" "}
+                {invoiceOperationStatusLabel(
+                  labelPrint?.labelPrintStatus,
+                  "-",
+                  invoiceHistoryT
+                )}
               </Badge>
             )}
           </div>
@@ -3066,14 +3189,14 @@ export function ShipmentOrderListView({
             <>
               <div className="grid gap-2 text-xs sm:grid-cols-4">
                 <div className="rounded border bg-secondary px-3 py-2">
-                  <div className="text-muted-foreground">송장 채번</div>
+                  <div className="text-muted-foreground">{t("invoiceWorkflow.trackingAllocation")}</div>
                   <div className="mt-1 font-semibold">
                     {invoiceIssueBatch.allocatedPackageGroupCount} /{" "}
                     {invoiceIssueBatch.requestedPackageGroupCount}
                   </div>
                 </div>
                 <div className="rounded border bg-secondary px-3 py-2">
-                  <div className="text-muted-foreground">쿠팡 등록·검증</div>
+                  <div className="text-muted-foreground">{t("invoiceWorkflow.channelRegistration")}</div>
                   <div className="mt-1 font-semibold">
                     {
                       invoiceIssueBatch.items.filter(
@@ -3084,7 +3207,7 @@ export function ShipmentOrderListView({
                   </div>
                 </div>
                 <div className="rounded border bg-secondary px-3 py-2">
-                  <div className="text-muted-foreground">로젠 주문 등록</div>
+                  <div className="text-muted-foreground">{t("invoiceWorkflow.carrierRegistration")}</div>
                   <div className="mt-1 font-semibold">
                     {
                       invoiceIssueBatch.items.filter(
@@ -3096,7 +3219,7 @@ export function ShipmentOrderListView({
                   </div>
                 </div>
                 <div className="rounded border bg-secondary px-3 py-2">
-                  <div className="text-muted-foreground">실물 출력 확인</div>
+                  <div className="text-muted-foreground">{t("invoiceWorkflow.physicalConfirmation")}</div>
                   <div className="mt-1 font-semibold">
                     {labelPrint?.items.filter(
                       (item) => item.printStatus === "CONFIRMED"
@@ -3110,12 +3233,12 @@ export function ShipmentOrderListView({
                 <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   {labelPrint.blockers.slice(0, 3).map((item) => (
                     <div key={`${item.code}-${item.issueItemId ?? "batch"}`}>
-                      {item.issueSequence ? `${item.issueSequence}번 · ` : ""}
+                      {item.issueSequence ? t("label.issueSequence", { sequence: item.issueSequence }) : ""}
                       {item.message}
                     </div>
                   ))}
                   {labelPrint.blockers.length > 3 ? (
-                    <div>외 {labelPrint.blockers.length - 3}건</div>
+                    <div>{t("invoiceWorkflow.blockerRemainder", { count: labelPrint.blockers.length - 3 })}</div>
                   ) : null}
                 </div>
               ) : null}
@@ -3129,12 +3252,12 @@ export function ShipmentOrderListView({
                     isPrinterLoading || isLabelPrinting || isPrinterSaving
                   }
                 >
-                  <option value="">TSC DA200 프린터 선택</option>
+                  <option value="">{t("printer.select")}</option>
                   {printers.map((printer) => (
                     <option key={printer.name} value={printer.name}>
                       {printer.name}
-                      {printer.isDefault ? " · 기본" : ""}
-                      {printer.isOffline ? " · 오프라인" : ""}
+                      {printer.isDefault ? t("printer.defaultSuffix") : ""}
+                      {printer.isOffline ? t("printer.offlineSuffix") : ""}
                     </option>
                   ))}
                 </select>
@@ -3147,7 +3270,7 @@ export function ShipmentOrderListView({
                   }
                 >
                   <RefreshCcw className="size-4" />
-                  프린터 새로고침
+                  {t("printer.refresh")}
                 </Button>
                 <Button
                   type="button"
@@ -3161,7 +3284,7 @@ export function ShipmentOrderListView({
                   }
                 >
                   <Printer className="size-4" />
-                  송장 출력 교정본
+                  {t("printer.calibrationCopy")}
                 </Button>
                 {labelPrint?.labelPrintStatus === "SPOOLED" ? (
                   <Button
@@ -3169,7 +3292,7 @@ export function ShipmentOrderListView({
                     onClick={() => setLabelConfirmationOpen(true)}
                   >
                     <CheckCircle2 className="size-4" />
-                    출력 결과 확인
+                  {t("printer.physicalResult")}
                   </Button>
                 ) : labelPrint?.labelPrintStatus !== "CONFIRMED" &&
                   labelPrint?.labelPrintStatus !== "UNKNOWN" ? (
@@ -3186,21 +3309,21 @@ export function ShipmentOrderListView({
                   >
                     <Printer className="size-4" />
                     {isLabelPrinting
-                      ? "송장 출력 전송 중"
+                      ? t("label.sending")
                       : labelPrint?.labelPrintStatus === "PARTIAL" ||
                           labelPrint?.labelPrintStatus === "FAILED"
-                        ? `실패 ${labelPrint.targetIssueItemIds.length}장 복구 출력`
-                        : `${labelPrint?.targetIssueItemIds.length ?? 0}장 일괄 출력`}
+                        ? t("label.recoveryPrint", { count: labelPrint.targetIssueItemIds.length })
+                        : t("label.batchPrint", { count: labelPrint?.targetIssueItemIds.length ?? 0 })}
                   </Button>
                 ) : null}
               </div>
 
               {printerSettings?.printerName ? (
                 <div className="grid gap-2 rounded border bg-secondary/40 p-3 text-xs">
-                  <div className="font-semibold">TSC DA200 교정 설정</div>
+                    <div className="font-semibold">{t("printer.calibration")}</div>
                   <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
                     <label className="grid gap-1">
-                      <span className="text-muted-foreground">센서</span>
+                      <span className="text-muted-foreground">{t("printer.sensor")}</span>
                       <select
                         className="h-8 rounded border bg-background px-2"
                         value={printerSettings.sensorType}
@@ -3224,14 +3347,14 @@ export function ShipmentOrderListView({
                     </label>
                     {(
                       [
-                        ["gapMm", "간격 mm", 0.1],
-                        ["gapOffsetMm", "간격 보정 mm", 0.1],
-                        ["referenceX", "기준 X dot", 1],
-                        ["referenceY", "기준 Y dot", 1],
-                        ["shiftX", "이동 X dot", 1],
-                        ["shiftY", "이동 Y dot", 1],
-                        ["speed", "속도", 1],
-                        ["density", "농도", 1],
+                        ["gapMm", t("printer.gap"), 0.1],
+                        ["gapOffsetMm", t("printer.gapOffset"), 0.1],
+                        ["referenceX", t("printer.referenceX"), 1],
+                        ["referenceY", t("printer.referenceY"), 1],
+                        ["shiftX", t("printer.shiftX"), 1],
+                        ["shiftY", t("printer.shiftY"), 1],
+                        ["speed", t("printer.speed"), 1],
+                        ["density", t("printer.density"), 1],
                       ] as const
                     ).map(([key, label, step]) => (
                       <label key={key} className="grid gap-1">
@@ -3256,7 +3379,7 @@ export function ShipmentOrderListView({
                       </label>
                     ))}
                     <label className="grid gap-1">
-                      <span className="text-muted-foreground">방향</span>
+                      <span className="text-muted-foreground">{t("printer.direction")}</span>
                       <select
                         className="h-8 rounded border bg-background px-2"
                         value={printerSettings.direction}
@@ -3273,8 +3396,8 @@ export function ShipmentOrderListView({
                         }
                         disabled={isLabelPrinting || isPrinterSaving}
                       >
-                        <option value={1}>정방향</option>
-                        <option value={0}>역방향</option>
+                        <option value={1}>{t("printer.forward")}</option>
+                        <option value={0}>{t("printer.reverse")}</option>
                       </select>
                     </label>
                   </div>
@@ -3290,11 +3413,10 @@ export function ShipmentOrderListView({
                         !printerCalibrationDirty
                       }
                     >
-                      교정 설정 저장
+                      {t("printer.saveCalibration")}
                     </Button>
                     <span className="text-muted-foreground">
-                      송장 출력 교정본을 먼저 출력하고 간격·기준점·이동값을
-                      조정하세요.
+                      {t("printer.calibrationHint")}
                     </span>
                   </div>
                 </div>
@@ -3303,8 +3425,7 @@ export function ShipmentOrderListView({
               {labelPrint?.labelPrintStatus === "UNKNOWN" ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                   <span>
-                    Windows spooler 결과를 확정하지 못했습니다. 중복 출력을
-                    막기 위해 관리자 판정 전에는 재출력할 수 없습니다.
+                    {t("printer.unknownWarning")}
                   </span>
                   <div className="flex gap-2">
                     <Button
@@ -3314,7 +3435,7 @@ export function ShipmentOrderListView({
                       onClick={() => void resolveUnknownLabelPrint(true)}
                       disabled={isLabelPrinting}
                     >
-                      실제 출력됨
+                      {t("printer.unknownPrinted")}
                     </Button>
                     <Button
                       type="button"
@@ -3323,7 +3444,7 @@ export function ShipmentOrderListView({
                       onClick={() => void resolveUnknownLabelPrint(false)}
                       disabled={isLabelPrinting}
                     >
-                      출력 안 됨
+                      {t("printer.unknownNotPrinted")}
                     </Button>
                   </div>
                 </div>
@@ -3346,7 +3467,7 @@ export function ShipmentOrderListView({
               <TabsList className="max-w-full overflow-x-auto">
                 {MATCHED_WARRANTY_TABS.map((tab) => (
                   <TabsTrigger key={tab.key} value={tab.key}>
-                    {tab.label}
+                    {warrantyTabLabel(tab.key)}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -3357,24 +3478,24 @@ export function ShipmentOrderListView({
                   className="min-w-0"
                 >
                   <TabsList className="max-w-[560px] overflow-x-auto">
-                    <TabsTrigger value="current">신규 주문 건</TabsTrigger>
+                    <TabsTrigger value="current">{t("tabs.newOrders")}</TabsTrigger>
                     {printBatches.map((batch) => (
                       <TabsTrigger
                         key={batch.batchId}
                         value={String(batch.batchId)}
                       >
-                        {batch.batchNo}차
+                        {t("tabs.sequence", { sequence: batch.batchNo })}
                         {batch.batchStatus === "CONFIRMED"
                           ? ""
-                          : ` · ${PRINT_BATCH_STATUS_LABELS[batch.batchStatus]}`}
+                          : ` · ${printBatchStatusLabel(batch.batchStatus)}`}
                         {batch.returnExcludedCount > 0
-                          ? ` · 반품 제외 ${batch.returnExcludedCount}`
+                          ? ` · ${t("tabs.returnExcluded", { count: batch.returnExcludedCount })}`
                           : ""}
                       </TabsTrigger>
                     ))}
                     {isPrintBatchLoading ? (
                       <span className="px-2 text-xs text-muted-foreground">
-                        조회 중
+                        {t("tabs.loading")}
                       </span>
                     ) : null}
                   </TabsList>
@@ -3398,8 +3519,8 @@ export function ShipmentOrderListView({
             rowKey={(row) => row.id}
             emptyMessage={
               isLoading
-                ? "주문 목록을 불러오는 중입니다."
-                : "조회된 주문 아이템이 없습니다."
+                ? t("empty.ordersLoading")
+                : t("empty.orders")
             }
             minWidth="1560px"
             rowHeight={72}
@@ -3425,10 +3546,10 @@ export function ShipmentOrderListView({
                   id="shipment-print-confirm-title"
                   className="text-base font-bold"
                 >
-                  출고 목록 출력 확인
+                  {t("printConfirmation.title")}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  출력물을 확인한 뒤 작업을 확정하거나, 문제가 있으면 다시 출력 또는 취소하세요.
+                  {t("printConfirmation.description")}
                 </p>
               </div>
             </div>
@@ -3438,13 +3559,7 @@ export function ShipmentOrderListView({
                 {printConfirmationBatch.batchLabel}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                원 출력 {printConfirmationBatch.itemCount.toLocaleString("ko-KR")}건
-                {" · 반품 제외 "}
-                {printConfirmationBatch.returnExcludedCount.toLocaleString("ko-KR")}건
-                {" · 작업 대상 "}
-                {printConfirmationBatch.effectiveItemCount.toLocaleString("ko-KR")}건
-                {" · 상태 "}
-                {PRINT_BATCH_STATUS_LABELS[printConfirmationBatch.batchStatus]}
+                {t("printConfirmation.summary", { original: printConfirmationBatch.itemCount, excluded: printConfirmationBatch.returnExcludedCount, effective: printConfirmationBatch.effectiveItemCount, status: printBatchStatusLabel(printConfirmationBatch.batchStatus) })}
               </div>
             </div>
 
@@ -3460,7 +3575,7 @@ export function ShipmentOrderListView({
                 }
               >
                 <Printer className="size-4" />
-                {isReprinting ? "다시 출력중" : "다시 인쇄"}
+                {isReprinting ? t("printConfirmation.reprinting") : t("printConfirmation.reprint")}
               </Button>
               <Button
                 type="button"
@@ -3469,7 +3584,7 @@ export function ShipmentOrderListView({
                 disabled={isReprinting || isPrintBatchUpdating}
               >
                 <XCircle className="size-4" />
-                출력한 차수 폐기
+                {t("printConfirmation.cancel")}
               </Button>
               <Button
                 type="button"
@@ -3477,7 +3592,7 @@ export function ShipmentOrderListView({
                 disabled={isReprinting || isPrintBatchUpdating}
               >
                 <CheckCircle2 className="size-4" />
-                {isPrintBatchUpdating ? "확정중" : "출력 완료 확정"}
+                {isPrintBatchUpdating ? t("printConfirmation.confirming") : t("printConfirmation.confirm")}
               </Button>
             </div>
           </div>
@@ -3498,11 +3613,10 @@ export function ShipmentOrderListView({
               </div>
               <div>
                 <h2 id="logen-label-confirm-title" className="text-base font-bold">
-                  로젠 송장 실물 출력 확인
+                  {t("labelConfirmation.title")}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  출력되지 않았거나 훼손된 송장만 실패로 선택하세요. 선택한 송장만
-                  같은 송장번호로 복구 출력합니다.
+                  {t("labelConfirmation.description")}
                 </p>
               </div>
             </div>
@@ -3548,7 +3662,7 @@ export function ShipmentOrderListView({
                         {label?.receiver.address1 ?? "-"}
                       </span>
                       <Badge variant={failed ? "warning" : "neutral"}>
-                        {failed ? "실패" : "정상 예정"}
+                        {failed ? t("labelConfirmation.failed") : t("labelConfirmation.expectedSuccess")}
                       </Badge>
                     </label>
                   );
@@ -3557,7 +3671,7 @@ export function ShipmentOrderListView({
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-muted-foreground">
-                실패 선택 {failedLabelIds.length}장
+                {t("labelConfirmation.failedSummary", { count: failedLabelIds.length })}
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button
@@ -3572,7 +3686,7 @@ export function ShipmentOrderListView({
                   }
                   disabled={isLabelPrinting}
                 >
-                  전체 실패 선택
+                  {t("labelConfirmation.selectAllFailed")}
                 </Button>
                 <Button
                   type="button"
@@ -3580,7 +3694,7 @@ export function ShipmentOrderListView({
                   onClick={requestLabelConfirmationClose}
                   disabled={isLabelPrinting}
                 >
-                  나중에 확인
+                  {t("labelConfirmation.later")}
                 </Button>
                 <Button
                   type="button"
@@ -3589,10 +3703,10 @@ export function ShipmentOrderListView({
                 >
                   <CheckCircle2 className="size-4" />
                   {isLabelPrinting
-                    ? "반영 중"
+                    ? t("labelConfirmation.applying")
                     : failedLabelIds.length > 0
-                      ? "정상·실패 결과 반영"
-                      : "전체 정상 출력"}
+                      ? t("labelConfirmation.applyMixed")
+                      : t("labelConfirmation.applyAllSuccess")}
                 </Button>
               </div>
             </div>
@@ -3617,7 +3731,7 @@ export function ShipmentOrderListView({
                   id="shipment-return-conflict-title"
                   className="text-base font-bold"
                 >
-                  반품 처리 필요
+                  {t("returnConflict.title")}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {returnConflictMessage}
@@ -3633,26 +3747,24 @@ export function ShipmentOrderListView({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-semibold">
-                      주문번호 {conflict.externalOrderId}
+                      {t("returnConflict.order", { orderId: conflict.externalOrderId })}
                     </span>
                     <Badge variant="warning">
-                      반품 {conflict.cancelCount.toLocaleString("ko-KR")}개
+                      {t("returnConflict.count", { count: conflict.cancelCount })}
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    배송번호 {conflict.externalShipmentId || "확인 필요"}
-                    {" · 접수번호 "}
-                    {conflict.externalReceiptId}
-                    {" · 상태 "}
-                    {conflict.receiptStatus || "-"}
+                    {t("returnConflict.shipment", { shipmentId: conflict.externalShipmentId || "-" })}
+                    {" · "}{t("returnConflict.receipt", { receiptId: conflict.externalReceiptId })}
+                    {" · "}{t("returnConflict.status", { status: conflict.receiptStatus || "-" })}
                   </div>
                   <div className="text-xs">
-                    상품 {conflict.vendorItemNames.join(", ") || "상품 정보 확인 필요"}
+                    {t("returnConflict.product", { product: conflict.vendorItemNames.join(", ") || "-" })}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    영향 PG {conflict.pgNos.join(", ") || "미확정"}
+                    {t("returnConflict.affectedPg", { pg: conflict.pgNos.join(", ") || "-" })}
                     {conflict.scopeIncomplete
-                      ? " · 쿠팡 원본의 배송/상품 식별값이 부족해 넓은 범위로 차단됨"
+                      ? ` · ${t("returnConflict.broadBlock")}`
                       : ""}
                   </div>
                 </div>
@@ -3668,7 +3780,7 @@ export function ShipmentOrderListView({
                   setReturnConflicts([]);
                 }}
               >
-                닫기
+                {t("returnConflict.close")}
               </Button>
               {onOpenPreShipmentReturns ? (
                 <Button
@@ -3679,7 +3791,7 @@ export function ShipmentOrderListView({
                     onOpenPreShipmentReturns();
                   }}
                 >
-                  출고 전 반품목록 열기
+                  {t("returnConflict.openReturns")}
                 </Button>
               ) : null}
             </div>

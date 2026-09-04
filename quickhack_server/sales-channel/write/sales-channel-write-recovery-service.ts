@@ -11,6 +11,7 @@ import {
   parseKstSqlDateTime,
   quickHackClock,
 } from "@/quickhack_shared/core/time";
+import { preserveKoreanSnapshot } from "@/quickhack_shared/i18n/preserved-snapshot";
 
 const RECOVERABLE_REQUEST_STATUSES = [
   SALES_CHANNEL_WRITE_REQUEST_STATUS.pending,
@@ -92,8 +93,9 @@ function recoveryState(input: {
       attemptStatus: SALES_CHANNEL_WRITE_ATTEMPT_STATUS.failed,
       failureStage: SALES_CHANNEL_WRITE_FAILURE_STAGE.writeTransport,
       errorCode: "PROCESS_INTERRUPTED_BEFORE_DISPATCH",
-      errorMessage:
-        "서버 처리가 외부 쓰기 API 전송 전에 중단되어 채널에 반영되지 않았습니다.",
+      errorMessage: preserveKoreanSnapshot(
+        "서버 처리가 외부 쓰기 API 전송 전에 중단되어 채널에 반영되지 않았습니다."
+      ),
       externalAppliedUnknown: false,
     } as const;
   }
@@ -104,8 +106,9 @@ function recoveryState(input: {
       attemptStatus: SALES_CHANNEL_WRITE_ATTEMPT_STATUS.ambiguous,
       failureStage: SALES_CHANNEL_WRITE_FAILURE_STAGE.externalVerification,
       errorCode: "PROCESS_INTERRUPTED_DURING_VERIFICATION",
-      errorMessage:
-        "서버 처리가 채널 반영 확인 중 중단되었습니다. 외부 쓰기를 재전송하지 말고 판매 채널 동기화 점검에서 결과를 확인하세요.",
+      errorMessage: preserveKoreanSnapshot(
+        "서버 처리가 채널 반영 확인 중 중단되었습니다. 외부 쓰기를 재전송하지 말고 판매 채널 동기화 점검에서 결과를 확인하세요."
+      ),
       externalAppliedUnknown: true,
     } as const;
   }
@@ -115,8 +118,9 @@ function recoveryState(input: {
     attemptStatus: SALES_CHANNEL_WRITE_ATTEMPT_STATUS.ambiguous,
     failureStage: SALES_CHANNEL_WRITE_FAILURE_STAGE.writeTransport,
     errorCode: "PROCESS_INTERRUPTED_AFTER_DISPATCH",
-    errorMessage:
-      "외부 쓰기 API 전송 이후 서버 처리가 중단되어 채널 반영 여부를 확정할 수 없습니다. 쓰기를 재전송하지 말고 판매 채널 동기화 점검에서 결과를 확인하세요.",
+    errorMessage: preserveKoreanSnapshot(
+      "외부 쓰기 API 전송 이후 서버 처리가 중단되어 채널 반영 여부를 확정할 수 없습니다. 쓰기를 재전송하지 말고 판매 채널 동기화 점검에서 결과를 확인하세요."
+    ),
     externalAppliedUnknown: true,
   } as const;
 }

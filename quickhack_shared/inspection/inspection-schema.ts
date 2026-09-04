@@ -25,6 +25,17 @@ export const RECORD_COLUMNS = [
 export const UPLOAD_STATUS_COLUMN = "업로드상태";
 export const CLIENT_RECORD_ID = "__clientRecordId";
 export const CLIENT_RECORD_KIND_COLUMN = "__inspectionKind";
+export const PG_RESERVATION_STATUS_COLUMN = "__pgReservationStatus";
+export const PG_RESERVATION_ERROR_COLUMN = "__pgReservationErrorCode";
+export const PG_RESERVATION_EXPIRES_AT_COLUMN = "__pgReservationExpiresAt";
+
+export const CLIENT_PG_RESERVATION_STATUSES = {
+  idle: "IDLE",
+  issuing: "ISSUING",
+  reserved: "RESERVED",
+  failed: "FAILED",
+  abandoning: "ABANDONING",
+} as const;
 
 export const INSPECTION_RECORD_KINDS = {
   appearance: "appearance",
@@ -70,33 +81,33 @@ export const FUNCTION_DEFECT_MAP = {
 
 export const FUNCTION_ACTION_GROUPS = [
   {
-    title: "기본 제어",
+    id: "basic",
     actions: [
-      { id: "refresh", label: "새로고침" },
-      { id: "show-device-numbers", label: "기기 번호 표시" },
-      { id: "set-timeout", label: "화면 꺼짐 방지" },
+      { id: "refresh" },
+      { id: "show-device-numbers" },
+      { id: "set-timeout" },
     ],
   },
   {
-    title: "화면 검사",
+    id: "display",
     actions: [
-      { id: "reset-display", label: "색상 설정 초기화" },
-      { id: "afterimage-test", label: "잔상 검사" },
-      { id: "camera", label: "카메라" },
+      { id: "reset-display" },
+      { id: "afterimage-test" },
+      { id: "camera" },
     ],
   },
   {
-    title: "상세 확인",
+    id: "details",
     actions: [
-      { id: "accounts", label: "계정 관리" },
-      { id: "imei-check", label: "IMEI 조회 (*#06#)" },
-      { id: "discount-check", label: "약정조회 사이트" },
-      { id: "function-test", label: "기능점검 (*#0*#)" },
+      { id: "accounts" },
+      { id: "imei-check" },
+      { id: "discount-check" },
+      { id: "function-test" },
     ],
   },
   {
-    title: "초기화",
-    actions: [{ id: "reboot-recovery", label: "리커버리 모드" }],
+    id: "reset",
+    actions: [{ id: "reboot-recovery" }],
   },
 ] as const;
 
@@ -114,6 +125,10 @@ export type InspectionRecordWithStatus = InspectionRecord & {
   [CLIENT_RECORD_ID]: string;
   [UPLOAD_STATUS_COLUMN]: UploadStatus;
   [CLIENT_RECORD_KIND_COLUMN]?: InspectionRecordKind;
+  [PG_RESERVATION_STATUS_COLUMN]?:
+    (typeof CLIENT_PG_RESERVATION_STATUSES)[keyof typeof CLIENT_PG_RESERVATION_STATUSES];
+  [PG_RESERVATION_ERROR_COLUMN]?: string;
+  [PG_RESERVATION_EXPIRES_AT_COLUMN]?: string;
 };
 
 export function normalizeBarcode(value: string) {
@@ -421,14 +436,14 @@ export function validateBarcodeInput(rawValue: string, targetColumn: "PG" | "IME
   const value = normalizeBarcode(rawValue);
 
   if (!value) {
-    return { ok: false, value: "", message: "바코드 값이 비어 있습니다." };
+    return { ok: false as const, value: "", code: "BARCODE_EMPTY" as const };
   }
 
   if (targetColumn === "PG" && !isValidPg(value)) {
     return {
       ok: false,
       value: "",
-      message: "PG 형식 오류 - 알파벳 2자리 + 숫자 10자리",
+      code: "PG_INVALID" as const,
     };
   }
 
@@ -436,14 +451,14 @@ export function validateBarcodeInput(rawValue: string, targetColumn: "PG" | "IME
     return {
       ok: false,
       value: "",
-      message: "IMEI 형식 오류 - 15자리 숫자",
+      code: "IMEI_INVALID" as const,
     };
   }
 
   return {
     ok: true,
     value,
-    message: `${targetColumn} 입력 완료`,
+    code: "BARCODE_VALID" as const,
   };
 }
 
@@ -511,6 +526,9 @@ export function createUploadRecord(
       globalThis.crypto?.randomUUID?.() ??
       `record-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     [UPLOAD_STATUS_COLUMN]: UPLOAD_STATUSES.pending,
+    [PG_RESERVATION_STATUS_COLUMN]: values.PG
+      ? CLIENT_PG_RESERVATION_STATUSES.idle
+      : CLIENT_PG_RESERVATION_STATUSES.issuing,
     ...(kind ? { [CLIENT_RECORD_KIND_COLUMN]: kind } : {}),
   };
 }

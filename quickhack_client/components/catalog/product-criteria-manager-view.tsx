@@ -2,11 +2,12 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { Database, Link2, Plus, RefreshCcw, Save } from "lucide-react";
 import type { StatusTone } from "@/quickhack_shared/device/types";
 import {
   PRODUCT_CRITERIA_CATEGORIES,
-  PRODUCT_CRITERIA_CATEGORY_LABELS,
   canUseProductCriteriaParentKey,
   type ProductCameraCheckRuleDto,
   type ProductCriteriaCategory,
@@ -91,9 +92,12 @@ function productCriteriaFormFromOption(
   };
 }
 
-function productCriteriaSearchText(option: ProductCriteriaOptionDto) {
+function productCriteriaSearchText(
+  option: ProductCriteriaOptionDto,
+  categoryLabel: string
+) {
   return [
-    PRODUCT_CRITERIA_CATEGORY_LABELS[option.category],
+    categoryLabel,
     option.category,
     option.parentKey,
     option.optionKey,
@@ -240,6 +244,7 @@ function ProductCriteriaOptionChecklist({
   onChange: (nextIds: number[]) => void;
   listClassName?: string;
 }) {
+  const t = useTranslations("catalog.productCriteria");
   const selected = React.useMemo(() => new Set(selectedIds), [selectedIds]);
   const allChecked =
     options.length > 0 && options.every((option) => selected.has(option.optionId));
@@ -267,17 +272,17 @@ function ProductCriteriaOptionChecklist({
         <div>
           <h3 className="text-sm font-semibold">{title}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {selectedIds.length.toLocaleString("ko-KR")}개 선택
+            {t("common.selected", { count: selectedIds.length })}
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <TableSelectCheckbox
             checked={allChecked}
             indeterminate={someChecked && !allChecked}
-            ariaLabel={`${title} 전체 선택`}
+            ariaLabel={t("common.selectAll", { title })}
             onCheckedChange={toggleAll}
           />
-          전체
+          {t("common.all")}
         </label>
       </div>
       <div className={cn("max-h-[240px] overflow-auto rounded-md border", listClassName)}>
@@ -297,7 +302,7 @@ function ProductCriteriaOptionChecklist({
           ))
         ) : (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-            표시할 기준값이 없습니다.
+            {t("common.empty")}
           </div>
         )}
       </div>
@@ -316,6 +321,7 @@ function ProductCameraRuleChecklist({
   rules: CameraRuleDraft[];
   onChange: (nextRules: CameraRuleDraft[]) => void;
 }) {
+  const t = useTranslations("catalog.productCriteria");
   const selectedByLensId = React.useMemo(
     () => new Map(rules.map((rule) => [rule.cameraLensOptionId, rule])),
     [rules]
@@ -383,19 +389,19 @@ function ProductCameraRuleChecklist({
     <section className="flex min-h-0 flex-col gap-3 rounded-md border bg-popover p-4 xl:col-span-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">카메라 점검 기준</h3>
+          <h3 className="text-sm font-semibold">{t("camera.title")}</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            상품 기준값에 등록된 렌즈 배율을 선택하고, 렌즈별 초점 기준을 지정합니다.
+            {t("camera.description")}
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <TableSelectCheckbox
             checked={allChecked}
             indeterminate={someChecked && !allChecked}
-            ariaLabel="카메라 렌즈 전체 선택"
+            ariaLabel={t("camera.selectAll")}
             onCheckedChange={toggleAll}
           />
-          전체
+          {t("common.all")}
         </label>
       </div>
 
@@ -432,7 +438,7 @@ function ProductCameraRuleChecklist({
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="초점 기준" />
+                    <SelectValue placeholder={t("camera.focus")} />
                   </SelectTrigger>
                   <SelectContent>
                     {focusRuleOptions.map((focusRule) => (
@@ -450,7 +456,7 @@ function ProductCameraRuleChecklist({
           })
         ) : (
           <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-            등록된 카메라 렌즈 배율 기준값이 없습니다.
+            {t("camera.empty")}
           </div>
         )}
       </div>
@@ -467,6 +473,7 @@ function ProductCriteriaRelationEditor({
   onSaved: (data: ProductCriteriaPayload) => void;
   onRefresh: () => Promise<boolean>;
 }) {
+  const t = useTranslations("catalog.productCriteria");
   const { runGuardedAction } = useUnsavedChanges();
   const models = React.useMemo(
     () => criteriaOptionsByCategory(criteria, "PRODUCT_MODEL"),
@@ -540,8 +547,8 @@ function ProductCriteriaRelationEditor({
   useUnsavedForm({
     id: PRODUCT_CRITERIA_RELATION_FORM_ID,
     label: selectedModel
-      ? `${selectedModel.label} 연결 기준`
-      : "상품 연결 기준",
+      ? t("relation.formModel", { model: selectedModel.label })
+      : t("relation.form"),
     enabled: savedRelations !== null,
     isDirty:
       loadedRelations !== null &&
@@ -617,7 +624,7 @@ function ProductCriteriaRelationEditor({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "연결된 기준값 저장에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("relation.saveFailed")));
       }
 
       const refreshDeferred = payload.receipt?.refreshRequired === true;
@@ -637,7 +644,7 @@ function ProductCriteriaRelationEditor({
             })
           : null;
       if (!nextRelations) {
-        throw new Error("저장된 연결 기준값을 확인하지 못했습니다.");
+        throw new Error(t("relation.verifyFailed"));
       }
       setStorageOptionIds(nextRelations?.storageOptionIds ?? []);
       setColorOptionIds(nextRelations?.colorOptionIds ?? []);
@@ -649,8 +656,10 @@ function ProductCriteriaRelationEditor({
       }
       setMessage(
         refreshed
-          ? payload.message || "연결된 기준값을 저장했습니다."
-          : `${payload.message || "연결된 기준값을 저장했습니다."} 전체 기준값은 새로고침해 확인하세요.`
+          ? t("relation.saved")
+          : t("relation.refreshRequired", {
+              result: t("relation.saved"),
+            })
       );
       setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
@@ -671,7 +680,9 @@ function ProductCriteriaRelationEditor({
     runGuardedAction({
       intent: "internal-change",
       formIds: [PRODUCT_CRITERIA_RELATION_FORM_ID],
-      targetLabel: `${nextModel?.label ?? "다른 기종"} 연결 기준 열기`,
+      targetLabel: t("relation.open", {
+        model: nextModel?.label ?? t("relation.otherModel"),
+      }),
       action: () => setSelectedModelId(nextModelId),
     });
   }
@@ -681,10 +692,10 @@ function ProductCriteriaRelationEditor({
       <div className="rounded-md border bg-popover p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <SearchSelect
-            label="기종"
+            label={t("relation.model")}
             value={effectiveSelectedModelId ? String(effectiveSelectedModelId) : ""}
             options={modelSelectOptions}
-            placeholder="연결값을 편집할 기종"
+            placeholder={t("relation.modelPlaceholder")}
             allowEmpty={false}
             className="min-w-[320px] flex-1"
             onValueChange={requestSelectedModel}
@@ -694,7 +705,7 @@ function ProductCriteriaRelationEditor({
             disabled={!effectiveSelectedModelId || isSaving}
           >
             <Save className="size-4" />
-            {isSaving ? "저장중" : "연결값 저장"}
+            {isSaving ? t("common.saving") : t("relation.save")}
           </Button>
         </div>
 
@@ -718,25 +729,24 @@ function ProductCriteriaRelationEditor({
                   {productCriteriaOptionLabel(selectedModel)}
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  이 탭은 기종과 연결되는 용량, 공식 색상명, 카메라 점검 기준을
-                  관리합니다. 기준값 자체의 이름은 왼쪽 탭에서 수정합니다.
+                  {t("relation.description")}
                 </p>
               </div>
             </div>
             <div className="rounded-md bg-secondary px-3 py-2 text-xs leading-5">
-              현재 카메라 기준: {cameraSummary}
+              {t("relation.cameraSummary", { summary: cameraSummary })}
             </div>
           </section>
 
           <ProductCriteriaOptionChecklist
-            title="연결 저장공간"
+            title={t("relation.storage")}
             options={storages}
             selectedIds={storageOptionIds}
             onChange={setStorageOptionIds}
           />
 
           <ProductCriteriaOptionChecklist
-            title="연결 공식 색상명"
+            title={t("relation.color")}
             options={colors}
             selectedIds={colorOptionIds}
             onChange={setColorOptionIds}
@@ -751,7 +761,7 @@ function ProductCriteriaRelationEditor({
         </div>
       ) : (
         <div className="rounded-md border border-dashed bg-popover px-4 py-16 text-center text-sm text-muted-foreground">
-          연결값을 편집할 기종 기준값이 없습니다.
+          {t("relation.emptyModel")}
         </div>
       )}
     </section>
@@ -760,6 +770,20 @@ function ProductCriteriaRelationEditor({
 
 // QuickHack object: 검수와 상품 등록에 사용하는 입력 기준값을 관리하는 화면입니다.
 export function ProductCriteriaManagerView() {
+  const t = useTranslations("catalog.productCriteria");
+  const categoryLabels = React.useMemo<Record<ProductCriteriaCategory, string>>(() => ({
+    PRODUCT_MODEL: t("category.productModel"),
+    CARRIER: t("category.carrier"),
+    STORAGE: t("category.storage"),
+    DEVICE_COLOR: t("category.deviceColor"),
+    APPEARANCE_GRADE: t("category.appearanceGrade"),
+    SALE_GRADE: t("category.saleGrade"),
+    WARRANTY_GROUP: t("category.warrantyGroup"),
+    APPEARANCE_DEFECT: t("category.appearanceDefect"),
+    FUNCTION_DEFECT: t("category.functionDefect"),
+    CAMERA_LENS: t("category.cameraLens"),
+    CAMERA_FOCUS_RULE: t("category.cameraFocusRule"),
+  }), [t]);
   const { runGuardedAction } = useUnsavedChanges();
   const [criteria, setCriteria] = React.useState<ProductCriteriaPayload | null>(
     null
@@ -804,8 +828,8 @@ export function ProductCriteriaManagerView() {
   useUnsavedForm({
     id: PRODUCT_CRITERIA_OPTION_FORM_ID,
     label: selectedOption
-      ? `${selectedOption.label} 상품 기준값`
-      : "새 상품 기준값",
+      ? t("option.formSelected", { label: selectedOption.label })
+      : t("option.form"),
     enabled: activeTab === "options",
     isDirty: !unsavedFormSnapshotsEqual(formBaseline, form),
     isBusy: isSaving,
@@ -824,7 +848,7 @@ export function ProductCriteriaManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok || !payload.data) {
-        throw new Error(payload?.message || "상품 기준값 조회에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("option.loadFailed")));
       }
 
       setCriteria(payload.data);
@@ -851,7 +875,7 @@ export function ProductCriteriaManagerView() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -874,9 +898,12 @@ export function ProductCriteriaManagerView() {
         return true;
       }
 
-      return productCriteriaSearchText(option).includes(normalizedQuery);
+      return productCriteriaSearchText(
+        option,
+        categoryLabels[option.category]
+      ).includes(normalizedQuery);
     });
-  }, [categoryFilter, criteria?.rawOptions, query]);
+  }, [categoryFilter, categoryLabels, criteria?.rawOptions, query]);
   const optionColumns = React.useMemo<
     DataGridColumn<
       "category" | "parentKey" | "optionKey" | "label" | "status" | "sortOrder",
@@ -886,58 +913,59 @@ export function ProductCriteriaManagerView() {
     () => [
       {
         key: "category",
-        label: "분류",
+        label: t("option.category"),
         width: "170px",
-        placeholder: "분류",
+        placeholder: t("option.category"),
         cellClassName: "flex items-center px-3",
-        render: (option) => PRODUCT_CRITERIA_CATEGORY_LABELS[option.category],
-        text: (option) => PRODUCT_CRITERIA_CATEGORY_LABELS[option.category],
+        render: (option) => categoryLabels[option.category],
+        text: (option) => categoryLabels[option.category],
       },
       {
         key: "parentKey",
-        label: "상위값",
+        label: t("option.parent"),
         width: "150px",
-        placeholder: "상위값",
+        placeholder: t("option.parent"),
         cellClassName: "flex items-center px-3",
         render: (option) => option.parentKey || "-",
         text: (option) => option.parentKey || "",
       },
       {
         key: "optionKey",
-        label: "기준키",
+        label: t("option.key"),
         width: "180px",
-        placeholder: "기준키",
+        placeholder: t("option.key"),
         cellClassName: "flex items-center px-3 font-mono text-xs",
         render: (option) => option.optionKey,
         text: (option) => option.optionKey,
       },
       {
         key: "label",
-        label: "표시값",
+        label: t("option.label"),
         width: "minmax(180px,1fr)",
-        placeholder: "표시값",
+        placeholder: t("option.label"),
         cellClassName: "flex items-center px-3 font-medium",
         render: (option) => option.label,
         text: (option) => option.label,
       },
       {
         key: "status",
-        label: "상태",
+        label: t("option.status"),
         width: "90px",
-        placeholder: "상태",
+        placeholder: t("option.status"),
         cellClassName: "flex items-center px-3",
         render: (option) => (
           <Badge variant={option.isActive ? "success" : "neutral"}>
-            {option.isActive ? "사용" : "비활성"}
+            {option.isActive ? t("common.active") : t("common.inactive")}
           </Badge>
         ),
-        text: (option) => (option.isActive ? "사용" : "비활성"),
+        text: (option) =>
+          option.isActive ? t("common.active") : t("common.inactive"),
       },
       {
         key: "sortOrder",
-        label: "순서",
+        label: t("option.order"),
         width: "80px",
-        placeholder: "순서",
+        placeholder: t("option.order"),
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
         render: (option) => option.sortOrder,
@@ -945,7 +973,7 @@ export function ProductCriteriaManagerView() {
         sortValue: (option) => option.sortOrder,
       },
     ],
-    []
+    [categoryLabels, t]
   );
 
   function updateForm<K extends keyof ProductCriteriaForm>(
@@ -983,7 +1011,7 @@ export function ProductCriteriaManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [PRODUCT_CRITERIA_OPTION_FORM_ID],
-      targetLabel: `${option.label} 기준값 열기`,
+      targetLabel: t("option.open", { label: option.label }),
       action: () => applySelectedOption(option),
     });
   }
@@ -1006,7 +1034,7 @@ export function ProductCriteriaManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [PRODUCT_CRITERIA_OPTION_FORM_ID],
-      targetLabel: "새 상품 기준값 작성",
+      targetLabel: t("option.newOpen"),
       action: applyNewOption,
     });
   }
@@ -1019,7 +1047,7 @@ export function ProductCriteriaManagerView() {
           ? PRODUCT_CRITERIA_OPTION_FORM_ID
           : PRODUCT_CRITERIA_RELATION_FORM_ID,
       ],
-      targetLabel: "상품 기준값 새로고침",
+      targetLabel: t("option.reload"),
       action: () => {
         void loadCriteria(true);
       },
@@ -1041,8 +1069,8 @@ export function ProductCriteriaManagerView() {
       ],
       targetLabel:
         nextTab === "options"
-          ? "상품 기준값 탭 열기"
-          : "연결된 기준값 편집 탭 열기",
+          ? t("option.tabOpen")
+          : t("option.relationTabOpen"),
       action: () => setActiveTab(nextTab),
     });
   }
@@ -1051,7 +1079,7 @@ export function ProductCriteriaManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [PRODUCT_CRITERIA_OPTION_FORM_ID],
-      targetLabel: "기본 상품 기준값 채우기",
+      targetLabel: t("option.bootstrapOpen"),
       action: () => {
         void bootstrapDefaults();
       },
@@ -1088,7 +1116,7 @@ export function ProductCriteriaManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "상품 기준값 저장에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("option.saveFailed")));
       }
 
       const refreshDeferred = payload.receipt?.refreshRequired === true;
@@ -1109,8 +1137,10 @@ export function ProductCriteriaManagerView() {
 
       setMessage(
         refreshed
-          ? payload.message || "상품 기준값을 저장했습니다."
-          : `${payload.message || "상품 기준값을 저장했습니다."} 목록 새로고침이 필요합니다.`
+          ? t("option.saved")
+          : t("option.refreshRequired", {
+              result: t("option.saved"),
+            })
       );
       setMessageTone(refreshed ? "success" : "warning");
     } catch (error) {
@@ -1140,7 +1170,7 @@ export function ProductCriteriaManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "기본 기준값 확인에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("option.bootstrapFailed")));
       }
 
       const refreshDeferred = payload.receipt?.refreshRequired === true;
@@ -1155,8 +1185,10 @@ export function ProductCriteriaManagerView() {
       if (!payload.data) {
         setMessage(
           refreshed
-            ? payload.message || "기본 상품 기준값을 확인했습니다."
-            : `${payload.message || "기본 상품 기준값을 확인했습니다."} 목록 새로고침이 필요합니다.`
+            ? t("option.bootstrapDone")
+            : t("option.refreshRequired", {
+                result: t("option.bootstrapDone"),
+              })
         );
         setMessageTone(refreshed ? "success" : "warning");
         return;
@@ -1175,7 +1207,7 @@ export function ProductCriteriaManagerView() {
             : emptyProductCriteriaForm()
         );
       }
-      setMessage(payload.message || "기본 상품 기준값을 확인했습니다.");
+      setMessage(t("option.bootstrapDone"));
       setMessageTone("success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -1193,8 +1225,8 @@ export function ProductCriteriaManagerView() {
     >
       <div className="border-b bg-background px-5 py-3">
         <TabsList>
-          <TabsTrigger value="options">상품 기준값</TabsTrigger>
-          <TabsTrigger value="relations">연결된 기준값 편집</TabsTrigger>
+          <TabsTrigger value="options">{t("page.optionsTab")}</TabsTrigger>
+          <TabsTrigger value="relations">{t("page.relationsTab")}</TabsTrigger>
         </TabsList>
       </div>
 
@@ -1206,7 +1238,7 @@ export function ProductCriteriaManagerView() {
           <WorkspacePanel>
             <PanelToolbar className="xl:grid-cols-[minmax(240px,1fr)_220px_auto]">
               <SearchInput
-                placeholder="분류, 상위값, 기준키, 표시값 검색"
+                placeholder={t("page.search")}
                 value={query}
                 onValueChange={setQuery}
               />
@@ -1218,13 +1250,13 @@ export function ProductCriteriaManagerView() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="분류" />
+                  <SelectValue placeholder={t("page.categoryPlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">전체 분류</SelectItem>
+                  <SelectItem value="ALL">{t("page.allCategories")}</SelectItem>
                   {PRODUCT_CRITERIA_CATEGORIES.map((category) => (
                     <SelectItem key={category} value={category}>
-                      {PRODUCT_CRITERIA_CATEGORY_LABELS[category]}
+                      {categoryLabels[category]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1232,7 +1264,7 @@ export function ProductCriteriaManagerView() {
 
               <Button variant="outline" onClick={requestCriteriaReload}>
                 <RefreshCcw className={cn("size-4", isLoading && "animate-spin")} />
-                새로고침
+                {t("page.refresh")}
               </Button>
             </PanelToolbar>
 
@@ -1242,8 +1274,8 @@ export function ProductCriteriaManagerView() {
               rowKey={(option) => option.optionId}
               emptyMessage={
                 isLoading
-                  ? "기준값을 불러오는 중입니다."
-                  : "표시할 기준값이 없습니다."
+                  ? t("page.loading")
+                  : t("common.empty")
               }
               selectedRowKey={selectedOptionId}
               onRowClick={selectOption}
@@ -1256,13 +1288,13 @@ export function ProductCriteriaManagerView() {
           <aside className="min-h-0 overflow-auto rounded-md border bg-popover p-4">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold">상품 기준값 편집</h2>
+                <h2 className="text-sm font-semibold">{t("page.editorTitle")}</h2>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  저장 후 검수 화면 드롭박스와 하자 선택 기준에 반영됩니다.
+                  {t("page.editorDescription")}
                 </p>
               </div>
               <Button size="sm" variant="outline" onClick={newOption}>
-                <Plus className="size-4" />새 값
+                <Plus className="size-4" />{t("page.newValue")}
               </Button>
             </div>
 
@@ -1278,7 +1310,7 @@ export function ProductCriteriaManagerView() {
             <div className="grid gap-3">
               <label className="grid gap-1 text-sm">
                 <span className="text-xs font-medium text-muted-foreground">
-                  분류
+                  {t("option.category")}
                 </span>
                 <Select
                   value={form.category}
@@ -1288,12 +1320,12 @@ export function ProductCriteriaManagerView() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="분류" />
+                    <SelectValue placeholder={t("page.categoryPlaceholder")} />
                   </SelectTrigger>
                   <SelectContent>
                     {PRODUCT_CRITERIA_CATEGORIES.map((category) => (
                       <SelectItem key={category} value={category}>
-                        {PRODUCT_CRITERIA_CATEGORY_LABELS[category]}
+                        {categoryLabels[category]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1302,28 +1334,28 @@ export function ProductCriteriaManagerView() {
 
               {canUseProductCriteriaParentKey(form.category) ? (
                 <InventoryEditField
-                  label="상위값"
+                  label={t("option.parent")}
                   value={form.parentKey}
-                  placeholder="하자 항목의 부위명 등"
+                  placeholder={t("page.parentPlaceholder")}
                   readOnly={selectedOption !== null}
                   onChange={(value) => updateForm("parentKey", value)}
                 />
               ) : null}
               <InventoryEditField
-                label="기준키"
+                label={t("option.key")}
                 value={form.optionKey}
-                placeholder="모델코드 또는 고유 값"
+                placeholder={t("page.keyPlaceholder")}
                 readOnly={selectedOption !== null}
                 onChange={(value) => updateForm("optionKey", value)}
               />
               <InventoryEditField
-                label="표시값"
+                label={t("option.label")}
                 value={form.label}
-                placeholder="화면에 표시할 값"
+                placeholder={t("page.labelPlaceholder")}
                 onChange={(value) => updateForm("label", value)}
               />
               <InventoryEditField
-                label="정렬 순서"
+                label={t("page.sortOrder")}
                 value={form.sortOrder}
                 placeholder="0"
                 onChange={(value) => updateForm("sortOrder", value)}
@@ -1331,7 +1363,7 @@ export function ProductCriteriaManagerView() {
 
               <label className="grid gap-1 text-sm">
                 <span className="text-xs font-medium text-muted-foreground">
-                  상태
+                  {t("option.status")}
                 </span>
                 <Select
                   value={form.isActive}
@@ -1340,11 +1372,11 @@ export function ProductCriteriaManagerView() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="상태" />
+                    <SelectValue placeholder={t("option.status")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">사용</SelectItem>
-                    <SelectItem value="0">비활성</SelectItem>
+                    <SelectItem value="1">{t("common.active")}</SelectItem>
+                    <SelectItem value="0">{t("common.inactive")}</SelectItem>
                   </SelectContent>
                 </Select>
               </label>
@@ -1352,7 +1384,7 @@ export function ProductCriteriaManagerView() {
               <div className="grid gap-2 pt-2">
                 <Button onClick={saveOption} disabled={isSaving}>
                   <Save className="size-4" />
-                  {isSaving ? "저장중" : "기준값 저장"}
+                  {isSaving ? t("common.saving") : t("page.save")}
                 </Button>
                 <Button
                   type="button"
@@ -1361,7 +1393,7 @@ export function ProductCriteriaManagerView() {
                   disabled={isSaving}
                 >
                   <Database className="size-4" />
-                  기본값 누락분 채우기
+                  {t("page.bootstrap")}
                 </Button>
               </div>
             </div>
@@ -1382,4 +1414,3 @@ export function ProductCriteriaManagerView() {
     </Tabs>
   );
 }
-

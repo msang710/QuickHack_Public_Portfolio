@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -47,7 +49,7 @@ import {
   useUnsavedChanges,
   useUnsavedForm,
 } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
-import { POST_WRITE_REFRESH_WARNING } from "@/quickhack_client/lib/post-write-refresh";
+import { POST_WRITE_REFRESH_WARNING_KEY } from "@/quickhack_client/lib/post-write-refresh";
 import { SENSITIVE_ACTIONS } from "@/quickhack_shared/auth/sensitive-auth";
 import {
   reconcilePurchaseConfirmResults,
@@ -58,6 +60,13 @@ import { useDeviceListQuery } from "@/quickhack_client/components/shared/device-
 type PurchaseConfirmApiResponse = {
   ok: boolean;
   message?: string;
+  resultCode?: "PURCHASE_CONFIRM_RESULT" | "PURCHASE_CONFIRM_NO_TARGET";
+  messageArguments?: {
+    confirmedCount: number;
+    recoveredCount: number;
+    skippedCount: number;
+    conflictCount: number;
+  };
   confirmedCount?: number;
   recoveredCount?: number;
   skippedCount?: number;
@@ -168,7 +177,8 @@ function purchasePendingSearchableText(device: DeviceListRow) {
 
 function comparePurchasePendingValues(
   left: string | number | null | undefined,
-  right: string | number | null | undefined
+  right: string | number | null | undefined,
+  locale: string
 ) {
   const leftEmpty = left === null || left === undefined || left === "";
   const rightEmpty = right === null || right === undefined || right === "";
@@ -189,7 +199,7 @@ function comparePurchasePendingValues(
     return left - right;
   }
 
-  return String(left).localeCompare(String(right), "ko-KR", {
+  return String(left).localeCompare(String(right), locale, {
     numeric: true,
     sensitivity: "base",
   });
@@ -200,6 +210,9 @@ export function PurchasePendingListView({
 }: {
   onOpenDevice: (pgNo: string) => void;
 }) {
+  const feedbackT = useTranslations("common.feedback");
+  const t = useTranslations("inbound.purchasePending");
+  const locale = useLocale();
   const deviceList = useDeviceListQuery({
     endpoint: "/api/inbound/purchase-pending",
     queryString: "limit=100",
@@ -291,7 +304,7 @@ export function PurchasePendingListView({
 
   useUnsavedForm({
     id: PURCHASE_PENDING_PRICE_FORM_ID,
-    label: "매입 대기 매입가",
+    label: t("unsaved"),
     isDirty: changedPurchasePriceDraftEntries.length > 0,
     isBusy: isPurchaseConfirming,
     discard: discardPurchasePriceDrafts,
@@ -343,14 +356,14 @@ export function PurchasePendingListView({
           | null;
 
         if (!response.ok || !payload?.ok) {
-          throw new Error(payload?.message || "매입가 기준을 불러오지 못했습니다.");
+          throw new Error(legacyApiMessage(payload, t("fallback.rateLoadFailed")));
         }
 
         if (
           payload.queryContext?.priceDate !== priceDate ||
           payload.queryContext.note !== conditionNote
         ) {
-          throw new Error("요청한 날짜와 조건이 아닌 매입가 응답을 받았습니다.");
+          throw new Error(t("fallback.rateQueryMismatch"));
         }
 
         if (!ignore && rateRequestGenerationRef.current === generation) {
@@ -376,7 +389,7 @@ export function PurchasePendingListView({
     return () => {
       ignore = true;
     };
-  }, [conditionNote, priceDate]);
+  }, [conditionNote, priceDate, t]);
 
   function resetFilters() {
     setQuery("");
@@ -394,7 +407,7 @@ export function PurchasePendingListView({
     runGuardedAction({
       intent: "internal-change",
       formIds: [PURCHASE_PENDING_PRICE_FORM_ID],
-      targetLabel: `${value || "미지정"} 매입가 기준 열기`,
+      targetLabel: t("navigation.openDate", { date: value || t("navigation.unspecified") }),
       action: () => setPriceDate(value),
     });
   }
@@ -405,7 +418,7 @@ export function PurchasePendingListView({
     runGuardedAction({
       intent: "internal-change",
       formIds: [PURCHASE_PENDING_PRICE_FORM_ID],
-      targetLabel: `${value || "기본"} 조건 매입가 열기`,
+      targetLabel: t("navigation.openCondition", { condition: value || t("navigation.defaultCondition") }),
       action: () => setConditionNote(value),
     });
   }
@@ -418,17 +431,20 @@ export function PurchasePendingListView({
         return draft;
       }
 
-      return rate ? formatPriceInput(String(rate.purchasePrice)) : "";
+      return rate ? formatPriceInput(String(rate.purchasePrice), locale) : "";
     },
-    [purchasePriceDrafts]
+    [locale, purchasePriceDrafts]
   );
 
-  function updatePurchasePriceDraft(pgNo: string, value: string) {
-    setPurchasePriceDrafts((current) => ({
-      ...current,
-      [pgNo]: formatPriceInput(value),
-    }));
-  }
+  const updatePurchasePriceDraft = React.useCallback(
+    (pgNo: string, value: string) => {
+      setPurchasePriceDrafts((current) => ({
+        ...current,
+        [pgNo]: formatPriceInput(value, locale),
+      }));
+    },
+    [locale]
+  );
 
   function hasPurchasePriceForDevice(device: DeviceListRow) {
     const rate = rateForDevice(device);
@@ -467,14 +483,14 @@ export function PurchasePendingListView({
           return draft !== undefined
             ? draft
             : rate
-              ? formatPrice(rate.purchasePrice)
+              ? formatPrice(rate.purchasePrice, locale)
               : "";
         }
         default:
           return "";
       }
     },
-    [purchasePriceDrafts, rateForDevice]
+    [locale, purchasePriceDrafts, rateForDevice]
   );
   const visibleDevices = React.useMemo(() => {
     const activeFilters = Object.entries(columnFilters)
@@ -507,12 +523,19 @@ export function PurchasePendingListView({
           ? right.inbound?.batchNo
           : sort.key === "purchasePrice"
             ? parsePriceInput(purchasePendingColumnText(right, sort.key))
-            : purchasePendingColumnText(right, sort.key)
+            : purchasePendingColumnText(right, sort.key),
+        locale
       );
 
       return sort.direction === "asc" ? result : -result;
     });
-  }, [baseFilteredDevices, columnFilters, purchasePendingColumnText, sort]);
+  }, [
+    baseFilteredDevices,
+    columnFilters,
+    locale,
+    purchasePendingColumnText,
+    sort,
+  ]);
   const pricedVisibleCount = visibleDevices.filter((device) =>
     hasPurchasePriceForDevice(device)
   ).length;
@@ -579,19 +602,19 @@ export function PurchasePendingListView({
     }
 
     if (!priceQueryReady) {
-      setMessage("현재 날짜와 조건의 매입가 기준을 불러온 뒤 내보내 주세요.");
+      setMessage(t("message.ratesRequiredForExport"));
       setMessageTone("warning");
       return;
     }
 
     if (visibleDevices.length === 0) {
-      setMessage("내보낼 기기가 없습니다.");
+      setMessage(t("message.noExportDevices"));
       setMessageTone("warning");
       return;
     }
 
     if (pricedVisibleCount === 0) {
-      setMessage("매입가가 입력된 기기가 없어 내보낼 수 없습니다.");
+      setMessage(t("message.noPricedExportDevices"));
       setMessageTone("warning");
       return;
     }
@@ -617,7 +640,7 @@ export function PurchasePendingListView({
           | { message?: string }
           | null;
 
-        throw new Error(payload?.message || `${label} 파일 생성에 실패했습니다.`);
+        throw new Error(legacyApiMessage(payload, t("message.exportFailed", { label })));
       }
 
       const blob = await response.blob();
@@ -630,7 +653,7 @@ export function PurchasePendingListView({
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(url);
-      setMessage(`${label} 파일을 생성했습니다.`);
+      setMessage(t("message.exported", { label }));
       setMessageTone("success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -642,13 +665,13 @@ export function PurchasePendingListView({
 
   function openPurchaseConfirm() {
     if (!priceQueryReady) {
-      setMessage("현재 날짜와 조건의 매입가 기준을 불러온 뒤 확정해 주세요.");
+      setMessage(t("message.ratesRequiredForConfirm"));
       setMessageTone("warning");
       return;
     }
 
     if (visibleDevices.length === 0) {
-      setMessage("매입 확정할 기기가 없습니다.");
+      setMessage(t("message.noConfirmDevices"));
       setMessageTone("warning");
       return;
     }
@@ -656,7 +679,7 @@ export function PurchasePendingListView({
     const snapshotItems = purchaseConfirmItemsForDevices(visibleDevices);
 
     if (snapshotItems.length === 0) {
-      setMessage("매입가가 입력된 기기가 없어 매입 확정을 진행할 수 없습니다.");
+      setMessage(t("message.noPricedConfirmDevices"));
       setMessageTone("warning");
       return;
     }
@@ -677,7 +700,7 @@ export function PurchasePendingListView({
     }
 
     if (!purchaseConfirmSnapshot || purchaseConfirmSnapshot.items.length === 0) {
-      setMessage("매입 확정 대상이 없습니다. 다시 매입 확정 버튼을 눌러주세요.");
+      setMessage(t("message.confirmTargetsMissing"));
       setMessageTone("warning");
       setIsPurchaseConfirmOpen(false);
       setPurchaseConfirmOtpCode("");
@@ -703,7 +726,7 @@ export function PurchasePendingListView({
         | null;
 
       if (!response.ok || !payload?.ok || !payload.sensitiveAuthenticated) {
-        throw new Error(payload?.message || "2차 인증에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.authFailed")));
       }
 
       const confirmResponse = await fetch("/api/inbound/purchase-confirm", {
@@ -716,7 +739,7 @@ export function PurchasePendingListView({
         | null;
 
       if (!confirmResponse.ok || !confirmPayload?.ok) {
-        throw new Error(confirmPayload?.message || "매입 확정에 실패했습니다.");
+        throw new Error(confirmPayload?.message || t("message.confirmFailed"));
       }
 
       const reconciliation = reconcilePurchaseConfirmResults(
@@ -736,14 +759,21 @@ export function PurchasePendingListView({
       setPurchaseConfirmOtpCode("");
       setPurchaseConfirmSnapshot(null);
       const conflicts = reconciliation.conflicts;
+      const resultMessage =
+        confirmPayload.resultCode === "PURCHASE_CONFIRM_NO_TARGET"
+          ? t("message.noConfirmTarget")
+          : confirmPayload.resultCode === "PURCHASE_CONFIRM_RESULT" &&
+              confirmPayload.messageArguments
+            ? t("message.confirmResult", confirmPayload.messageArguments)
+            : t("message.processed");
       setMessage(
         !reconciliation.complete
-          ? "매입 처리 결과의 대상별 응답을 확인할 수 없어 입력값을 유지했습니다. 목록을 새로 고친 뒤 결과를 확인해 주세요."
+          ? t("message.resultIncomplete")
           : conflicts.length > 0
-            ? `${confirmPayload.message || "매입 확정을 처리했습니다."} ${conflicts
-                .map((item) => `${item.pgNo}: ${item.reason || "대상 변경"}`)
+            ? `${resultMessage} ${conflicts
+                .map((item) => `${item.pgNo}: ${item.reason || t("message.targetChanged")}`)
                 .join(" / ")}`
-            : confirmPayload.message || "매입 확정을 완료했습니다."
+            : resultMessage || t("message.completed")
       );
       setMessageTone(
         !reconciliation.complete || conflicts.length > 0 ? "warning" : "success"
@@ -752,7 +782,7 @@ export function PurchasePendingListView({
       try {
         await deviceList.reload();
       } catch {
-        setPostWriteRefreshWarning(POST_WRITE_REFRESH_WARNING);
+        setPostWriteRefreshWarning(feedbackT(POST_WRITE_REFRESH_WARNING_KEY));
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -779,16 +809,16 @@ export function PurchasePendingListView({
         key: "pgNo",
         label: "PG",
         width: "120px",
-        placeholder: "PG 검색",
+        placeholder: t("placeholders.pg"),
         cellClassName: "flex items-center px-3 font-semibold",
         render: (device) => device.pgNo,
         text: (device) => purchasePendingColumnText(device, "pgNo"),
       },
       {
         key: "batchNo",
-        label: "차수",
+        label: t("columns.batch"),
         width: "70px",
-        placeholder: "차수",
+        placeholder: t("columns.batch"),
         cellClassName: "flex items-center px-3",
         render: (device) => device.inbound?.batchNo ?? "-",
         text: (device) => purchasePendingColumnText(device, "batchNo"),
@@ -796,18 +826,18 @@ export function PurchasePendingListView({
       },
       {
         key: "supplierName",
-        label: "매입처",
+        label: t("columns.supplier"),
         width: "110px",
-        placeholder: "매입처",
+        placeholder: t("columns.supplier"),
         cellClassName: "flex items-center px-3",
         render: (device) => device.inbound?.supplierName || "-",
         text: (device) => purchasePendingColumnText(device, "supplierName"),
       },
       {
         key: "model",
-        label: "기종",
+        label: t("columns.model"),
         width: "minmax(170px,1fr)",
-        placeholder: "기종/IMEI",
+        placeholder: t("placeholders.model"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (device) => (
           <>
@@ -823,18 +853,18 @@ export function PurchasePendingListView({
       },
       {
         key: "storage",
-        label: "용량",
+        label: t("columns.storage"),
         width: "86px",
-        placeholder: "용량",
+        placeholder: t("columns.storage"),
         cellClassName: "flex items-center px-3",
         render: (device) => device.storage || "-",
         text: (device) => purchasePendingColumnText(device, "storage"),
       },
       {
         key: "appearanceGrade",
-        label: "외관등급",
+        label: t("columns.appearanceGrade"),
         width: "105px",
-        placeholder: "외관등급",
+        placeholder: t("columns.appearanceGrade"),
         cellClassName: "flex items-center px-3",
         render: (device) =>
           device.appearanceGrade ? (
@@ -846,18 +876,18 @@ export function PurchasePendingListView({
       },
       {
         key: "saleGrade",
-        label: "판매등급",
+        label: t("columns.saleGrade"),
         width: "100px",
-        placeholder: "판매등급",
+        placeholder: t("columns.saleGrade"),
         cellClassName: "flex items-center px-3",
         render: (device) => <SaleGradeBadge value={device.saleGrade} />,
         text: (device) => purchasePendingColumnText(device, "saleGrade"),
       },
       {
         key: "appearanceDefect",
-        label: "외관하자",
+        label: t("columns.appearanceDefect"),
         width: "160px",
-        placeholder: "외관하자",
+        placeholder: t("columns.appearanceDefect"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (device) => (
           <div className="truncate" title={device.appearanceDefect || undefined}>
@@ -868,9 +898,9 @@ export function PurchasePendingListView({
       },
       {
         key: "functionDefect",
-        label: "기능하자",
+        label: t("columns.functionDefect"),
         width: "160px",
-        placeholder: "기능하자",
+        placeholder: t("columns.functionDefect"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (device) => (
           <div className="truncate" title={device.functionDefect || undefined}>
@@ -881,9 +911,9 @@ export function PurchasePendingListView({
       },
       {
         key: "purchasePrice",
-        label: "매입가",
+        label: t("columns.price"),
         width: "130px",
-        placeholder: "매입가",
+        placeholder: t("columns.price"),
         headerClassName: "justify-end",
         cellClassName: "flex items-center px-3",
         render: (device) => {
@@ -894,7 +924,7 @@ export function PurchasePendingListView({
               className="h-8 text-right"
               inputMode="numeric"
               value={purchasePriceDraftForDevice(device, rate)}
-              placeholder={rate ? formatPrice(rate.purchasePrice) : "0"}
+              placeholder={rate ? formatPrice(rate.purchasePrice, locale) : "0"}
               onClick={(event) => {
                 event.stopPropagation();
               }}
@@ -909,7 +939,14 @@ export function PurchasePendingListView({
           parsePriceInput(purchasePendingColumnText(device, "purchasePrice")),
       },
     ],
-    [purchasePendingColumnText, purchasePriceDraftForDevice, rateForDevice]
+    [
+      locale,
+      purchasePendingColumnText,
+      purchasePriceDraftForDevice,
+      rateForDevice,
+      t,
+      updatePurchasePriceDraft,
+    ]
   );
 
   return (
@@ -917,19 +954,19 @@ export function PurchasePendingListView({
       <SummaryStrip className="grid-cols-4">
         <SummaryCell
           icon={PackageCheck}
-          label="검수 완료"
+          label={t("summary.inspected")}
           value={inspectedDevices.length}
         />
-        <SummaryCell icon={ListChecks} label="표시 건수" value={visibleDevices.length} />
-        <SummaryCell icon={BadgeDollarSign} label="매입가 있음" value={pricedVisibleCount} />
-        <SummaryCell icon={Database} label="매입가 없음" value={missingPriceVisibleCount} />
+        <SummaryCell icon={ListChecks} label={t("summary.visible")} value={visibleDevices.length} />
+        <SummaryCell icon={BadgeDollarSign} label={t("summary.priced")} value={pricedVisibleCount} />
+        <SummaryCell icon={Database} label={t("summary.missingPrice")} value={missingPriceVisibleCount} />
       </SummaryStrip>
 
       <section className="grid gap-3 rounded-md border bg-popover p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid w-[170px] gap-1 text-sm">
             <span className="text-xs font-medium text-muted-foreground">
-              검수 완료일
+              {t("filters.completedDate")}
             </span>
             <Input
               type="date"
@@ -938,16 +975,16 @@ export function PurchasePendingListView({
             />
           </label>
           <label className="grid w-[150px] gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">차수</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("filters.batch")}</span>
             <Input
               value={batchNo}
-              placeholder="예: 12"
+              placeholder={t("filters.batchPlaceholder")}
               onChange={(event) => setBatchNo(event.target.value)}
             />
           </label>
           <label className="grid w-[170px] gap-1 text-sm">
             <span className="text-xs font-medium text-muted-foreground">
-              매입일
+              {t("filters.priceDate")}
             </span>
             <Input
               type="date"
@@ -961,9 +998,9 @@ export function PurchasePendingListView({
             onChange={requestConditionNoteChange}
           />
           <SearchInput
-            label="검색"
+            label={t("filters.query")}
             wrapperClassName="min-w-[280px] flex-1"
-            placeholder="PG, IMEI, 기종, 매입처 검색"
+            placeholder={t("filters.queryPlaceholder")}
             value={query}
             name="quickhack_purchase_pending_search"
             data-form-type="search"
@@ -973,7 +1010,7 @@ export function PurchasePendingListView({
           />
           <Button variant="outline" onClick={resetFilters}>
             <RefreshCcw className="size-4" />
-            초기화
+            {t("actions.reset")}
           </Button>
         </div>
 
@@ -998,9 +1035,11 @@ export function PurchasePendingListView({
 
       <section className="grid shrink-0 gap-3 rounded-md border bg-popover px-4 py-3 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-center">
         <div className="text-sm text-muted-foreground">
-          표시 {visibleDevices.length.toLocaleString("ko-KR")}건 · 매입가 있음{" "}
-          {pricedVisibleCount.toLocaleString("ko-KR")}건 · 매입가 없음{" "}
-          {missingPriceVisibleCount.toLocaleString("ko-KR")}건
+          {t("summary.result", {
+            missing: missingPriceVisibleCount,
+            priced: pricedVisibleCount,
+            visible: visibleDevices.length,
+          })}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button
@@ -1008,30 +1047,30 @@ export function PurchasePendingListView({
             onClick={() =>
               void downloadPurchaseExport(
                 "purchase-statement",
-                "매입 명세표"
+                t("exportLabel.statement")
               )
             }
             disabled={exportingKind !== null}
           >
             <FileDown className="size-4" />
             {exportingKind === "purchase-statement"
-              ? "생성중"
-              : "매입 명세표 내보내기"}
+              ? t("actions.exporting")
+              : t("actions.exportStatement")}
           </Button>
           <Button
             variant="outline"
             onClick={() =>
               void downloadPurchaseExport(
                 "jungabi-registration",
-                "중가비 등록 양식"
+                t("exportLabel.jungabi")
               )
             }
             disabled={exportingKind !== null}
           >
             <FileDown className="size-4" />
             {exportingKind === "jungabi-registration"
-              ? "생성중"
-              : "중가비 등록 양식 내보내기"}
+              ? t("actions.exporting")
+              : t("actions.exportJungabi")}
           </Button>
           <div className="mx-1 hidden h-6 w-px bg-border md:block" />
           <Button
@@ -1040,7 +1079,7 @@ export function PurchasePendingListView({
             onClick={openPurchaseConfirm}
           >
             <ShieldCheck className="size-4" />
-            매입 확정
+            {t("actions.confirm")}
           </Button>
         </div>
       </section>
@@ -1054,30 +1093,23 @@ export function PurchasePendingListView({
               </div>
               <div>
                 <h2 className="text-base font-bold text-red-700">
-                  매입 확정 2차 인증
+                  {t("confirmation.title")}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  현재 조건으로 표시된 기기 중 매입가가 입력된 항목을 확정하기 전에
-                  OTP 코드를 확인합니다. OTP가 설정되지 않은 계정은 먼저 OTP 등록을 완료해야 합니다.
+                  {t("confirmation.description")}
                 </p>
               </div>
             </div>
 
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
-              확정 대상{" "}
-              {(purchaseConfirmSnapshot?.targetCount ?? 0).toLocaleString(
-                "ko-KR"
-              )}
-              건 · 제외{" "}
-              {(purchaseConfirmSnapshot?.excludedCount ?? 0).toLocaleString(
-                "ko-KR"
-              )}
-              건. 확정 대상은 매입됨 상태로 변경되고 판매 가능 재고로
-              전환됩니다.
+              {t("confirmation.summary", {
+                excluded: purchaseConfirmSnapshot?.excludedCount ?? 0,
+                target: purchaseConfirmSnapshot?.targetCount ?? 0,
+              })}
             </div>
 
             <label className="grid gap-1.5 text-sm font-medium">
-              OTP 코드
+              {t("confirmation.otp")}
               <input
                 className="sr-only"
                 tabIndex={-1}
@@ -1117,7 +1149,7 @@ export function PurchasePendingListView({
                 }}
                 disabled={isPurchaseConfirming}
               >
-                취소
+                {t("actions.cancel")}
               </Button>
               <Button
                 variant="outline"
@@ -1130,7 +1162,9 @@ export function PurchasePendingListView({
                 }
               >
                 <ShieldCheck className="size-4" />
-                {isPurchaseConfirming ? "확인중" : "인증 후 확정"}
+                {isPurchaseConfirming
+                  ? t("actions.confirming")
+                  : t("actions.verifyAndConfirm")}
               </Button>
             </div>
           </div>
@@ -1141,7 +1175,7 @@ export function PurchasePendingListView({
         rows={visibleDevices}
         columns={purchasePendingColumns}
         rowKey={(device) => device.pgNo}
-        emptyMessage="매입 대기 대상 기기가 없습니다."
+        emptyMessage={t("empty")}
         onRowClick={(device) => onOpenDevice(device.pgNo)}
         filters={columnFilters}
         sort={sort}
@@ -1153,13 +1187,13 @@ export function PurchasePendingListView({
 
       {deviceList.isLoading ? (
         <div className="text-xs text-muted-foreground">
-          매입 전 목록을 불러오는 중입니다.
+          {t("loading.devices")}
         </div>
       ) : null}
 
       {isLoadingRates ? (
         <div className="text-xs text-muted-foreground">
-          매입가 기준을 불러오는 중입니다.
+          {t("loading.rates")}
         </div>
       ) : null}
     </section>

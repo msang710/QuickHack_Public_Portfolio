@@ -1,91 +1,39 @@
-import {
-  formatStatisticsAmount,
-  formatStatisticsCount,
-  formatStatisticsCurrency,
-  formatStatisticsDate,
-  formatStatisticsMonth,
-  formatStatisticsPercent,
-  formatStatisticsRate,
-  type StatisticsMetricPresentation,
-} from "@/quickhack_client/components/statistics/statistics-metric-presentation";
-import type {
-  SalesAmountMetric,
-  SalesGrossProfitMetric,
-  SalesLeadTimeMetric,
-  SalesRateMetric,
-} from "@/quickhack_shared/statistics/statistics";
+"use client";
+
+import { useTranslations } from "next-intl";
+import { useStatisticsMetricPresentation, type StatisticsMetricPresentation } from "@/quickhack_client/components/statistics/statistics-metric-presentation";
+import type { SalesAmountMetric, SalesGrossProfitMetric, SalesLeadTimeMetric, SalesRateMetric } from "@/quickhack_shared/statistics/statistics";
 
 export type SalesMetricPresentation = StatisticsMetricPresentation;
 
-export function formatSalesAmount(metric: SalesAmountMetric) {
-  return formatStatisticsAmount(metric);
-}
-
-export function formatSalesRate(metric: SalesRateMetric) {
-  return formatStatisticsRate(metric);
-}
-
-export function formatSalesAveragePrice(
-  value: number | null,
-  pricedCount: number,
-  totalCount: number
-): SalesMetricPresentation {
-  return {
-    value: value === null ? "-" : formatStatisticsCurrency(value),
-    detail: `가격 확인 ${formatStatisticsCount(
-      pricedCount
-    )} / ${formatStatisticsCount(totalCount)}건`,
+export function useSalesStatisticsPresentation() {
+  const t = useTranslations("statistics.sales.presentation");
+  const base = useStatisticsMetricPresentation();
+  const formatAveragePrice = (value: number | null, pricedCount: number, totalCount: number): SalesMetricPresentation => ({
+    value: value === null ? "-" : base.formatCurrency(value),
+    detail: t("priceCoverage", { priced: pricedCount, total: totalCount }),
+  });
+  const formatGrossProfit = (metric: SalesGrossProfitMetric): SalesMetricPresentation => {
+    const margin = metric.marginPercent === null ? t("marginUnavailable") : t("margin", { value: base.formatPercent(metric.marginPercent) });
+    return {
+      value: metric.amount === null ? "-" : base.formatCurrency(metric.amount),
+      detail: t("profitDetail", { margin, comparable: metric.comparableCount, total: metric.totalCount, coverage: metric.coveragePercent }),
+    };
   };
-}
-
-export function formatSalesGrossProfit(
-  metric: SalesGrossProfitMetric
-): SalesMetricPresentation {
-  const margin =
-    metric.marginPercent === null
-      ? "이익률 -"
-      : `이익률 ${formatStatisticsPercent(metric.marginPercent)}%`;
-
-  return {
-    value:
-      metric.amount === null
-        ? "-"
-        : formatStatisticsCurrency(metric.amount),
-    detail: `${margin} · 비교 ${formatStatisticsCount(
-      metric.comparableCount
-    )} / ${formatStatisticsCount(
-      metric.totalCount
-    )}건 · ${formatStatisticsPercent(metric.coveragePercent)}%`,
+  const formatLeadTime = (metric: SalesLeadTimeMetric): SalesMetricPresentation => {
+    const anomaly = metric.excludedAnomalyCount > 0 ? t("anomaly", { count: metric.excludedAnomalyCount }) : "";
+    return {
+      value: metric.averageDays === null ? "-" : t("days", { days: metric.averageDays }),
+      detail: t("leadDetail", { sample: metric.sampleCount, total: metric.totalCount, coverage: metric.coveragePercent, anomaly }),
+    };
   };
-}
-
-export function formatSalesLeadTime(
-  metric: SalesLeadTimeMetric
-): SalesMetricPresentation {
-  const anomaly =
-    metric.excludedAnomalyCount > 0
-      ? ` · 이상 ${formatStatisticsCount(
-          metric.excludedAnomalyCount
-        )}건 제외`
-      : "";
-
   return {
-    value:
-      metric.averageDays === null
-        ? "-"
-        : `${formatStatisticsPercent(metric.averageDays)}일`,
-    detail: `표본 ${formatStatisticsCount(
-      metric.sampleCount
-    )} / ${formatStatisticsCount(
-      metric.totalCount
-    )}건 · ${formatStatisticsPercent(metric.coveragePercent)}%${anomaly}`,
+    formatAmount: (metric: SalesAmountMetric) => base.formatAmount(metric),
+    formatAveragePrice,
+    formatDate: base.formatDate,
+    formatGrossProfit,
+    formatLeadTime,
+    formatMonth: base.formatMonth,
+    formatRate: (metric: SalesRateMetric) => base.formatRate(metric),
   };
-}
-
-export function formatSalesStatisticsDate(value: string) {
-  return formatStatisticsDate(value);
-}
-
-export function formatSalesStatisticsMonth(value: string) {
-  return formatStatisticsMonth(value);
 }

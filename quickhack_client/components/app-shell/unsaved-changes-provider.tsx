@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { LoaderCircle, TriangleAlert } from "lucide-react";
+import { useTranslations } from "next-intl";
 import {
   UnsavedChangesRegistry,
   type UnsavedEntryKind,
@@ -62,97 +63,63 @@ type UnsavedChangesContextValue = {
 const UnsavedChangesContext =
   React.createContext<UnsavedChangesContextValue | null>(null);
 
-function intentDestination(intent: UnsavedGuardIntent) {
+type UnsavedChangesTranslator = ReturnType<typeof useTranslations<"common.unsavedChanges">>;
+
+function intentDestination(intent: UnsavedGuardIntent, t: UnsavedChangesTranslator) {
   switch (intent) {
     case "menu-change":
-      return { destination: "다른 메뉴로 이동", action: "이동" };
+      return { destination: t("destination.menuChange.destination"), action: t("destination.menuChange.action") };
     case "refresh":
-      return { destination: "현재 메뉴를 다시 불러오기", action: "새로고침" };
+      return { destination: t("destination.refresh.destination"), action: t("destination.refresh.action") };
     case "logout":
-      return { destination: "로그아웃", action: "로그아웃" };
+      return { destination: t("destination.logout.destination"), action: t("destination.logout.action") };
     case "close-window":
-      return { destination: "QuickHack 창을 닫기", action: "창 닫기" };
+      return { destination: t("destination.closeWindow.destination"), action: t("destination.closeWindow.action") };
     case "dialog-close":
-      return { destination: "현재 창을 닫기", action: "닫기" };
+      return { destination: t("destination.dialogClose.destination"), action: t("destination.dialogClose.action") };
     default:
-      return { destination: "다음 작업을 계속하기", action: "계속" };
+      return { destination: t("destination.internalChange.destination"), action: t("destination.internalChange.action") };
   }
 }
 
 function intentCopy(
   intent: UnsavedGuardIntent,
+  t: UnsavedChangesTranslator,
   entries: readonly UnsavedFormEntry[] = []
 ) {
   const hasOneTimeResult = entries.some(
     (entry) => entry.kind === "one-time-result"
   );
   const hasDraft = entries.some((entry) => entry.kind !== "one-time-result");
-  const { destination, action } = intentDestination(intent);
+  const { destination, action } = intentDestination(intent, t);
 
   if (hasOneTimeResult && !hasDraft) {
     return {
-      title: "한 번만 표시되는 정보가 남아 있습니다",
-      description: `보관하지 않고 ${destination}하면 이 정보를 다시 확인하지 못할 수 있습니다.`,
-      confirmLabel: `보관하지 않고 ${action}`,
+      title: t("oneTimeOnly.title"),
+      description: t("oneTimeOnly.description", { destination }),
+      confirmLabel: t("oneTimeOnly.confirm", { action }),
     };
   }
 
   if (hasOneTimeResult && hasDraft) {
     return {
-      title: "저장하지 않은 변경과 미보관 정보가 있습니다",
-      description: `변경사항을 버리고 일회성 정보를 보관하지 않은 채 ${destination}하시겠습니까?`,
-      confirmLabel: `버리고 ${action}`,
+      title: t("mixed.title"),
+      description: t("mixed.description", { destination }),
+      confirmLabel: t("mixed.confirm", { action }),
     };
   }
 
-  switch (intent) {
-    case "menu-change":
-      return {
-        title: "저장하지 않은 변경사항이 있습니다",
-        description: "변경사항을 버리고 다른 메뉴로 이동하시겠습니까?",
-        confirmLabel: "버리고 이동",
-      };
-    case "refresh":
-      return {
-        title: "저장하지 않은 변경사항이 있습니다",
-        description: "변경사항을 버리고 현재 메뉴를 다시 불러오시겠습니까?",
-        confirmLabel: "버리고 새로고침",
-      };
-    case "logout":
-      return {
-        title: "저장하지 않은 변경사항이 있습니다",
-        description: "변경사항을 버리고 로그아웃하시겠습니까?",
-        confirmLabel: "버리고 로그아웃",
-      };
-    case "close-window":
-      return {
-        title: "저장하지 않은 변경사항이 있습니다",
-        description: "변경사항을 버리고 QuickHack 창을 닫으시겠습니까?",
-        confirmLabel: "버리고 창 닫기",
-      };
-    case "dialog-close":
-      return {
-        title: "저장하지 않은 변경사항이 있습니다",
-        description: "변경사항을 버리고 창을 닫으시겠습니까?",
-        confirmLabel: "버리고 닫기",
-      };
-    default:
-      return {
-        title: "저장하지 않은 변경사항이 있습니다",
-        description: "변경사항을 버리고 계속하시겠습니까?",
-        confirmLabel: "버리고 계속",
-      };
-  }
+  return { title: t("dirty.title"), description: t("dirty.description", { destination }), confirmLabel: t("dirty.confirm", { action }) };
 }
 
 function formSelection(formIds?: readonly string[]): UnsavedFormSelection {
   return formIds ? formIds : "all";
 }
 
-function formLabels(entries: readonly UnsavedFormEntry[]) {
+function formLabels(entries: readonly UnsavedFormEntry[], t: UnsavedChangesTranslator) {
   const labels = entries.slice(0, 4).map((entry) => entry.label);
   const remaining = entries.length - labels.length;
-  return remaining > 0 ? [...labels, `외 ${remaining}개`] : labels;
+  return remaining > 0 ? [...labels, t("remaining", { count: remaining })] : labels;
 }
 
 export function UnsavedChangesProvider({
@@ -161,6 +128,7 @@ export function UnsavedChangesProvider({
   children: React.ReactNode;
 }) {
   const { api: desktopApi } = useDesktopCapability();
+  const t = useTranslations("common.unsavedChanges");
   const [registry] = React.useState(() => new UnsavedChangesRegistry());
   React.useSyncExternalStore(
     registry.subscribe,
@@ -263,7 +231,7 @@ export function UnsavedChangesProvider({
       setDialogState({
         kind: "discard-error",
         entries: result.errors.map(({ entry }) => entry),
-        message: `${failedLabels.join(", ")} 항목을 초기화하지 못했습니다.`,
+        message: t("discardError.message", { labels: failedLabels.join(", ") }),
       });
       return;
     }
@@ -271,7 +239,7 @@ export function UnsavedChangesProvider({
     pendingActionRef.current = null;
     setDialogState(null);
     executeAction(pendingAction);
-  }, [executeAction, isDiscarding, registry]);
+  }, [executeAction, isDiscarding, registry, t]);
 
   React.useEffect(() => {
     if (dirtyEntries.length === 0 && busyEntries.length === 0) {
@@ -305,11 +273,11 @@ export function UnsavedChangesProvider({
     return desktopApi.onCloseRequested(() => {
       runGuardedAction({
         intent: "close-window",
-        targetLabel: "QuickHack 종료",
+        targetLabel: t("closeTarget"),
         action: () => { void desktopApi.confirmClose(); },
       });
     });
-  }, [desktopApi, runGuardedAction]);
+  }, [desktopApi, runGuardedAction, t]);
 
   const value = React.useMemo<UnsavedChangesContextValue>(
     () => ({
@@ -332,6 +300,7 @@ export function UnsavedChangesProvider({
     dialogState?.kind === "dirty" ? dialogState.entries : [];
   const dirtyCopy = intentCopy(
     dialogState?.kind === "dirty" ? dialogState.intent : "internal-change",
+    t,
     dirtyEntriesForDialog
   );
   const hasOneTimeResult = dirtyEntriesForDialog.some(
@@ -340,7 +309,7 @@ export function UnsavedChangesProvider({
   const hasDraft = dirtyEntriesForDialog.some(
     (entry) => entry.kind !== "one-time-result"
   );
-  const displayedLabels = dialogState ? formLabels(dialogState.entries) : [];
+  const displayedLabels = dialogState ? formLabels(dialogState.entries, t) : [];
 
   return (
     <UnsavedChangesContext.Provider value={value}>
@@ -354,18 +323,18 @@ export function UnsavedChangesProvider({
         }}
         title={
           dialogState?.kind === "busy"
-            ? "작업을 처리하고 있습니다"
+            ? t("busy.title")
             : dialogState?.kind === "discard-error"
-              ? "변경사항을 초기화하지 못했습니다"
+              ? t("discardError.title")
               : dirtyCopy.title
         }
         description={
           dialogState?.kind === "busy"
-            ? "저장 작업이 끝난 뒤 다시 시도해 주세요."
+            ? t("busy.description")
             : dialogState?.kind === "discard-error"
-              ? "현재 작업은 실행하지 않았습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요."
+              ? t("discardError.description")
               : dialogState?.targetLabel
-                ? `${dialogState.targetLabel}: ${dirtyCopy.description}`
+                ? t("targetDescription", { target: dialogState.targetLabel, description: dirtyCopy.description })
                 : dirtyCopy.description
         }
         icon={
@@ -376,7 +345,7 @@ export function UnsavedChangesProvider({
           )
         }
         closeDisabled={isDiscarding}
-        closeLabel="계속 편집"
+        closeLabel={t("continueEditing")}
         contentClassName="max-w-lg"
         footerClassName="justify-end gap-2"
         footer={
@@ -388,7 +357,7 @@ export function UnsavedChangesProvider({
                 onClick={closeDialog}
                 disabled={isDiscarding}
               >
-                계속 편집
+                {t("continueEditing")}
               </Button>
               <Button
                 type="button"
@@ -404,7 +373,7 @@ export function UnsavedChangesProvider({
             </>
           ) : (
             <Button type="button" variant="outline" onClick={closeDialog}>
-              확인
+              {t("confirm")}
             </Button>
           )
         }
@@ -417,12 +386,12 @@ export function UnsavedChangesProvider({
           <div className="space-y-2">
             <p className="text-sm font-medium">
               {dialogState?.kind === "busy"
-                ? "처리 중인 항목"
+                ? t("section.busy")
                 : hasOneTimeResult && hasDraft
-                  ? "확인이 필요한 항목"
+                  ? t("section.mixed")
                   : hasOneTimeResult
-                    ? "보관하지 않은 항목"
-                    : "저장하지 않은 항목"}
+                    ? t("section.oneTimeOnly")
+                    : t("section.dirty")}
             </p>
             <ul className="space-y-1 text-sm text-muted-foreground">
               {displayedLabels.map((label, index) => (

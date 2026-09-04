@@ -234,7 +234,7 @@ export async function freezeShipmentPackageGroups(
   if (updated.count !== uniquePackageGroupIds.length) {
     throw publicConflict(
       "SHIPMENT_PACKAGE_GROUP_STATE_CONFLICT",
-      "합포장 그룹 상태가 변경되어 출고 차수를 확정할 수 없습니다. 목록을 새로고침해 주세요.",
+      "SHIPMENT_PACKAGE_GROUP_STATE_CONFLICT",
       {
         packageGroupIds: uniquePackageGroupIds,
         expectedStatus: SHIPMENT_PACKAGE_GROUP_STATUS.draft,
@@ -271,7 +271,7 @@ export async function cancelShipmentPackageGroups(
   if (updated.count !== uniquePackageGroupIds.length) {
     throw publicConflict(
       "SHIPMENT_PACKAGE_GROUP_STATE_CONFLICT",
-      "합포장 그룹 상태가 변경되어 출고 차수를 폐기할 수 없습니다. 목록을 새로고침해 주세요.",
+      "SHIPMENT_PACKAGE_GROUP_STATE_CONFLICT",
       {
         packageGroupIds: uniquePackageGroupIds,
         expectedStatus: SHIPMENT_PACKAGE_GROUP_STATUS.draft,

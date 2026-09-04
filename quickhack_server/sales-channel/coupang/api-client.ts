@@ -940,7 +940,7 @@ function inventoryPayloadRecord(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new CoupangInventoryPayloadError(
       "COUPANG_INVENTORY_PAYLOAD_INVALID",
-      "쿠팡 재고 조회 응답이 객체가 아닙니다."
+      "COUPANG_INVENTORY_PAYLOAD_INVALID"
     );
   }
 
@@ -957,7 +957,7 @@ function parseCoupangVendorItemInventoryPayload(
   if (code !== "SUCCESS") {
     throw new CoupangInventoryPayloadError(
       "COUPANG_INVENTORY_RESPONSE_NOT_SUCCESS",
-      `쿠팡 재고 조회 성공 코드를 확인하지 못했습니다. (${code || "NO_CODE"})`
+      "COUPANG_INVENTORY_RESPONSE_NOT_SUCCESS"
     );
   }
 
@@ -971,7 +971,7 @@ function parseCoupangVendorItemInventoryPayload(
   ) {
     throw new CoupangInventoryPayloadError(
       "COUPANG_INVENTORY_AMOUNT_INVALID",
-      "쿠팡 재고 조회 응답의 amountInStock은 0 이상의 안전한 정수여야 합니다."
+      "COUPANG_INVENTORY_AMOUNT_INVALID"
     );
   }
 

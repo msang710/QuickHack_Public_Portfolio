@@ -17,6 +17,7 @@ import type {
   InventoryStatisticsTurnoverMetric,
   InventoryStatisticsData,
 } from "@/quickhack_shared/statistics/statistics";
+import { STATISTICS_UNAVAILABLE_REASON_CODES } from "@/quickhack_shared/statistics/statistics";
 import {
   nullableNumberSchema,
   statisticsCalculationMetadataSchema,
@@ -54,13 +55,11 @@ const statusGroupSchema = oneOfSchema(
 const statusQuantitySchema =
   objectSchema<InventoryStatisticsStatusQuantity>({
     status: inventoryStatusSchema,
-    label: stringSchema,
     quantity: nullableNumberSchema,
   });
 
 const currentGroupSchema = objectSchema<InventoryStatisticsCurrentGroup>({
   key: statusGroupSchema,
-  label: stringSchema,
   quantity: nullableNumberSchema,
   statuses: arraySchema(statusQuantitySchema),
 });
@@ -81,7 +80,6 @@ const ageBucketSchema = objectSchema<InventoryStatisticsAgeBucket>({
     "DAYS_60_89",
     "DAYS_90_PLUS"
   ),
-  label: stringSchema,
   fromDays: finiteNumberSchema,
   toDays: nullableNumberSchema,
   quantity: nullableNumberSchema,
@@ -135,6 +133,8 @@ const turnoverMetricSchema =
     soldQuantity: finiteNumberSchema,
     averageWarehouseQuantity: nullableNumberSchema,
     unavailableReason: optionalSchema(stringSchema),
+    unavailableReasonCode: optionalSchema(oneOfSchema(...STATISTICS_UNAVAILABLE_REASON_CODES)),
+    unavailableReasonDays: optionalSchema(finiteNumberSchema),
   });
 
 const periodSourceCoverageSchema =

@@ -102,7 +102,6 @@ export async function POST(request: NextRequest) {
       return apiFailureResponse({
         status: error.statusCode,
         code: "SERVER_SHUTDOWN_CONFLICT",
-        message: error.message,
         cause: error,
       });
     }

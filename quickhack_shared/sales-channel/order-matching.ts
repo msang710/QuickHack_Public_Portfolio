@@ -87,32 +87,6 @@ export type InventoryMatchStatusCode =
 export type InventoryMatchFailureReasonCode =
   (typeof INVENTORY_MATCH_FAILURE_REASONS)[keyof typeof INVENTORY_MATCH_FAILURE_REASONS];
 
-export const INVENTORY_MATCH_STATUS_LABELS: Record<
-  InventoryMatchStatusCode,
-  string
-> = {
-  UNMATCHED: "매칭 대기",
-  MATCHED: "매칭 완료",
-  PARTIAL: "부분 매칭",
-  FAILED: "매칭 실패",
-  SKIPPED: "제외",
-  EXPIRED: "만료",
-};
-
-export const INVENTORY_MATCH_FAILURE_REASON_LABELS: Record<
-  InventoryMatchFailureReasonCode,
-  string
-> = {
-  NO_CHANNEL_SALES_OFFER: "판매 오퍼 매핑 없음",
-  INSUFFICIENT_INVENTORY: "출고 가능 재고 없음",
-  ORDER_CANCELED: "주문 취소",
-  NO_AVAILABLE_QUANTITY: "매칭 대상 수량 없음",
-  AUTO_MATCH_DISABLED: "자동 매칭 꺼짐",
-  ACTIVE_ALLOCATION_QUANTITY_EXCEEDED: "주문 가능 수량보다 활성 배정이 많음",
-  NO_MODEL_CANDIDATE: "모델 재고 없음",
-  SYNC_WINDOW_EXPIRED: "24시간 초과",
-};
-
 export const CHANNEL_ORDER_MAPPING_FAILURE_REASONS = {
   noChannelProductMapping: "NO_CHANNEL_PRODUCT_MAPPING",
   salesOfferNotMapped: "SALES_OFFER_NOT_MAPPED",
@@ -122,53 +96,3 @@ export const CHANNEL_ORDER_MAPPING_FAILURE_REASONS = {
 
 export type ChannelOrderMappingFailureReasonCode =
   (typeof CHANNEL_ORDER_MAPPING_FAILURE_REASONS)[keyof typeof CHANNEL_ORDER_MAPPING_FAILURE_REASONS];
-
-export const CHANNEL_ORDER_MAPPING_FAILURE_REASON_LABELS: Record<
-  ChannelOrderMappingFailureReasonCode,
-  string
-> = {
-  NO_CHANNEL_PRODUCT_MAPPING: "SKU 매핑 없음",
-  SALES_OFFER_NOT_MAPPED: "판매 오퍼 매핑 없음",
-  SALES_OFFER_NOT_FOUND: "판매 오퍼 없음",
-  SALES_OFFER_INACTIVE: "판매 오퍼 비활성",
-};
-
-export function inventoryMatchStatusLabel(value: unknown) {
-  const status = String(value ?? "").trim();
-
-  if (!status) {
-    return "-";
-  }
-
-  return (
-    INVENTORY_MATCH_STATUS_LABELS[status as InventoryMatchStatusCode] ?? status
-  );
-}
-
-export function inventoryMatchFailureReasonLabel(value: unknown) {
-  const reason = String(value ?? "").trim();
-
-  if (!reason) {
-    return "";
-  }
-
-  return (
-    INVENTORY_MATCH_FAILURE_REASON_LABELS[
-      reason as InventoryMatchFailureReasonCode
-    ] ?? reason
-  );
-}
-
-export function channelOrderMappingFailureReasonLabel(value: unknown) {
-  const reason = String(value ?? "").trim();
-
-  if (!reason) {
-    return "";
-  }
-
-  return (
-    CHANNEL_ORDER_MAPPING_FAILURE_REASON_LABELS[
-      reason as ChannelOrderMappingFailureReasonCode
-    ] ?? reason
-  );
-}

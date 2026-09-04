@@ -143,7 +143,7 @@ export function createWindowsAdbExecutableResolver(
           platform: "win32",
           dependency: "adb",
           recovery: "Repair the QuickHack client runtime and its bundled Android platform tools.",
-          message: "The configured QuickHack ADB executable is invalid.",
+          message: "DEPENDENCY_INVALID",
         });
       }
       throw dependencyMissing({
@@ -152,7 +152,7 @@ export function createWindowsAdbExecutableResolver(
         platform: "win32",
         dependency: "adb",
         recovery: "Repair the QuickHack client runtime and its bundled Android platform tools.",
-        message: "QuickHack could not find its bundled ADB executable.",
+        message: "DEPENDENCY_MISSING",
       });
     },
   });

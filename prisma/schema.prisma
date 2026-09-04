@@ -283,6 +283,7 @@ model users {
   desktop_notification_recipients         desktop_notification_recipients[]
   user_shortcut_bindings                  user_shortcut_bindings[]
   employee_activity_logs                  employee_activity_logs[]
+  inspection_pg_reservations              inspection_pg_reservations[]              @relation("InspectionPgReservationIssuedBy")
   manual_order_match_receipts             manual_order_match_selection_receipts[]     @relation("ManualOrderMatchReceiptIssuedTo")
   manual_order_match_intent_leases         manual_order_match_intent_leases[]           @relation("ManualOrderMatchIntentLeaseOwner")
   manual_recoveries_started               order_matching_work_queue[]                 @relation("ManualOrderMatchRecoveryStartedBy")
@@ -418,6 +419,7 @@ model employee_profiles {
 /// QuickHack model: 직원이 직접 선택한 단축키와 알림 사용 여부를 계정별로 보관합니다.
 model user_preferences {
   user_id                                  Int      @id
+  locale                                   String   @default("ko")
   keyboard_shortcuts_enabled               Int      @default(1)
   windows_notifications_enabled            Int      @default(0)
   inspection_complete_notification_enabled Int      @default(1)
@@ -439,6 +441,8 @@ model desktop_notification_events {
   menu_id              String
   title                String
   body                 String
+  message_key          String?
+  message_arguments    Json?
   occurred_at          DateTime                          @default(now()) @db.Timestamptz(3)
   resolved_at          DateTime?                         @db.Timestamptz(3)
   created_at           DateTime                          @default(now()) @db.Timestamptz(3)
@@ -497,6 +501,28 @@ model employee_activity_logs {
   @@index([target_type, target_id], map: "idx_employee_activity_logs_target")
   @@index([result], map: "idx_employee_activity_logs_result")
   @@index([created_at], map: "idx_employee_activity_logs_created_at")
+}
+
+/// QuickHack model: 검수 업로드 대기 행에 선발급한 PG의 예약·소비·포기 상태를 보관합니다.
+model inspection_pg_reservations {
+  inspection_pg_reservation_id String   @id @db.Uuid
+  client_record_id             String   @unique(map: "uq_inspection_pg_reservations_client_record")
+  pg_no                        String   @unique(map: "uq_inspection_pg_reservations_pg_no")
+  inspection_kind              String
+  request_digest               String
+  issued_by_user_id            Int?
+  status                       String   @default("RESERVED")
+  expires_at                   DateTime @db.Timestamptz(3)
+  consumed_at                  DateTime? @db.Timestamptz(3)
+  abandoned_at                 DateTime? @db.Timestamptz(3)
+  result_payload               Json?    @db.JsonB
+  created_at                   DateTime @default(now()) @db.Timestamptz(3)
+  updated_at                   DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  issued_by                    users?   @relation("InspectionPgReservationIssuedBy", fields: [issued_by_user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([status, expires_at], map: "idx_inspection_pg_reservations_status_expiry")
+  @@index([issued_by_user_id], map: "idx_inspection_pg_reservations_issued_by")
+  @@index([created_at], map: "idx_inspection_pg_reservations_created_at")
 }
 
 /// QuickHack model: 택배사 자격증명과 분리된 송하인·박스·live opt-in 업무 설정을 택배사별 한 행으로 보관합니다.

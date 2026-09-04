@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRuntimeAuthUser } from "@/quickhack_client/auth/request-auth";
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isServerRuntime } from "@/quickhack_shared/core/runtime";
-import { getServerProxyErrorMessage } from "@/quickhack_shared/core/server-proxy";
 
 export async function authorizeLocalPrinter(request: NextRequest) {
   if (isServerRuntime()) {
@@ -11,8 +10,7 @@ export async function authorizeLocalPrinter(request: NextRequest) {
       response: NextResponse.json(
         {
           ok: false,
-          message:
-            "The printer API is only available in QuickHack client or single runtime.",
+          code: "CLIENT_RUNTIME_REQUIRED",
         },
         { status: 403 }
       ),
@@ -21,11 +19,11 @@ export async function authorizeLocalPrinter(request: NextRequest) {
   let user;
   try {
     user = await getRuntimeAuthUser(request);
-  } catch (error) {
+  } catch {
     return {
       user: null,
       response: NextResponse.json(
-        { ok: false, message: getServerProxyErrorMessage(error) },
+        { ok: false, code: "SERVER_PROXY_FAILED" },
         { status: 503 }
       ),
     };
@@ -34,7 +32,7 @@ export async function authorizeLocalPrinter(request: NextRequest) {
     return {
       user: null,
       response: NextResponse.json(
-        { ok: false, message: "Login is required." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -43,7 +41,7 @@ export async function authorizeLocalPrinter(request: NextRequest) {
     return {
       user: null,
       response: NextResponse.json(
-        { ok: false, message: "You do not have permission to use printers." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -65,9 +63,7 @@ export function localPrinterErrorResponse(error: unknown) {
       ok: false,
       code,
       uncertain,
-      message: error instanceof Error ? error.message : String(error),
     },
     { status: uncertain ? 409 : 400 }
   );
 }
-

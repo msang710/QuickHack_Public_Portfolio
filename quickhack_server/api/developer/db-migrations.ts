@@ -103,7 +103,7 @@ async function migrationTableState() {
       exists: false,
       appliedCount: 0,
       rows: [],
-      message: "마이그레이션 기록을 확인하지 못했습니다.",
+      code: "MIGRATION_HISTORY_UNAVAILABLE",
     };
   }
 }
@@ -133,7 +133,7 @@ async function integrityCheck() {
       ok: false,
       connection: null,
       invalidConstraints: [],
-      message: "PostgreSQL 연결 및 제약 조건 상태를 확인하지 못했습니다.",
+      code: "POSTGRESQL_STATUS_UNAVAILABLE",
     };
   }
 }

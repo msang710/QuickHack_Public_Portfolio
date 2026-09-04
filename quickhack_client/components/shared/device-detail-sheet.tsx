@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { FeedbackBanner } from "@/quickhack_client/components/ui/feedback-banner";
@@ -24,55 +25,27 @@ import {
   type StatusTone,
   formatModelSeqLabel,
 } from "@/quickhack_shared/device/types";
-import { inboundStatusLabel } from "@/quickhack_shared/inbound/inbound-status";
-import { inventoryStatusLabel } from "@/quickhack_shared/inventory/inventory-status";
 import { INSPECTION_TYPE } from "@/quickhack_shared/inspection/inspection-types";
 import type {
   DeviceHistorySection,
 } from "@/quickhack_shared/device/device-history";
 import { requestDeviceHistoryPage } from "@/quickhack_client/components/shared/device-list-query-client";
 
-export const statusMap: Record<string, { label: string; tone: StatusTone }> = {
-  RECEIVED: { label: inboundStatusLabel("RECEIVED"), tone: "neutral" },
-  INSPECTING: { label: inboundStatusLabel("INSPECTING"), tone: "neutral" },
-  INSPECTED: { label: inboundStatusLabel("INSPECTED"), tone: "neutral" },
-  PURCHASED: { label: inboundStatusLabel("PURCHASED"), tone: "neutral" },
-  SUPPLIER_RETURN: {
-    label: inboundStatusLabel("SUPPLIER_RETURN"),
-    tone: "neutral",
-  },
-  SELLABLE: { label: inventoryStatusLabel("SELLABLE"), tone: "success" },
-  RESERVED: { label: inventoryStatusLabel("RESERVED"), tone: "purple" },
-  PACKING: { label: inventoryStatusLabel("PACKING"), tone: "warning" },
-  PACKED: { label: inventoryStatusLabel("PACKED"), tone: "sky" },
-  DEPARTURE: { label: inventoryStatusLabel("DEPARTURE"), tone: "danger" },
-  DELIVERING: { label: inventoryStatusLabel("DELIVERING"), tone: "neutral" },
-  FINAL_DELIVERY: {
-    label: inventoryStatusLabel("FINAL_DELIVERY"),
-    tone: "neutral",
-  },
-  NONE_TRACKING: {
-    label: inventoryStatusLabel("NONE_TRACKING"),
-    tone: "warning",
-  },
-  HOLD: { label: inventoryStatusLabel("HOLD"), tone: "neutral" },
-  DEFECTIVE: { label: inventoryStatusLabel("DEFECTIVE"), tone: "danger" },
-  RETURN_REQUESTED: {
-    label: inventoryStatusLabel("RETURN_REQUESTED"),
-    tone: "orange",
-  },
-  EXCHANGE_REQUESTED: {
-    label: inventoryStatusLabel("EXCHANGE_REQUESTED"),
-    tone: "sky",
-  },
-  RETURN_CHECK: { label: inventoryStatusLabel("RETURN_CHECK"), tone: "orange" },
-  ORDER_CONFIRM: { label: "주문확인", tone: "purple" },
-  ORDER_CONFIRMED: { label: "주문확인", tone: "purple" },
-  주문확인: { label: "주문확인", tone: "purple" },
-  RETURN_REQUEST: { label: "반품요청", tone: "orange" },
-  반품요청: { label: "반품요청", tone: "orange" },
-  EXCHANGE_REQUEST: { label: "교환요청", tone: "sky" },
-  교환요청: { label: "교환요청", tone: "sky" },
+export type DeviceStatusMessageKey = `status.${
+  | "received" | "inspecting" | "inspected" | "purchased" | "supplierReturn"
+  | "sellable" | "reserved" | "packing" | "packed" | "departure" | "delivering"
+  | "finalDelivery" | "noneTracking" | "hold" | "defective" | "returnRequested"
+  | "exchangeRequested" | "returnCheck" | "orderConfirm" | "returnRequest" | "exchangeRequest"}`;
+
+export type InspectionMessageKey =
+  | `inspectionType.${"appearance" | "function" | "returnCheck"}`
+  | `inspectionSource.${"inbound" | "coupangReturn" | "manual"}`
+  | `inspectionResult.${"passed" | "failed" | "hold" | "returnToSupplier" | "disposal"}`;
+
+export const statusMap: Record<string, { labelKey: DeviceStatusMessageKey; tone: StatusTone }> = {
+  RECEIVED: { labelKey: "status.received", tone: "neutral" }, INSPECTING: { labelKey: "status.inspecting", tone: "neutral" }, INSPECTED: { labelKey: "status.inspected", tone: "neutral" }, PURCHASED: { labelKey: "status.purchased", tone: "neutral" }, SUPPLIER_RETURN: { labelKey: "status.supplierReturn", tone: "neutral" },
+  SELLABLE: { labelKey: "status.sellable", tone: "success" }, RESERVED: { labelKey: "status.reserved", tone: "purple" }, PACKING: { labelKey: "status.packing", tone: "warning" }, PACKED: { labelKey: "status.packed", tone: "sky" }, DEPARTURE: { labelKey: "status.departure", tone: "danger" }, DELIVERING: { labelKey: "status.delivering", tone: "neutral" }, FINAL_DELIVERY: { labelKey: "status.finalDelivery", tone: "neutral" }, NONE_TRACKING: { labelKey: "status.noneTracking", tone: "warning" }, HOLD: { labelKey: "status.hold", tone: "neutral" }, DEFECTIVE: { labelKey: "status.defective", tone: "danger" }, RETURN_REQUESTED: { labelKey: "status.returnRequested", tone: "orange" }, EXCHANGE_REQUESTED: { labelKey: "status.exchangeRequested", tone: "sky" }, RETURN_CHECK: { labelKey: "status.returnCheck", tone: "orange" },
+  ORDER_CONFIRM: { labelKey: "status.orderConfirm", tone: "purple" }, ORDER_CONFIRMED: { labelKey: "status.orderConfirm", tone: "purple" }, 주문확인: { labelKey: "status.orderConfirm", tone: "purple" }, RETURN_REQUEST: { labelKey: "status.returnRequest", tone: "orange" }, 반품요청: { labelKey: "status.returnRequest", tone: "orange" }, EXCHANGE_REQUEST: { labelKey: "status.exchangeRequest", tone: "sky" }, 교환요청: { labelKey: "status.exchangeRequest", tone: "sky" },
 };
 
 export const APPEARANCE_INSPECTION_FIELD_KEYS = new Set([
@@ -119,9 +92,70 @@ export const FUNCTION_INSPECTION_EVIDENCE_KEYS = new Set([
   "function_checked_at",
 ]);
 
-export function statusBadge(status: string) {
-  const config = statusMap[status] ?? { label: status || "-", tone: "neutral" };
-  return <Badge variant={config.tone}>{config.label}</Badge>;
+export function statusLabel(status: string, translate: (key: DeviceStatusMessageKey) => string) {
+  const config = statusMap[status];
+  return config ? translate(config.labelKey) : status || "-";
+}
+
+export function inspectionTypeLabel(
+  value: string,
+  translate: (key: InspectionMessageKey) => string
+) {
+  if (value === "APPEARANCE") return translate("inspectionType.appearance");
+  if (value === "FUNCTION") return translate("inspectionType.function");
+  if (value === "RETURN_CHECK") return translate("inspectionType.returnCheck");
+  return value || "-";
+}
+
+export function inspectionSourceLabel(
+  value: string,
+  translate: (key: InspectionMessageKey) => string
+) {
+  if (value === "INBOUND") return translate("inspectionSource.inbound");
+  if (value === "COUPANG_RETURN") return translate("inspectionSource.coupangReturn");
+  if (value === "MANUAL") return translate("inspectionSource.manual");
+  return value || "-";
+}
+
+export function inspectionResultLabel(
+  value: string,
+  translate: (key: InspectionMessageKey) => string
+) {
+  if (value === "PASSED") return translate("inspectionResult.passed");
+  if (value === "FAILED") return translate("inspectionResult.failed");
+  if (value === "HOLD") return translate("inspectionResult.hold");
+  if (value === "RETURN_TO_SUPPLIER") return translate("inspectionResult.returnToSupplier");
+  if (value === "DISPOSAL") return translate("inspectionResult.disposal");
+  return value || "-";
+}
+
+export function detailFieldLabel(
+  key: string,
+  translate: (key: never) => string
+) {
+  return translate(`fields.${key.replaceAll(".", "_")}` as never);
+}
+
+export function detailRecordTitle(
+  title: string,
+  translate: (key: never, values?: never) => string
+) {
+  const [code, indexText] = title.split(":", 2);
+  const index = Number.parseInt(indexText ?? "", 10);
+  if (code === "DEVICE") return translate("recordTitle.device" as never);
+  if (code === "INVENTORY") return translate("recordTitle.inventory" as never);
+  if (code === "INBOUND") return translate("recordTitle.inbound" as never, { index } as never);
+  if (code === "INSPECTION") return translate("recordTitle.inspection" as never, { index } as never);
+  if (code === "ORDER_ITEM") return translate("recordTitle.orderItem" as never, { index } as never);
+  if (code === "SHIPMENT_WORK") return translate("recordTitle.shipmentWork" as never, { index } as never);
+  if (code === "CHANNEL_ORDER_MATCH") return translate("recordTitle.channelOrderMatch" as never, { index } as never);
+  if (code === "RETURN_DECISION") return translate("recordTitle.returnDecision" as never, { index } as never);
+  return title;
+}
+
+export function statusBadge(status: string, translate: (key: DeviceStatusMessageKey) => string) {
+  const config = statusMap[status];
+  return <Badge variant={config?.tone ?? "neutral"}>{statusLabel(status, translate)}</Badge>;
 }
 
 export function formatDate(value: string | null) {
@@ -155,6 +189,33 @@ function DetailRecordList({
   empty: string;
   records: DetailRecord[];
 }) {
+  const t = useTranslations("common.deviceDetail");
+  const fieldValue = (field: DetailRecord["fields"][number]) => {
+    const value = String(field.value ?? "");
+    if (field.key === "inbound_status" || field.key === "inventory_status") return statusLabel(value, t);
+    if (field.key === "inspection_type") return inspectionTypeLabel(value, t);
+    if (field.key === "inspection_result") return inspectionResultLabel(value, t);
+    if (field.key === "source_type") return inspectionSourceLabel(value, t);
+    return field.displayValue ?? field.value;
+  };
+  const recordSubtitle = (record: DetailRecord) => {
+    if (record.kind === "inbound") {
+      const value = record.fields.find((field) => field.key === "inbound_status")?.value;
+      return statusLabel(String(value ?? ""), t);
+    }
+    if (record.kind === "inventory") {
+      const value = record.fields.find((field) => field.key === "inventory_status")?.value;
+      return statusLabel(String(value ?? ""), t);
+    }
+    if (record.kind === "inspection") {
+      const type = String(record.fields.find((field) => field.key === "inspection_type")?.value ?? "");
+      const result = String(record.fields.find((field) => field.key === "inspection_result")?.value ?? "");
+      return [inspectionTypeLabel(type, t), inspectionResultLabel(result, t)]
+        .filter((value) => value && value !== "-")
+        .join(" · ");
+    }
+    return record.subtitle;
+  };
   if (records.length === 0) {
     return (
       <div className="flex h-32 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
@@ -169,10 +230,12 @@ function DetailRecordList({
         <div className="rounded-md border px-4" key={record.id}>
           <div className="flex items-start justify-between gap-3 border-b py-2">
             <div className="min-w-0">
-              <div className="text-sm font-semibold">{record.title}</div>
-              {record.subtitle ? (
+              <div className="text-sm font-semibold">
+                {detailRecordTitle(record.title, t)}
+              </div>
+              {recordSubtitle(record) ? (
                 <div className="mt-0.5 text-xs text-muted-foreground">
-                  {record.subtitle}
+                  {recordSubtitle(record)}
                 </div>
               ) : null}
             </div>
@@ -183,9 +246,9 @@ function DetailRecordList({
           <div>
             {record.fields.map((field) => (
               <DetailRow
-                key={`${record.id}-${field.label}`}
-                label={field.label}
-                value={field.displayValue ?? field.value}
+                key={`${record.id}-${field.key}`}
+                label={detailFieldLabel(field.key, t)}
+                value={fieldValue(field)}
               />
             ))}
           </div>
@@ -226,8 +289,9 @@ function HistoryDetailRecordList({
   state: DeviceHistoryState;
   onLoadMore: () => void;
 }) {
+  const t = useTranslations("common.deviceDetail");
   if (!state.loaded && state.loading) {
-    return <FeedbackBanner tone="info">이력을 불러오는 중입니다.</FeedbackBanner>;
+    return <FeedbackBanner tone="info">{t("historyLoading")}</FeedbackBanner>;
   }
 
   return (
@@ -237,7 +301,7 @@ function HistoryDetailRecordList({
           <FeedbackBanner tone="danger">{state.error}</FeedbackBanner>
           {!state.loaded ? (
             <Button variant="outline" disabled={state.loading} onClick={onLoadMore}>
-              다시 시도
+              {t("retry")}
             </Button>
           ) : null}
         </div>
@@ -246,11 +310,11 @@ function HistoryDetailRecordList({
       {state.loaded ? (
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
           <span>
-            전체 {state.totalCount.toLocaleString()}건 중 {state.items.length.toLocaleString()}건
+            {t("historyCount", { total: state.totalCount, loaded: state.items.length })}
           </span>
           {state.hasMore ? (
             <Button variant="outline" disabled={state.loading} onClick={onLoadMore}>
-              {state.loading ? "불러오는 중" : "이전 기록 더 보기"}
+              {state.loading ? t("loadingMore") : t("loadMore")}
             </Button>
           ) : null}
         </div>
@@ -330,6 +394,8 @@ export function DeviceSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useTranslations("common.deviceDetail");
+  const queryT = useTranslations("common.deviceQuery");
   const pgNo = device?.pgNo ?? "";
   const [history, setHistory] = React.useState<
     Partial<Record<DeviceHistorySection, DeviceHistoryState>>
@@ -373,6 +439,7 @@ export function DeviceSheet({
         const page = await requestDeviceHistoryPage(
           pgNo,
           section,
+          queryT("historyFailed"),
           loadMore ? current.nextCursor : null,
           controller.signal
         );
@@ -407,7 +474,7 @@ export function DeviceSheet({
         }));
       }
     },
-    [history, historyOwnerPgNo, pgNo]
+    [history, historyOwnerPgNo, pgNo, queryT]
   );
 
   React.useEffect(() => {
@@ -448,15 +515,15 @@ export function DeviceSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>{requestedPgNo || "기기 상세"}</SheetTitle>
+            <SheetTitle>{requestedPgNo || t("title")}</SheetTitle>
             <SheetDescription>
-              선택한 기기의 상세 이력을 별도로 불러옵니다.
+              {t("description")}
             </SheetDescription>
           </SheetHeader>
           <div className="grid gap-3 px-5 py-4">
             {loading ? (
               <FeedbackBanner tone="info">
-                기기 상세 정보를 불러오는 중입니다.
+                {t("loading")}
               </FeedbackBanner>
             ) : null}
             {error ? (
@@ -464,7 +531,7 @@ export function DeviceSheet({
                 <FeedbackBanner tone="danger">{error}</FeedbackBanner>
                 {onRetry ? (
                   <Button variant="outline" onClick={onRetry}>
-                    다시 시도
+                    {t("retry")}
                   </Button>
                 ) : null}
               </>
@@ -492,7 +559,7 @@ export function DeviceSheet({
         <SheetHeader>
           <div className="flex items-center gap-2 pr-8">
             <SheetTitle>{device.pgNo}</SheetTitle>
-            {statusBadge(device.displayStatus)}
+            {statusBadge(device.displayStatus, t)}
           </div>
           <SheetDescription>
             {device.model}
@@ -506,49 +573,49 @@ export function DeviceSheet({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <Tabs defaultValue="basic" onValueChange={handleTabChange}>
             <TabsList className="grid w-full grid-cols-6">
-              <TabsTrigger value="basic">기본</TabsTrigger>
-              <TabsTrigger value="inbound">입고</TabsTrigger>
-              <TabsTrigger value="inspection">검수</TabsTrigger>
-              <TabsTrigger value="order">주문</TabsTrigger>
-              <TabsTrigger value="shipment">출고</TabsTrigger>
-              <TabsTrigger value="return">반품</TabsTrigger>
+              <TabsTrigger value="basic">{t("tabs.basic")}</TabsTrigger>
+              <TabsTrigger value="inbound">{t("tabs.inbound")}</TabsTrigger>
+              <TabsTrigger value="inspection">{t("tabs.inspection")}</TabsTrigger>
+              <TabsTrigger value="order">{t("tabs.order")}</TabsTrigger>
+              <TabsTrigger value="shipment">{t("tabs.shipment")}</TabsTrigger>
+              <TabsTrigger value="return">{t("tabs.returns")}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="basic">
-              <ReadOnlyDetailSection title="기기 기본 정보">
+              <ReadOnlyDetailSection title={t("basic.title")}>
                 <DescriptionList className="rounded-md border bg-background px-4">
                   <DetailRow label="PG" value={device.pgNo} />
-                  <DetailRow label="모델" value={device.model} />
-                  <DetailRow label="모델 코드" value={device.modelCode} />
+                  <DetailRow label={t("basic.model")} value={device.model} />
+                  <DetailRow label={t("basic.modelCode")} value={device.modelCode} />
                   <DetailRow
-                    label="고유번호"
+                    label={t("basic.sequence")}
                     value={formatModelSeqLabel(device.model, device.modelSeq)}
                   />
                   <DetailRow label="IMEI" value={device.imei} />
-                  <DetailRow label="용량" value={device.storage} />
-                  <DetailRow label="공식 색상명" value={device.color} />
+                  <DetailRow label={t("basic.storage")} value={device.storage} />
+                  <DetailRow label={t("basic.color")} value={device.color} />
                   <DetailRow
-                    label="판매등급"
+                    label={t("basic.grade")}
                     value={<SaleGradeBadge value={device.saleGrade} />}
                   />
-                  <DetailRow label="상태" value={statusBadge(device.displayStatus)} />
-                  <DetailRow label="수정일시" value={formatDate(device.updatedAt)} />
+                  <DetailRow label={t("basic.status")} value={statusBadge(device.displayStatus, t)} />
+                  <DetailRow label={t("basic.updatedAt")} value={formatDate(device.updatedAt)} />
                 </DescriptionList>
               </ReadOnlyDetailSection>
             </TabsContent>
 
             <TabsContent value="inbound">
               <div className="grid gap-4">
-                <ReadOnlyDetailSection title="입고 기록">
+                <ReadOnlyDetailSection title={t("inbound.records")}>
                   <HistoryDetailRecordList
-                    empty="입고 정보가 없습니다."
+                    empty={t("inbound.empty")}
                     state={stateFor("inbounds")}
                     onLoadMore={() => void loadHistory("inbounds", true)}
                   />
                 </ReadOnlyDetailSection>
-                <ReadOnlyDetailSection title="재고 상태">
+                <ReadOnlyDetailSection title={t("inbound.inventory")}>
                   <DetailRecordList
-                    empty="재고 정보가 없습니다."
+                    empty={t("inbound.inventoryEmpty")}
                     records={device.detailRecords.inventory}
                   />
                 </ReadOnlyDetailSection>
@@ -557,9 +624,9 @@ export function DeviceSheet({
 
             <TabsContent value="inspection">
               <div className="grid gap-4">
-                <ReadOnlyDetailSection title="기능검수 기록">
+                <ReadOnlyDetailSection title={t("inspection.functionRecords")}>
                   <HistoryDetailRecordList
-                    empty="기능검수 기록이 없습니다."
+                    empty={t("inspection.functionEmpty")}
                     state={{
                       ...stateFor("inspections"),
                       items: functionInspectionRecords,
@@ -567,9 +634,9 @@ export function DeviceSheet({
                     onLoadMore={() => void loadHistory("inspections", true)}
                   />
                 </ReadOnlyDetailSection>
-                <ReadOnlyDetailSection title="외관검수 기록">
+                <ReadOnlyDetailSection title={t("inspection.appearanceRecords")}>
                   <HistoryDetailRecordList
-                    empty="외관검수 기록이 없습니다."
+                    empty={t("inspection.appearanceEmpty")}
                     state={{
                       ...stateFor("inspections"),
                       items: appearanceInspectionRecords,
@@ -582,16 +649,16 @@ export function DeviceSheet({
 
             <TabsContent value="order">
               <div className="grid gap-4">
-                <ReadOnlyDetailSection title="판매 채널 API 원본">
+                <ReadOnlyDetailSection title={t("order.source")}>
                   <HistoryDetailRecordList
-                    empty="기존 주문 정보가 없습니다."
+                    empty={t("order.sourceEmpty")}
                     state={stateFor("orderItems")}
                     onLoadMore={() => void loadHistory("orderItems", true)}
                   />
                 </ReadOnlyDetailSection>
-                <ReadOnlyDetailSection title="주문 매칭 기록">
+                <ReadOnlyDetailSection title={t("order.matches")}>
                   <HistoryDetailRecordList
-                    empty="채널 주문 매칭 정보가 없습니다."
+                    empty={t("order.matchesEmpty")}
                     state={stateFor("channelOrderMatches")}
                     onLoadMore={() =>
                       void loadHistory("channelOrderMatches", true)
@@ -602,9 +669,9 @@ export function DeviceSheet({
             </TabsContent>
 
             <TabsContent value="shipment">
-              <ReadOnlyDetailSection title="출고 흐름">
+              <ReadOnlyDetailSection title={t("shipment.title")}>
                 <HistoryDetailRecordList
-                  empty="출고 흐름 정보가 없습니다."
+                  empty={t("shipment.empty")}
                   state={stateFor("shipmentWorks")}
                   onLoadMore={() => void loadHistory("shipmentWorks", true)}
                 />
@@ -612,9 +679,9 @@ export function DeviceSheet({
             </TabsContent>
 
             <TabsContent value="return">
-              <ReadOnlyDetailSection title="반품/교환 판단 이력">
+              <ReadOnlyDetailSection title={t("returns.title")}>
                 <HistoryDetailRecordList
-                  empty="반품/교환 판단 이력이 없습니다."
+                  empty={t("returns.empty")}
                   state={stateFor("returnDecisions")}
                   onLoadMore={() => void loadHistory("returnDecisions", true)}
                 />

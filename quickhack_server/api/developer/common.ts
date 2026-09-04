@@ -20,7 +20,7 @@ export async function requireDeveloper(request: NextRequest): Promise<DeveloperA
     return {
       ok: false,
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -30,7 +30,7 @@ export async function requireDeveloper(request: NextRequest): Promise<DeveloperA
     return {
       ok: false,
       response: NextResponse.json(
-        { ok: false, message: "개발자 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };

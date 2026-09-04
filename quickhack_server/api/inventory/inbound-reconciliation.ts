@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
         return apiFailureResponse({
           status: 401,
           code: "AUTHENTICATION_REQUIRED",
-          message: "로그인이 필요합니다.",
+
         });
       }
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
         return apiFailureResponse({
           status: 403,
           code: "PERMISSION_DENIED",
-          message: "입고 대조 상세 조회 권한이 없습니다.",
+
         });
       }
 

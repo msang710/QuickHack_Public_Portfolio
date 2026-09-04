@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   BadgeDollarSign,
   BarChart3,
@@ -54,18 +56,10 @@ import {
 } from "@/quickhack_client/components/supplies/supply-consumption-rule-ui";
 import {
   OUTBOUND_SUPPLY_CONSUMPTION_POLICY,
-  OUTBOUND_SUPPLY_CONSUMPTION_POLICY_LABELS,
   SUPPLY_CONSUMPTION_TRIGGER,
-  SUPPLY_CONSUMPTION_TRIGGER_LABELS,
   SUPPLY_MOVEMENT_TYPE,
-  SUPPLY_MOVEMENT_TYPE_LABELS,
   SUPPLY_REORDER_STATUS,
-  SUPPLY_REORDER_STATUS_LABELS,
   normalizeSupplyConsumptionQuantity,
-  supplyConsumptionTriggerLabel,
-  outboundSupplyConsumptionPolicyLabel,
-  supplyMovementTypeLabel,
-  supplyReorderStatusLabel,
 } from "@/quickhack_shared/supplies/supplies";
 import { cn } from "@/quickhack_shared/core/utils";
 
@@ -192,7 +186,7 @@ type ForecastValidationDto = {
   actualUsageQuantity: number;
   differenceQuantity: number;
   errorRatePercent: number | null;
-  status: string;
+  status: "PENDING" | "NO_USAGE" | "GOOD" | "WARNING" | "HIGH_ERROR";
 };
 
 type ReorderDto = {
@@ -253,11 +247,50 @@ type SupplyWorkspaceData = {
 
 type SuppliesApiResponse = {
   ok: boolean;
+  code?: string;
   message?: string;
+  resultCode?: string;
+  details?: {
+    triggerType?: string;
+    unsupportedFilters?: string[];
+  };
   data?: SupplyWorkspaceData;
   result?: unknown;
   receipt?: import("@/quickhack_shared/core/mutation-receipt").MutationReceipt<unknown>;
 };
+
+type SuppliesTranslator = ReturnType<typeof useTranslations<"supplies">>;
+
+function suppliesApiErrorMessage(
+  payload: SuppliesApiResponse,
+  t: SuppliesTranslator,
+  fallbackMessage: string
+) {
+  if (payload.code === "UNSUPPORTED_SUPPLY_RULE_FILTER") {
+    const trigger = String(payload.details?.triggerType ?? "");
+    const filters = (payload.details?.unsupportedFilters ?? []).map((filter) =>
+      t(`rule.filterField.${filter}` as "rule.filterField.channel")
+    );
+    return t("message.unsupportedRuleFilters", {
+      trigger: t(`trigger.${trigger}` as "trigger.PURCHASED_DEVICE"),
+      filters: filters.join(", "),
+    });
+  }
+  return legacyApiMessage(payload, fallbackMessage);
+}
+
+function suppliesApiResultMessage(payload: SuppliesApiResponse, t: SuppliesTranslator) {
+  const keyByCode = {
+    SUPPLIES_ACTION_COMPLETED: "message.actionComplete",
+    SUPPLY_SAVED: "message.supplySaved",
+    SUPPLY_MOVEMENT_RECORDED: "message.movementRecorded",
+    SUPPLY_CONSUMPTION_RULE_SAVED: "message.consumptionRuleSaved",
+    SUPPLY_FORECAST_CALCULATED: "message.forecastCalculated",
+    SUPPLY_REORDER_SUGGESTIONS_CREATED: "message.reorderSuggestionsCreated",
+    SUPPLY_REORDER_STATUS_UPDATED: "message.reorderStatusUpdated",
+  } as const;
+  return t(keyByCode[payload.resultCode as keyof typeof keyByCode] ?? "message.actionComplete");
+}
 
 type SupplyForm = {
   supplyId: string;
@@ -368,12 +401,12 @@ const emptyReorderForm: ReorderForm = {
   reason: "",
 };
 
-function numberText(value: number | null | undefined, digits = 0) {
+function numberText(value: number | null | undefined, locale: string, digits = 0) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "-";
   }
 
-  return value.toLocaleString("ko-KR", {
+  return value.toLocaleString(locale, {
     maximumFractionDigits: digits,
   });
 }
@@ -383,24 +416,16 @@ function normalizedRuleQuantityInput(value: string) {
   return normalized === null ? value : String(normalized);
 }
 
-function moneyText(value: number | null | undefined) {
-  if (typeof value !== "number") {
-    return "-";
-  }
-
-  return `₩ ${value.toLocaleString("ko-KR")}`;
-}
-
 const supplyGridCellClassName = "flex h-full min-w-0 items-center px-3 py-2";
 const supplyGridRightCellClassName =
   "flex h-full min-w-0 items-center justify-end px-3 py-2 text-right";
 
 function forecastValidationBadgeVariant(status: string) {
-  if (status === "양호" || status === "사용 없음") {
+  if (status === "GOOD" || status === "NO_USAGE") {
     return "success" as const;
   }
 
-  if (status === "주의" || status === "검증 대기") {
+  if (status === "WARNING" || status === "PENDING") {
     return "warning" as const;
   }
 
@@ -496,16 +521,18 @@ function SummaryCard({
 
 function StatusMessage({
   message,
+  tone,
   className,
 }: {
   message: string;
+  tone: "neutral" | "warning";
   className?: string;
 }) {
   return (
     <FeedbackBanner
       className={cn(
         "rounded-md border px-3 py-2 text-sm",
-        message.includes("못") || message.includes("실패") || message.includes("없")
+        tone === "warning"
           ? "border-amber-200 bg-amber-50 text-amber-900"
           : "bg-popover",
         className
@@ -516,7 +543,7 @@ function StatusMessage({
   );
 }
 
-async function fetchSupplies(reorderCursor?: string | null) {
+async function fetchSupplies(t: SuppliesTranslator, fallbackMessage: string, reorderCursor?: string | null) {
   const query = new URLSearchParams();
   if (reorderCursor) query.set("reorderCursor", reorderCursor);
   const response = await fetch(
@@ -526,13 +553,13 @@ async function fetchSupplies(reorderCursor?: string | null) {
   const payload = (await response.json()) as SuppliesApiResponse;
 
   if (!response.ok || !payload.ok || !payload.data) {
-    throw new Error(payload.message || "비품관리 데이터를 불러오지 못했습니다.");
+    throw new Error(suppliesApiErrorMessage(payload, t, fallbackMessage));
   }
 
   return payload.data;
 }
 
-async function submitSupplies(method: "POST" | "PATCH", body: Record<string, unknown>) {
+async function submitSupplies(method: "POST" | "PATCH", body: Record<string, unknown>, t: SuppliesTranslator, fallbackMessage: string) {
   const response = await fetch("/api/supplies", {
     method,
     headers: { "content-type": "application/json" },
@@ -541,17 +568,18 @@ async function submitSupplies(method: "POST" | "PATCH", body: Record<string, unk
   const payload = (await response.json()) as SuppliesApiResponse;
 
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.message || "비품관리 작업에 실패했습니다.");
+    throw new Error(suppliesApiErrorMessage(payload, t, fallbackMessage));
   }
 
   return payload;
 }
 
 export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
+  const t = useTranslations("supplies");
   const { runGuardedAction } = useUnsavedChanges();
   const [data, setData] = React.useState<SupplyWorkspaceData | null>(null);
-  const [message, setMessage] = React.useState("비품관리 데이터를 불러오는 중입니다.");
-  const [loading, setLoading] = React.useState(true);
+  const [message, setMessage] = React.useState(() => t("message.loading"));
+  const [messageTone, setMessageTone] = React.useState<"neutral" | "warning">("neutral");
   const [activeAction, setActiveAction] =
     React.useState<SupplyActionKey | null>(null);
   const [supplyForm, setSupplyForm] =
@@ -602,8 +630,8 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
   useUnsavedForm({
     id: SUPPLIES_FORM_IDS.master,
     label: supplyForm.supplyId
-      ? `${supplyForm.supplyName || "선택 비품"} 비품 정보`
-      : "새 비품 정보",
+      ? t("unsaved.supplyTarget", { name: supplyForm.supplyName || t("unsaved.selectedSupply") })
+      : t("unsaved.supplyNew"),
     enabled: mode === "inventory",
     isDirty: !suppliesDraftSnapshotsEqual(supplyBaseline, supplyForm),
     isBusy: activeAction === "saveSupply",
@@ -612,8 +640,8 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
   useUnsavedForm({
     id: SUPPLIES_FORM_IDS.inventoryMovement,
     label: movementSupply
-      ? `${movementSupply.supplyName} 수량 기록`
-      : "비품 수량 기록",
+      ? t("unsaved.movementTarget", { name: movementSupply.supplyName })
+      : t("unsaved.movement"),
     enabled: mode === "inventory",
     isDirty: !suppliesDraftSnapshotsEqual(movementBaseline, movementForm),
     isBusy: activeAction === "recordMovement",
@@ -621,7 +649,7 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
   });
   useUnsavedForm({
     id: SUPPLIES_FORM_IDS.consumptionRule,
-    label: ruleForm.ruleId ? "비품 소요 규칙 수정" : "새 비품 소요 규칙",
+    label: ruleForm.ruleId ? t("unsaved.ruleEdit") : t("unsaved.ruleNew"),
     enabled: mode === "forecast",
     isDirty: !suppliesDraftSnapshotsEqual(ruleBaseline, ruleForm),
     isBusy: activeAction === "saveConsumptionRule",
@@ -630,8 +658,8 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
   useUnsavedForm({
     id: SUPPLIES_FORM_IDS.reorderRequest,
     label: reorderForm.reorderRequestId
-      ? `재구매 요청 #${reorderForm.reorderRequestId}`
-      : "재구매 요청 수정",
+      ? t("unsaved.reorderTarget", { id: reorderForm.reorderRequestId })
+      : t("unsaved.reorderEdit"),
     enabled: mode === "reorder",
     isDirty: !suppliesDraftSnapshotsEqual(reorderBaseline, reorderForm),
     isBusy: activeAction === "updateReorderRequest",
@@ -639,18 +667,16 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
   });
 
   const reload = React.useCallback(async () => {
-    setLoading(true);
-
     try {
-      const nextData = await fetchSupplies();
+      const nextData = await fetchSupplies(t, t("message.loadFailed"));
       setData(nextData);
-      setMessage("비품관리 데이터를 불러왔습니다.");
+      setMessage(t("message.loaded"));
+      setMessageTone("neutral");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
+      setMessageTone("warning");
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -672,32 +698,35 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
     setActiveAction(actionKey);
 
     try {
-      const payload = await submitSupplies(method, body);
+      const payload = await submitSupplies(method, body, t, t("message.actionFailed"));
       let refreshed = Boolean(payload.data);
       if (payload.data) {
         setData(payload.data);
       } else if (payload.receipt?.refreshRequired) {
         try {
-          setData(await fetchSupplies());
+          setData(await fetchSupplies(t, t("message.loadFailed")));
           refreshed = true;
         } catch {
           refreshed = false;
         }
       }
+      const resultMessage = suppliesApiResultMessage(payload, t);
       setMessage(
         refreshed
-          ? payload.message || "비품관리 작업을 완료했습니다."
-          : `${payload.message || "비품관리 작업을 완료했습니다."} 전체 현황은 새로고침해 확인하세요.`
+          ? resultMessage
+          : t("message.actionCompleteRefresh", { message: resultMessage })
       );
+      setMessageTone(refreshed ? "neutral" : "warning");
       return true;
     } catch (error) {
       const failureMessage = error instanceof Error ? error.message : String(error);
       try {
-        setData(await fetchSupplies());
+        setData(await fetchSupplies(t, t("message.loadFailed")));
       } catch {
         // Preserve the mutation error; the next explicit reload can retry the read.
       }
       setMessage(failureMessage);
+      setMessageTone("warning");
       return false;
     } finally {
       setActiveAction(null);
@@ -781,7 +810,7 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
     if (!cursor || reorderHistoryLoading) return;
     setReorderHistoryLoading(true);
     try {
-      const nextData = await fetchSupplies(cursor);
+      const nextData = await fetchSupplies(t, t("message.loadFailed"), cursor);
       setData((current) => {
         if (!current) return nextData;
         const historyById = new Map(
@@ -836,7 +865,7 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
         SUPPLIES_FORM_IDS.master,
         SUPPLIES_FORM_IDS.inventoryMovement,
       ],
-      targetLabel: `${supply.supplyName} 비품 열기`,
+      targetLabel: t("unsaved.openSupply", { name: supply.supplyName }),
       action: () => applySelectedSupply(supply),
     });
   }
@@ -845,7 +874,7 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
     runGuardedAction({
       intent: "internal-change",
       formIds: [SUPPLIES_FORM_IDS.master],
-      targetLabel: "새 비품 입력으로 초기화",
+      targetLabel: t("unsaved.resetSupply"),
       action: () => {
         const nextForm = { ...emptySupplyForm };
         setSupplyForm(nextForm);
@@ -870,8 +899,8 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
       intent: "internal-change",
       formIds: [SUPPLIES_FORM_IDS.inventoryMovement],
       targetLabel: nextSupply
-        ? `${nextSupply.supplyName} 수량 기록으로 전환`
-        : "수량 기록 비품 선택 해제",
+        ? t("unsaved.switchMovement", { name: nextSupply.supplyName })
+        : t("unsaved.clearMovement"),
       action: () => {
         setMovementForm(nextState.current);
         setMovementBaseline(nextState.baseline);
@@ -883,7 +912,7 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
     runGuardedAction({
       intent: "internal-change",
       formIds: [SUPPLIES_FORM_IDS.consumptionRule],
-      targetLabel: "선택한 비품 소요 규칙 열기",
+      targetLabel: t("unsaved.openRule"),
       action: () => {
         const nextForm = ruleFormFromRule(rule);
         setRuleForm(nextForm);
@@ -896,7 +925,7 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
     runGuardedAction({
       intent: "internal-change",
       formIds: [SUPPLIES_FORM_IDS.reorderRequest],
-      targetLabel: `재구매 요청 #${reorder.reorderRequestId} 열기`,
+      targetLabel: t("unsaved.openReorder", { id: String(reorder.reorderRequestId) }),
       action: () => {
         const nextForm = reorderFormFromReorder(reorder);
         setReorderForm(nextForm);
@@ -912,27 +941,27 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <SummaryCard
               icon={PackageCheck}
-              label="등록 비품"
+              label={t("summary.registered")}
               value={data?.summary.supplyCount ?? 0}
             />
             <SummaryCard
               icon={PackageCheck}
-              label="활성 비품"
+              label={t("summary.active")}
               value={data?.summary.activeSupplyCount ?? 0}
             />
             <SummaryCard
               icon={TrendingUp}
-              label="재주문점 이하"
+              label={t("summary.belowReorder")}
               value={data?.summary.belowReorderPointCount ?? 0}
             />
             <SummaryCard
               icon={BadgeDollarSign}
-              label="열린 재구매"
+              label={t("summary.openReorders")}
               value={data?.summary.openReorderCount ?? 0}
             />
           </div>
 
-          {mode !== "forecast" ? <StatusMessage message={message} /> : null}
+          {mode !== "forecast" ? <StatusMessage message={message} tone={messageTone} /> : null}
 
           {mode === "inventory" ? (
             <InventoryMode
@@ -961,6 +990,7 @@ export function SuppliesManagementView({ mode }: { mode: SuppliesMode }) {
               ruleForm={ruleForm}
               lookbackDays={lookbackDays}
               message={message}
+              messageTone={messageTone}
               saving={saving}
               ruleBusy={activeAction === "saveConsumptionRule"}
               setRuleForm={setRuleForm}
@@ -1027,24 +1057,41 @@ function InventoryMode({
   saveSupply: () => void;
   recordMovement: () => void;
 }) {
+  const t = useTranslations("supplies");
+  const locale = useLocale();
+
+  function policyLabel(value: string) {
+    return value === OUTBOUND_SUPPLY_CONSUMPTION_POLICY.packingConfirmedOnly
+      ? t("policy.confirmedOnly")
+      : t("policy.prepackAllowed");
+  }
+
+  function movementTypeLabel(value: string) {
+    if (value === SUPPLY_MOVEMENT_TYPE.consumed) return t("movement.type.consumed");
+    if (value === SUPPLY_MOVEMENT_TYPE.adjustment) return t("movement.type.adjustment");
+    if (value === SUPPLY_MOVEMENT_TYPE.returned) return t("movement.type.returned");
+    if (value === SUPPLY_MOVEMENT_TYPE.discarded) return t("movement.type.discarded");
+    return t("movement.type.inbound");
+  }
+
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="grid gap-4">
-        <Section title="비품 재고 목록">
+        <Section title={t("inventory.title")}>
           <div className="overflow-auto rounded-md border bg-background">
             <table className="min-w-[1120px] w-full text-sm">
               <thead className="bg-secondary text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-left">코드</th>
-                  <th className="px-3 py-2 text-left">비품명</th>
-                  <th className="px-3 py-2 text-left">분류</th>
-                  <th className="px-3 py-2 text-right">현재</th>
-                  <th className="px-3 py-2 text-right">예약</th>
-                  <th className="px-3 py-2 text-right">사용가능</th>
-                  <th className="px-3 py-2 text-left">위치</th>
-                  <th className="px-3 py-2 text-left">출고 차감 시점</th>
-                  <th className="px-3 py-2 text-left">상태</th>
-                  <th className="px-3 py-2 text-left">작업</th>
+                  <th className="px-3 py-2 text-left">{t("table.code")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.name")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.category")}</th>
+                  <th className="px-3 py-2 text-right">{t("table.current")}</th>
+                  <th className="px-3 py-2 text-right">{t("table.reserved")}</th>
+                  <th className="px-3 py-2 text-right">{t("table.available")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.location")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.policy")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.status")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.action")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1053,18 +1100,16 @@ function InventoryMode({
                     <td className="px-3 py-2 font-mono text-xs">{supply.supplyCode}</td>
                     <td className="px-3 py-2 font-medium">{supply.supplyName}</td>
                     <td className="px-3 py-2">{supply.category || "-"}</td>
-                    <td className="px-3 py-2 text-right">{numberText(supply.currentQuantity)}</td>
-                    <td className="px-3 py-2 text-right">{numberText(supply.reservedQuantity)}</td>
-                    <td className="px-3 py-2 text-right font-semibold">{numberText(supply.availableQuantity)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(supply.currentQuantity, locale)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(supply.reservedQuantity, locale)}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{numberText(supply.availableQuantity, locale)}</td>
                     <td className="px-3 py-2">{supply.inventoryLocation || "-"}</td>
                     <td className="px-3 py-2 text-xs">
-                      {outboundSupplyConsumptionPolicyLabel(
-                        supply.outboundConsumptionPolicy
-                      )}
+                      {policyLabel(supply.outboundConsumptionPolicy)}
                     </td>
                     <td className="px-3 py-2">
                       <Badge variant={supply.isActive ? "success" : "neutral"}>
-                        {supply.isActive ? "사용" : "비활성"}
+                        {supply.isActive ? t("inventory.active") : t("inventory.inactive")}
                       </Badge>
                     </td>
                     <td className="px-3 py-2">
@@ -1073,7 +1118,7 @@ function InventoryMode({
                         variant="outline"
                         onClick={() => selectSupply(supply)}
                       >
-                        선택
+                        {t("actions.select")}
                       </Button>
                     </td>
                   </tr>
@@ -1081,7 +1126,7 @@ function InventoryMode({
                 {supplies.length === 0 ? (
                   <tr>
                     <td className="px-3 py-8 text-center text-muted-foreground" colSpan={10}>
-                      등록된 비품이 없습니다.
+                      {t("inventory.empty")}
                     </td>
                   </tr>
                 ) : null}
@@ -1090,19 +1135,19 @@ function InventoryMode({
           </div>
         </Section>
 
-        <Section title="최근 수량 이력">
+        <Section title={t("movement.title")}>
           <div className="overflow-auto rounded-md border bg-background">
             <table className="min-w-[840px] w-full text-sm">
               <thead className="bg-secondary text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-left">일시</th>
-                  <th className="px-3 py-2 text-left">비품</th>
-                  <th className="px-3 py-2 text-left">유형</th>
-                  <th className="px-3 py-2 text-right">수량</th>
-                  <th className="px-3 py-2 text-right">변경 전</th>
-                  <th className="px-3 py-2 text-right">변경 후</th>
-                  <th className="px-3 py-2 text-left">사유</th>
-                  <th className="px-3 py-2 text-left">작업자</th>
+                  <th className="px-3 py-2 text-left">{t("table.date")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.supply")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.type")}</th>
+                  <th className="px-3 py-2 text-right">{t("table.quantity")}</th>
+                  <th className="px-3 py-2 text-right">{t("table.before")}</th>
+                  <th className="px-3 py-2 text-right">{t("table.after")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.reason")}</th>
+                  <th className="px-3 py-2 text-left">{t("table.operator")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1110,10 +1155,10 @@ function InventoryMode({
                   <tr key={movement.movementId} className="border-t">
                     <td className="px-3 py-2">{movement.createdAt}</td>
                     <td className="px-3 py-2">{movement.supplyName}</td>
-                    <td className="px-3 py-2">{supplyMovementTypeLabel(movement.movementType)}</td>
-                    <td className="px-3 py-2 text-right">{numberText(movement.quantity)}</td>
-                    <td className="px-3 py-2 text-right">{numberText(movement.beforeQuantity)}</td>
-                    <td className="px-3 py-2 text-right">{numberText(movement.afterQuantity)}</td>
+                    <td className="px-3 py-2">{movementTypeLabel(movement.movementType)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(movement.quantity, locale)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(movement.beforeQuantity, locale)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(movement.afterQuantity, locale)}</td>
                     <td className="px-3 py-2">{movement.reason || "-"}</td>
                     <td className="px-3 py-2">{movement.createdByDisplayName || "-"}</td>
                   </tr>
@@ -1121,7 +1166,7 @@ function InventoryMode({
                 {recentMovements.length === 0 ? (
                   <tr>
                     <td className="px-3 py-8 text-center text-muted-foreground" colSpan={8}>
-                      최근 수량 이력이 없습니다.
+                      {t("movement.empty")}
                     </td>
                   </tr>
                 ) : null}
@@ -1132,10 +1177,10 @@ function InventoryMode({
       </div>
 
       <div className="grid gap-4">
-        <Section title={supplyForm.supplyId ? "비품 수정" : "비품 등록"}>
+        <Section title={supplyForm.supplyId ? t("form.editTitle") : t("form.newTitle")}>
           <fieldset disabled={supplyBusy} className="grid min-w-0 gap-3">
             <div className="grid grid-cols-2 gap-2">
-              <Field label="비품 코드">
+              <Field label={t("form.code")}>
                 <Input
                   value={supplyForm.supplyCode}
                   onChange={(event) =>
@@ -1147,7 +1192,7 @@ function InventoryMode({
                   autoComplete="off"
                 />
               </Field>
-              <Field label="분류">
+              <Field label={t("form.category")}>
                 <Input
                   value={supplyForm.category}
                   onChange={(event) =>
@@ -1160,7 +1205,7 @@ function InventoryMode({
                 />
               </Field>
             </div>
-            <Field label="비품명">
+            <Field label={t("form.name")}>
               <Input
                 value={supplyForm.supplyName}
                 onChange={(event) =>
@@ -1172,7 +1217,7 @@ function InventoryMode({
                 autoComplete="off"
               />
             </Field>
-            <Field label="출고 차감 시점">
+            <Field label={t("form.consumptionPolicy")}>
               <Select
                 value={supplyForm.outboundConsumptionPolicy}
                 onValueChange={(value) =>
@@ -1186,18 +1231,16 @@ function InventoryMode({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(
-                    OUTBOUND_SUPPLY_CONSUMPTION_POLICY_LABELS
-                  ).map(([value, label]) => (
+                  {Object.values(OUTBOUND_SUPPLY_CONSUMPTION_POLICY).map((value) => (
                     <SelectItem key={value} value={value}>
-                      {label}
+                      {policyLabel(value)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
             <div className="grid grid-cols-3 gap-2">
-              <Field label="기본단위">
+              <Field label={t("form.baseUnit")}>
                 <Input
                   value={supplyForm.baseUnit}
                   onChange={(event) =>
@@ -1209,7 +1252,7 @@ function InventoryMode({
                   autoComplete="off"
                 />
               </Field>
-              <Field label="주문단위">
+              <Field label={t("form.orderUnit")}>
                 <Input
                   value={supplyForm.orderUnit}
                   onChange={(event) =>
@@ -1221,7 +1264,7 @@ function InventoryMode({
                   autoComplete="off"
                 />
               </Field>
-              <Field label="주문단위 수량">
+              <Field label={t("form.orderUnitQuantity")}>
                 <Input
                   type="number"
                   value={supplyForm.orderUnitQuantity}
@@ -1235,7 +1278,7 @@ function InventoryMode({
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="최소 리드타임">
+              <Field label={t("form.minLeadTime")}>
                 <Input
                   type="number"
                   value={supplyForm.minLeadTimeDays}
@@ -1247,7 +1290,7 @@ function InventoryMode({
                   }
                 />
               </Field>
-              <Field label="최대 리드타임">
+              <Field label={t("form.maxLeadTime")}>
                 <Input
                   type="number"
                   value={supplyForm.maxLeadTimeDays}
@@ -1261,7 +1304,7 @@ function InventoryMode({
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="불량소모율(%)">
+              <Field label={t("form.lossRate")}>
                 <Input
                   type="number"
                   value={supplyForm.lossRatePercent}
@@ -1273,7 +1316,7 @@ function InventoryMode({
                   }
                 />
               </Field>
-              <Field label="목표 재고일수">
+              <Field label={t("form.targetStockDays")}>
                 <Input
                   type="number"
                   value={supplyForm.targetStockDays}
@@ -1287,7 +1330,7 @@ function InventoryMode({
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="매입처">
+              <Field label={t("form.defaultSupplier")}>
                 <Input
                   value={supplyForm.defaultSupplierName}
                   onChange={(event) =>
@@ -1299,7 +1342,7 @@ function InventoryMode({
                   autoComplete="off"
                 />
               </Field>
-              <Field label="위치">
+              <Field label={t("form.inventoryLocation")}>
                 <Input
                   value={supplyForm.inventoryLocation}
                   onChange={(event) =>
@@ -1313,7 +1356,7 @@ function InventoryMode({
               </Field>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <Field label="단가">
+              <Field label={t("form.unitCost")}>
                 <Input
                   type="number"
                   value={supplyForm.unitCost}
@@ -1325,7 +1368,7 @@ function InventoryMode({
                   }
                 />
               </Field>
-              <Field label="최소주문 수량">
+              <Field label={t("form.minimumOrderQuantity")}>
                 <Input
                   type="number"
                   value={supplyForm.minimumOrderQuantity}
@@ -1337,7 +1380,7 @@ function InventoryMode({
                   }
                 />
               </Field>
-              <Field label="예약 수량">
+              <Field label={t("form.reservedQuantity")}>
                 <Input
                   type="number"
                   value={supplyForm.reservedQuantity}
@@ -1350,7 +1393,7 @@ function InventoryMode({
                 />
               </Field>
             </div>
-            <Field label="메모">
+            <Field label={t("form.memo")}>
               <Input
                 value={supplyForm.note}
                 onChange={(event) =>
@@ -1374,26 +1417,26 @@ function InventoryMode({
                   }))
                 }
               />
-              사용 중인 비품
+              {t("form.active")}
             </label>
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
                 onClick={resetSupplyForm}
               >
-                입력 초기화
+                {t("actions.reset")}
               </Button>
               <Button onClick={saveSupply} disabled={saving}>
                 <Save className="size-4" />
-                저장
+                {t("actions.save")}
               </Button>
             </div>
           </fieldset>
         </Section>
 
-        <Section title="수량 기록">
+        <Section title={t("movement.formTitle")}>
           <fieldset disabled={movementBusy} className="grid min-w-0 gap-3">
-            <Field label="비품">
+            <Field label={t("table.supply")}>
               <Select
                 value={movementForm.supplyId || "NONE"}
                 onValueChange={selectMovementSupply}
@@ -1402,7 +1445,7 @@ function InventoryMode({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="NONE">비품 선택</SelectItem>
+                  <SelectItem value="NONE">{t("movement.selectSupply")}</SelectItem>
                   {supplies.map((supply) => (
                     <SelectItem key={supply.supplyId} value={String(supply.supplyId)}>
                       {supply.supplyName}
@@ -1412,7 +1455,7 @@ function InventoryMode({
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="유형">
+              <Field label={t("table.type")}>
                 <Select
                   value={movementForm.movementType}
                   onValueChange={(value) =>
@@ -1426,17 +1469,17 @@ function InventoryMode({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(SUPPLY_MOVEMENT_TYPE_LABELS).map(
-                      ([value, label]) => (
+                    {Object.values(SUPPLY_MOVEMENT_TYPE).map(
+                      (value) => (
                         <SelectItem key={value} value={value}>
-                          {label}
+                          {movementTypeLabel(value)}
                         </SelectItem>
                       )
                     )}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label={movementForm.movementType === SUPPLY_MOVEMENT_TYPE.adjustment ? "조정 후 수량" : "수량"}>
+              <Field label={movementForm.movementType === SUPPLY_MOVEMENT_TYPE.adjustment ? t("table.after") : t("table.quantity")}>
                 <Input
                   type="number"
                   min={
@@ -1455,7 +1498,7 @@ function InventoryMode({
                 />
               </Field>
             </div>
-            <Field label="사유">
+            <Field label={t("table.reason")}>
               <Input
                 value={movementForm.reason}
                 onChange={(event) =>
@@ -1468,7 +1511,7 @@ function InventoryMode({
               />
             </Field>
             <Button onClick={recordMovement} disabled={saving}>
-              수량 기록 저장
+              {t("movement.save")}
             </Button>
           </fieldset>
         </Section>
@@ -1485,6 +1528,7 @@ function ForecastMode({
   ruleForm,
   lookbackDays,
   message,
+  messageTone,
   saving,
   ruleBusy,
   setRuleForm,
@@ -1499,6 +1543,7 @@ function ForecastMode({
   ruleForm: RuleForm;
   lookbackDays: string;
   message: string;
+  messageTone: "neutral" | "warning";
   saving: boolean;
   ruleBusy: boolean;
   setRuleForm: React.Dispatch<React.SetStateAction<RuleForm>>;
@@ -1507,9 +1552,28 @@ function ForecastMode({
   saveRule: () => void;
   calculateForecast: () => void;
 }) {
+  const t = useTranslations("supplies");
+  const locale = useLocale();
   const [activeTab, setActiveTab] = React.useState("rules");
+  const triggerLabels: Record<string, string> = React.useMemo(
+    () => ({
+      PURCHASED_DEVICE: t("trigger.PURCHASED_DEVICE"),
+      SHIPMENT_CREATED: t("trigger.SHIPMENT_CREATED"),
+      ORDER_ITEM: t("trigger.ORDER_ITEM"),
+      PACKING_COMPLETED: t("trigger.PACKING_COMPLETED"),
+      RETURN_RECEIVED: t("trigger.RETURN_RECEIVED"),
+    }),
+    [t]
+  );
   const supportedRuleFilters = supplyConsumptionRuleFilterDefinitions(
     ruleForm.triggerType
+  );
+  const ruleFilterText = React.useCallback(
+    (rule: RuleTableRow) =>
+      supplyConsumptionRuleFilterText(rule, (key) =>
+        t(`rule.filterField.${key}`)
+      ),
+    [t]
   );
   const ruleRows = React.useMemo(
     () =>
@@ -1525,7 +1589,7 @@ function ForecastMode({
     () => [
       {
         key: "supply",
-        label: "비품",
+        label: t("table.supply"),
         width: "minmax(180px, 1.2fr)",
         cellClassName: supplyGridCellClassName,
         text: (rule) => rule.supplyName,
@@ -1533,52 +1597,52 @@ function ForecastMode({
       },
       {
         key: "trigger",
-        label: "기준",
+        label: t("rule.trigger"),
         width: "180px",
         cellClassName: supplyGridCellClassName,
-        text: (rule) => supplyConsumptionTriggerLabel(rule.triggerType),
+        text: (rule) => triggerLabels[rule.triggerType] ?? rule.triggerType,
         render: (rule) => (
           <span className="truncate">
-            {supplyConsumptionTriggerLabel(rule.triggerType)}
+            {triggerLabels[rule.triggerType] ?? rule.triggerType}
           </span>
         ),
       },
       {
         key: "quantity",
-        label: "소요량",
+        label: t("rule.quantity"),
         width: "100px",
         cellClassName: supplyGridRightCellClassName,
         text: (rule) => rule.quantityPerUnit,
         sortValue: (rule) => rule.quantityPerUnit,
-        render: (rule) => <span>{numberText(rule.quantityPerUnit)}</span>,
+        render: (rule) => <span>{numberText(rule.quantityPerUnit, locale)}</span>,
       },
       {
         key: "filter",
-        label: "필터",
+        label: t("rule.filter"),
         width: "minmax(220px, 1fr)",
         cellClassName: supplyGridCellClassName,
-        text: supplyConsumptionRuleFilterText,
+        text: ruleFilterText,
         render: (rule) => (
           <span className="truncate">
-            {supplyConsumptionRuleFilterText(rule) || "-"}
+            {ruleFilterText(rule) || "-"}
           </span>
         ),
       },
       {
         key: "status",
-        label: "상태",
+        label: t("rule.status"),
         width: "100px",
         cellClassName: supplyGridCellClassName,
-        text: (rule) => (rule.isActive ? "사용" : "비활성"),
+        text: (rule) => (rule.isActive ? t("rule.active") : t("rule.inactive")),
         render: (rule) => (
           <Badge variant={rule.isActive ? "success" : "neutral"}>
-            {rule.isActive ? "사용" : "비활성"}
+            {rule.isActive ? t("rule.active") : t("rule.inactive")}
           </Badge>
         ),
       },
       {
         key: "actions",
-        label: "작업",
+        label: t("table.action"),
         width: "100px",
         cellClassName: "flex h-full min-w-0 items-center justify-center px-3 py-2",
         sortable: false,
@@ -1589,12 +1653,12 @@ function ForecastMode({
             variant="outline"
             onClick={() => selectRule(rule)}
           >
-            수정
+            {t("rule.edit")}
           </Button>
         ),
       },
     ],
-    [selectRule]
+    [locale, ruleFilterText, selectRule, t, triggerLabels]
   );
 
   return (
@@ -1606,12 +1670,13 @@ function ForecastMode({
       >
         <div className="flex min-w-0 items-center gap-3">
           <TabsList className="w-fit shrink-0">
-            <TabsTrigger value="rules">소요 규칙</TabsTrigger>
-            <TabsTrigger value="forecasts">예측 결과</TabsTrigger>
-            <TabsTrigger value="validations">예측 검증</TabsTrigger>
+            <TabsTrigger value="rules">{t("tabs.rules")}</TabsTrigger>
+            <TabsTrigger value="forecasts">{t("tabs.forecast")}</TabsTrigger>
+            <TabsTrigger value="validations">{t("tabs.validation")}</TabsTrigger>
           </TabsList>
           <StatusMessage
             message={message}
+            tone={messageTone}
             className="flex h-9 min-w-0 flex-1 items-center py-0 text-xs"
           />
         </div>
@@ -1619,9 +1684,9 @@ function ForecastMode({
         <TabsContent value="rules" className="m-0">
           <div className="grid items-start gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
             <div className="grid gap-4">
-              <Section title="예측 계산">
+              <Section title={t("forecast.calculation")}>
                 <div className="grid gap-3">
-                  <Field label="조회 기준 기간">
+                  <Field label={t("forecast.lookback")}>
                     <Input
                       type="number"
                       value={lookbackDays}
@@ -1630,14 +1695,14 @@ function ForecastMode({
                   </Field>
                   <Button onClick={calculateForecast} disabled={saving}>
                     <BarChart3 className="size-4" />
-                    소요예측 계산
+                    {t("forecast.calculate")}
                   </Button>
                 </div>
               </Section>
 
-              <Section title={ruleForm.ruleId ? "소요 규칙 수정" : "소요 규칙 등록"}>
+              <Section title={ruleForm.ruleId ? t("rule.editTitle") : t("rule.newTitle")}>
                 <fieldset disabled={ruleBusy} className="grid min-w-0 gap-3">
-                  <Field label="비품">
+                  <Field label={t("table.supply")}>
                     <Select
                       value={ruleForm.supplyId || "NONE"}
                       onValueChange={(value) =>
@@ -1651,7 +1716,7 @@ function ForecastMode({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="NONE">비품 선택</SelectItem>
+                        <SelectItem value="NONE">{t("rule.selectSupply")}</SelectItem>
                         {supplies.map((supply) => (
                           <SelectItem
                             key={supply.supplyId}
@@ -1664,7 +1729,7 @@ function ForecastMode({
                     </Select>
                   </Field>
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="계산 기준">
+                    <Field label={t("rule.calculationBasis")}>
                       <Select
                         value={ruleForm.triggerType}
                         onValueChange={(value) =>
@@ -1677,17 +1742,17 @@ function ForecastMode({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {Object.entries(SUPPLY_CONSUMPTION_TRIGGER_LABELS).map(
-                            ([value, label]) => (
+                          {Object.values(SUPPLY_CONSUMPTION_TRIGGER).map(
+                            (value) => (
                               <SelectItem key={value} value={value}>
-                                {label}
+                                {t(`trigger.${value}`)}
                               </SelectItem>
                             )
                           )}
                         </SelectContent>
                       </Select>
                     </Field>
-                    <Field label="1건당 소요량">
+                    <Field label={t("rule.quantityPerUnit")}>
                       <Input
                         type="number"
                         min={1}
@@ -1714,7 +1779,10 @@ function ForecastMode({
                   {supportedRuleFilters.length > 0 ? (
                     <div className="grid grid-cols-2 gap-2">
                       {supportedRuleFilters.map((definition) => (
-                        <Field key={definition.key} label={definition.formLabel}>
+                        <Field
+                          key={definition.key}
+                          label={t(`rule.filterForm.${definition.key}`)}
+                        >
                           <Input
                             value={ruleForm[definition.key]}
                             onChange={(event) =>
@@ -1730,10 +1798,10 @@ function ForecastMode({
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      이 계산 기준은 별도 상품 필터 없이 전체 건을 집계합니다.
+                      {t("rule.allItems")}
                     </p>
                   )}
-                  <Field label="메모">
+                  <Field label={t("rule.memo")}>
                     <Input
                       value={ruleForm.note}
                       onChange={(event) =>
@@ -1747,18 +1815,18 @@ function ForecastMode({
                   </Field>
                   <Button onClick={saveRule} disabled={saving}>
                     <Save className="size-4" />
-                    규칙 저장
+                    {t("rule.save")}
                   </Button>
                 </fieldset>
               </Section>
             </div>
 
-            <Section title="등록된 소요 규칙" className="min-h-[624px]">
+            <Section title={t("rule.registered")} className="min-h-[624px]">
               <VirtualizedDataGrid
                 rows={ruleRows}
                 columns={ruleColumns}
                 rowKey={(rule) => rule.ruleId}
-                emptyMessage="등록된 소요 규칙이 없습니다."
+                emptyMessage={t("rule.empty")}
                 className="min-h-0"
                 minWidth="880px"
                 rowHeight={48}
@@ -1768,7 +1836,7 @@ function ForecastMode({
         </TabsContent>
 
         <TabsContent value="forecasts" className="m-0">
-          <ForecastTable forecasts={forecasts} title="소요예측 결과" />
+          <ForecastTable forecasts={forecasts} title={t("forecast.result")} />
         </TabsContent>
 
         <TabsContent value="validations" className="m-0">
@@ -1786,11 +1854,13 @@ function ForecastTable({
   forecasts: ForecastDto[];
   title: string;
 }) {
+  const t = useTranslations("supplies");
+  const locale = useLocale();
   const columns = React.useMemo<DataGridColumn<ForecastColumnKey, ForecastDto>[]>(
     () => [
       {
         key: "forecastDate",
-        label: "계산일",
+        label: t("forecast.date"),
         width: "120px",
         cellClassName: supplyGridCellClassName,
         text: (forecast) => forecast.forecastDate,
@@ -1798,7 +1868,7 @@ function ForecastTable({
       },
       {
         key: "supply",
-        label: "비품",
+        label: t("table.supply"),
         width: "minmax(180px, 1.2fr)",
         cellClassName: supplyGridCellClassName,
         text: (forecast) => forecast.supplyName,
@@ -1808,75 +1878,75 @@ function ForecastTable({
       },
       {
         key: "averageDailyUsage",
-        label: "일평균",
+        label: t("forecast.averageDaily"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (forecast) => forecast.averageDailyUsage,
         sortValue: (forecast) => forecast.averageDailyUsage,
         render: (forecast) => (
-          <span>{numberText(forecast.averageDailyUsage, 2)}</span>
+          <span>{numberText(forecast.averageDailyUsage, locale, 2)}</span>
         ),
       },
       {
         key: "safetyStock",
-        label: "안전재고",
+        label: t("forecast.safetyStock"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (forecast) => forecast.safetyStockQuantity,
         sortValue: (forecast) => forecast.safetyStockQuantity,
         render: (forecast) => (
-          <span>{numberText(forecast.safetyStockQuantity, 1)}</span>
+          <span>{numberText(forecast.safetyStockQuantity, locale, 1)}</span>
         ),
       },
       {
         key: "reorderPoint",
-        label: "재주문점",
+        label: t("forecast.reorderPoint"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (forecast) => forecast.reorderPointQuantity,
         sortValue: (forecast) => forecast.reorderPointQuantity,
         render: (forecast) => (
-          <span>{numberText(forecast.reorderPointQuantity, 1)}</span>
+          <span>{numberText(forecast.reorderPointQuantity, locale, 1)}</span>
         ),
       },
       {
         key: "targetStock",
-        label: "목표재고",
+        label: t("forecast.targetStock"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (forecast) => forecast.targetStockQuantity,
         sortValue: (forecast) => forecast.targetStockQuantity,
         render: (forecast) => (
-          <span>{numberText(forecast.targetStockQuantity, 1)}</span>
+          <span>{numberText(forecast.targetStockQuantity, locale, 1)}</span>
         ),
       },
       {
         key: "available",
-        label: "사용가능",
+        label: t("table.available"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (forecast) => forecast.availableQuantity,
         sortValue: (forecast) => forecast.availableQuantity,
         render: (forecast) => (
-          <span>{numberText(forecast.availableQuantity)}</span>
+          <span>{numberText(forecast.availableQuantity, locale)}</span>
         ),
       },
       {
         key: "recommended",
-        label: "권장구매",
+        label: t("forecast.recommended"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (forecast) => forecast.recommendedPurchaseQuantity,
         sortValue: (forecast) => forecast.recommendedPurchaseQuantity,
         render: (forecast) => (
           <span className="font-semibold">
-            {numberText(forecast.recommendedPurchaseQuantity)}
+            {numberText(forecast.recommendedPurchaseQuantity, locale)}
           </span>
         ),
       },
       {
         key: "stockout",
-        label: "재고소진 예상",
+        label: t("forecast.stockout"),
         width: "150px",
         cellClassName: supplyGridCellClassName,
         text: (forecast) => forecast.expectedStockoutDate || "-",
@@ -1885,7 +1955,7 @@ function ForecastTable({
         ),
       },
     ],
-    []
+    [locale, t]
   );
 
   return (
@@ -1894,7 +1964,7 @@ function ForecastTable({
         rows={forecasts}
         columns={columns}
         rowKey={(forecast) => forecast.forecastId}
-        emptyMessage="계산된 소요예측이 없습니다."
+        emptyMessage={t("forecast.empty")}
         className="h-[560px]"
         minWidth="1120px"
         rowHeight={48}
@@ -1908,13 +1978,15 @@ function ForecastValidationTable({
 }: {
   validations: ForecastValidationDto[];
 }) {
+  const t = useTranslations("supplies");
+  const locale = useLocale();
   const columns = React.useMemo<
     DataGridColumn<ForecastValidationColumnKey, ForecastValidationDto>[]
   >(
     () => [
       {
         key: "forecastDate",
-        label: "계산일",
+        label: t("forecast.date"),
         width: "120px",
         cellClassName: supplyGridCellClassName,
         text: (validation) => validation.forecastDate,
@@ -1922,7 +1994,7 @@ function ForecastValidationTable({
       },
       {
         key: "supply",
-        label: "비품",
+        label: t("table.supply"),
         width: "minmax(180px, 1.2fr)",
         cellClassName: supplyGridCellClassName,
         text: (validation) => validation.supplyName,
@@ -1932,7 +2004,7 @@ function ForecastValidationTable({
       },
       {
         key: "period",
-        label: "검증 기간",
+        label: t("forecast.validationPeriod"),
         width: "210px",
         cellClassName: supplyGridCellClassName,
         text: (validation) =>
@@ -1946,53 +2018,53 @@ function ForecastValidationTable({
       },
       {
         key: "elapsed",
-        label: "경과",
+        label: t("forecast.elapsed"),
         width: "120px",
         cellClassName: supplyGridRightCellClassName,
         text: (validation) => validation.elapsedDays,
         sortValue: (validation) => validation.elapsedDays,
         render: (validation) => (
           <span>
-            {validation.elapsedDays} / {validation.lookbackDays}일
+            {t("forecast.days", { elapsed: validation.elapsedDays, lookback: validation.lookbackDays })}
           </span>
         ),
       },
       {
         key: "predicted",
-        label: "예측 소요",
+        label: t("forecast.predicted"),
         width: "120px",
         cellClassName: supplyGridRightCellClassName,
         text: (validation) => validation.predictedUsageQuantity,
         sortValue: (validation) => validation.predictedUsageQuantity,
         render: (validation) => (
-          <span>{numberText(validation.predictedUsageQuantity, 1)}</span>
+          <span>{numberText(validation.predictedUsageQuantity, locale, 1)}</span>
         ),
       },
       {
         key: "actual",
-        label: "실제 소요",
+        label: t("forecast.actual"),
         width: "120px",
         cellClassName: supplyGridRightCellClassName,
         text: (validation) => validation.actualUsageQuantity,
         sortValue: (validation) => validation.actualUsageQuantity,
         render: (validation) => (
-          <span>{numberText(validation.actualUsageQuantity, 1)}</span>
+          <span>{numberText(validation.actualUsageQuantity, locale, 1)}</span>
         ),
       },
       {
         key: "difference",
-        label: "차이",
+        label: t("forecast.difference"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (validation) => validation.differenceQuantity,
         sortValue: (validation) => validation.differenceQuantity,
         render: (validation) => (
-          <span>{numberText(validation.differenceQuantity, 1)}</span>
+          <span>{numberText(validation.differenceQuantity, locale, 1)}</span>
         ),
       },
       {
         key: "errorRate",
-        label: "오차율",
+        label: t("forecast.errorRate"),
         width: "110px",
         cellClassName: supplyGridRightCellClassName,
         text: (validation) => validation.errorRatePercent ?? "",
@@ -2001,40 +2073,39 @@ function ForecastValidationTable({
           <span>
             {validation.errorRatePercent === null
               ? "-"
-              : `${numberText(validation.errorRatePercent, 1)}%`}
+              : `${numberText(validation.errorRatePercent, locale, 1)}%`}
           </span>
         ),
       },
       {
         key: "status",
-        label: "판정",
+        label: t("forecast.validationStatus"),
         width: "110px",
         cellClassName: supplyGridCellClassName,
-        text: (validation) => validation.status,
+        text: (validation) => t(`validationState.${validation.status}`),
         render: (validation) => (
           <Badge variant={forecastValidationBadgeVariant(validation.status)}>
-            {validation.status}
+            {t(`validationState.${validation.status}`)}
           </Badge>
         ),
       },
     ],
-    []
+    [locale, t]
   );
 
   return (
-    <Section title="예측 검증">
+    <Section title={t("forecast.validation")}>
       <VirtualizedDataGrid
         rows={validations}
         columns={columns}
         rowKey={(validation) => validation.forecastId}
-        emptyMessage="검증할 소요예측 기록이 없습니다."
+        emptyMessage={t("forecast.validationEmpty")}
         className="h-[560px]"
         minWidth="1240px"
         rowHeight={48}
       />
       <p className="text-xs text-muted-foreground">
-        계산일 이후 실제 소모 이력이 쌓이면 예측 소요와 실제 소요를 비교합니다.
-        오늘 계산한 예측은 하루 이상 지나야 검증할 수 있습니다.
+        {t("forecast.validationHint")}
       </p>
     </Section>
   );
@@ -2067,15 +2138,27 @@ function ReorderMode({
   reorderHistoryLoading: boolean;
   loadMoreReorderHistory: () => void;
 }) {
+  const t = useTranslations("supplies");
+  const locale = useLocale();
+
+  function reorderStatusLabel(value: string) {
+    if (value === SUPPLY_REORDER_STATUS.requested) return t("reorder.statusValue.requested");
+    if (value === SUPPLY_REORDER_STATUS.approved) return t("reorder.statusValue.approved");
+    if (value === SUPPLY_REORDER_STATUS.ordered) return t("reorder.statusValue.ordered");
+    if (value === SUPPLY_REORDER_STATUS.received) return t("reorder.statusValue.received");
+    if (value === SUPPLY_REORDER_STATUS.cancelled) return t("reorder.statusValue.cancelled");
+    return t("reorder.statusValue.suggested");
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="grid gap-4">
         <Section
-          title="재구매 요청 목록"
+          title={t("reorder.listTitle")}
           action={
             <Button onClick={createReorderSuggestions} disabled={saving}>
               <BadgeDollarSign className="size-4" />
-              추천 생성
+              {t("reorder.createSuggestions")}
             </Button>
           }
         >
@@ -2083,14 +2166,14 @@ function ReorderMode({
             <table className="min-w-[980px] w-full text-sm">
               <thead className="bg-secondary text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-left">비품</th>
-                  <th className="px-3 py-2 text-left">상태</th>
-                  <th className="px-3 py-2 text-right">권장</th>
-                  <th className="px-3 py-2 text-right">요청</th>
-                  <th className="px-3 py-2 text-right">주문</th>
-                  <th className="px-3 py-2 text-right">입고</th>
-                  <th className="px-3 py-2 text-left">거래처</th>
-                  <th className="px-3 py-2 text-left">작업</th>
+                  <th className="px-3 py-2 text-left">{t("table.supply")}</th>
+                  <th className="px-3 py-2 text-left">{t("reorder.status")}</th>
+                  <th className="px-3 py-2 text-right">{t("reorder.recommended")}</th>
+                  <th className="px-3 py-2 text-right">{t("reorder.request")}</th>
+                  <th className="px-3 py-2 text-right">{t("reorder.ordered")}</th>
+                  <th className="px-3 py-2 text-right">{t("reorder.received")}</th>
+                  <th className="px-3 py-2 text-left">{t("reorder.supplier")}</th>
+                  <th className="px-3 py-2 text-left">{t("reorder.action")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -2108,24 +2191,24 @@ function ReorderMode({
                                 : "warning"
                           }
                         >
-                          {supplyReorderStatusLabel(reorder.requestStatus)}
+                          {reorderStatusLabel(reorder.requestStatus)}
                         </Badge>
                         {reorder.isForecastOutdated ? (
-                          <Badge variant="danger">예측 갱신 필요</Badge>
+                          <Badge variant="danger">{t("reorder.forecastOutdated")}</Badge>
                         ) : null}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <div>{numberText(reorder.recommendedQuantity)}</div>
+                      <div>{numberText(reorder.recommendedQuantity, locale)}</div>
                       {reorder.isForecastOutdated ? (
                         <div className="text-xs text-muted-foreground">
-                          최신 권장: {numberText(reorder.latestRecommendedQuantity)}
+                          {t("reorder.latestRecommended", { quantity: numberText(reorder.latestRecommendedQuantity, locale) })}
                         </div>
                       ) : null}
                     </td>
-                    <td className="px-3 py-2 text-right">{numberText(reorder.requestedQuantity)}</td>
-                    <td className="px-3 py-2 text-right">{numberText(reorder.orderedQuantity)}</td>
-                    <td className="px-3 py-2 text-right">{numberText(reorder.receivedQuantity)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(reorder.requestedQuantity, locale)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(reorder.orderedQuantity, locale)}</td>
+                    <td className="px-3 py-2 text-right">{numberText(reorder.receivedQuantity, locale)}</td>
                     <td className="px-3 py-2">{reorder.supplierName || "-"}</td>
                     <td className="px-3 py-2">
                       <Button
@@ -2133,7 +2216,7 @@ function ReorderMode({
                         variant="outline"
                         onClick={() => selectReorder(reorder)}
                       >
-                        선택
+                        {t("reorder.select")}
                       </Button>
                     </td>
                   </tr>
@@ -2141,7 +2224,7 @@ function ReorderMode({
                 {reorders.length === 0 ? (
                   <tr>
                     <td className="px-3 py-8 text-center text-muted-foreground" colSpan={8}>
-                      재구매 요청이 없습니다.
+                      {t("reorder.empty")}
                     </td>
                   </tr>
                 ) : null}
@@ -2155,7 +2238,7 @@ function ReorderMode({
                 onClick={loadMoreReorderHistory}
                 disabled={reorderHistoryLoading}
               >
-                {reorderHistoryLoading ? "불러오는 중" : "완료 이력 더 보기"}
+                {reorderHistoryLoading ? t("reorder.loading") : t("reorder.historyMore")}
               </Button>
             </div>
           ) : null}
@@ -2165,16 +2248,16 @@ function ReorderMode({
           forecasts={forecasts.filter(
             (forecast) => forecast.recommendedPurchaseQuantity > 0
           )}
-          title="권장 구매 대상"
+          title={t("reorder.recommendedTargets")}
         />
       </div>
 
-      <Section title="재구매 상태 수정">
+      <Section title={t("reorder.editTitle")}>
         <fieldset disabled={reorderBusy} className="grid min-w-0 gap-3">
-          <Field label="재구매 요청">
+          <Field label={t("reorder.requestId")}>
             <Input value={reorderForm.reorderRequestId} readOnly />
           </Field>
-          <Field label="상태">
+          <Field label={t("reorder.status")}>
             <Select
               value={reorderForm.requestStatus}
               onValueChange={(value) =>
@@ -2188,16 +2271,16 @@ function ReorderMode({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(SUPPLY_REORDER_STATUS_LABELS).map(([value, label]) => (
+                {Object.values(SUPPLY_REORDER_STATUS).map((value) => (
                   <SelectItem key={value} value={value}>
-                    {label}
+                    {reorderStatusLabel(value)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="요청 수량">
+            <Field label={t("reorder.requestedQuantity")}>
               <Input
                 type="number"
                 value={reorderForm.requestedQuantity}
@@ -2209,7 +2292,7 @@ function ReorderMode({
                 }
               />
             </Field>
-            <Field label="주문 수량">
+            <Field label={t("reorder.orderedQuantity")}>
               <Input
                 type="number"
                 value={reorderForm.orderedQuantity}
@@ -2223,7 +2306,7 @@ function ReorderMode({
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="입고 수량">
+            <Field label={t("reorder.receivedQuantity")}>
               <Input
                 type="number"
                 value={reorderForm.receivedQuantity}
@@ -2235,7 +2318,7 @@ function ReorderMode({
                 }
               />
             </Field>
-            <Field label="예상 단가">
+            <Field label={t("reorder.expectedUnitCost")}>
               <Input
                 type="number"
                 value={reorderForm.expectedUnitCost}
@@ -2248,7 +2331,7 @@ function ReorderMode({
               />
             </Field>
           </div>
-          <Field label="거래처">
+          <Field label={t("reorder.supplier")}>
             <Input
               value={reorderForm.supplierName}
               onChange={(event) =>
@@ -2260,7 +2343,7 @@ function ReorderMode({
               autoComplete="off"
             />
           </Field>
-          <Field label="사유 / 메모">
+          <Field label={t("reorder.reason")}>
             <Input
               value={reorderForm.reason}
               onChange={(event) =>
@@ -2273,14 +2356,14 @@ function ReorderMode({
             />
           </Field>
           <div className="text-xs text-muted-foreground">
-            상태를 입고 완료로 저장하고 입고 수량이 있으면 비품 재고가 자동 증가합니다.
+            {t("reorder.saveHint")}
           </div>
           <Button
             onClick={updateReorder}
             disabled={saving || !reorderForm.reorderRequestId}
           >
             <Save className="size-4" />
-            상태 저장
+            {t("reorder.save")}
           </Button>
         </fieldset>
       </Section>

@@ -1,16 +1,12 @@
 export type InvoiceReplacementNextAction = {
   code: string;
-  label: string;
-  description: string;
 };
 
 export type InvoiceReplacement = {
   replacementWorkId: number;
   sourceType: string;
   status: string;
-  statusLabel: string;
   stage: string;
-  stageLabel: string;
   oldInvoiceHandlingStatus: string;
   executionState: "IDLE" | "RUNNING" | "STALE";
   packageGroupId: number;
@@ -175,7 +171,7 @@ export type InvoiceManualCandidate = {
   replacementWorkId: number | null;
   replacementStatus: string | null;
   replacementStage: string | null;
-  nextAction: { code: string; label: string };
+  nextAction: { code: string };
   items: Array<{
     issueItemId: number;
     packageGroupId: number;

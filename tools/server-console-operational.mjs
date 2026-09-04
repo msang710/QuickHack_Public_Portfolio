@@ -17,10 +17,10 @@ export const operationalConsoleIntegration = Object.freeze({
   childIds: Object.freeze([]),
   async startChildren() { return []; },
   async status() { return { ready: true, provider: "EXTERNAL" }; },
-  renderHtml() {
-    return `<section class="card"><h2>운영 연동 QHKEY</h2><p class="muted">실제 API key는 응답이나 로그에 다시 표시되지 않으며 선택한 QHKEY에 암호화해 저장합니다.</p>
-<form id="coupang-key-form"><input name="root" placeholder="QHKEY volume"><input name="vendorId" placeholder="vendorId"><input name="accessKey" placeholder="Access Key"><input name="secretKey" type="password" placeholder="Secret Key"><input name="expiresOn" type="date"><input name="keyAlias" placeholder="별칭"><button type="submit">Coupang API 키 등록</button></form>
-<form id="logen-key-form"><input name="root" placeholder="QHKEY volume"><input name="userId" placeholder="userId"><input name="customerCode" placeholder="customerCode"><input name="secretKey" type="password" placeholder="Secret Key"><input name="expiresOn" type="date"><input name="keyAlias" placeholder="별칭"><button type="submit">Logen API 키 등록</button></form>
+  renderHtml(t) {
+    return `<section class="card"><h2>${t.operational}</h2><p class="muted">${t.operationalHelp}</p>
+<form id="coupang-key-form"><input name="root" placeholder="${t.qhkeyVolume}"><input name="vendorId" placeholder="${t.vendorId}"><input name="accessKey" placeholder="${t.accessKey}"><input name="secretKey" type="password" placeholder="${t.secretKey}"><input name="expiresOn" type="date"><input name="keyAlias" placeholder="${t.alias}"><button type="submit">${t.registerCoupang}</button></form>
+<form id="logen-key-form"><input name="root" placeholder="${t.qhkeyVolume}"><input name="userId" placeholder="${t.userId}"><input name="customerCode" placeholder="${t.customerCode}"><input name="secretKey" type="password" placeholder="${t.secretKey}"><input name="expiresOn" type="date"><input name="keyAlias" placeholder="${t.alias}"><button type="submit">${t.registerLogen}</button></form>
 <script>for(const [id,url] of [['coupang-key-form','/api/qhkey/rotate'],['logen-key-form','/api/qhkey/logen/rotate']])document.getElementById(id).onsubmit=async(e)=>{e.preventDefault();await window.quickHackConsolePost(url,Object.fromEntries(new FormData(e.currentTarget)))}</script></section>`;
   },
   async handleAction(pathname, { config, payload }) {

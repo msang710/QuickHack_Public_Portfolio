@@ -16,28 +16,18 @@ export type SupplyConsumptionRuleUiValue = SupplyConsumptionRuleFilterValues & {
 export const SUPPLY_CONSUMPTION_RULE_FILTER_DEFINITIONS = [
   {
     key: SUPPLY_CONSUMPTION_RULE_FILTER.channel,
-    formLabel: "채널 필터",
-    summaryLabel: "채널",
   },
   {
     key: SUPPLY_CONSUMPTION_RULE_FILTER.model,
-    formLabel: "기종 필터",
-    summaryLabel: "기종",
   },
   {
     key: SUPPLY_CONSUMPTION_RULE_FILTER.saleGrade,
-    formLabel: "판매등급 필터",
-    summaryLabel: "판매등급",
   },
   {
     key: SUPPLY_CONSUMPTION_RULE_FILTER.warranty,
-    formLabel: "보증 필터",
-    summaryLabel: "보증",
   },
   {
     key: SUPPLY_CONSUMPTION_RULE_FILTER.inventoryStatus,
-    formLabel: "재고상태 필터",
-    summaryLabel: "재고상태",
   },
 ] as const;
 
@@ -65,12 +55,13 @@ export function supplyConsumptionRuleFormForTrigger<
 }
 
 export function supplyConsumptionRuleFilterText(
-  rule: SupplyConsumptionRuleUiValue
+  rule: SupplyConsumptionRuleUiValue,
+  label: (key: SupplyConsumptionRuleFilter) => string
 ) {
   return supplyConsumptionRuleFilterDefinitions(rule.triggerType)
     .map((definition) => {
       const value = rule[definition.key].trim();
-      return value ? `${definition.summaryLabel}: ${value}` : "";
+      return value ? `${label(definition.key)}: ${value}` : "";
     })
     .filter(Boolean)
     .join(" / ");

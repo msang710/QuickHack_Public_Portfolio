@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -67,20 +69,6 @@ const ORDER_MATCHING_POLICY_FORM_ID =
 type MatchingFilterBasis = "SALE_GRADE" | "STOCK_AGE";
 type StockAgeDirection = "OLD_FIRST" | "RECENT_FIRST";
 
-const matchingFilterBasisItems: Record<
-  MatchingFilterBasis,
-  { label: string; value: string }
-> = {
-  SALE_GRADE: {
-    label: "판매 등급 기준",
-    value: "정책의 판매등급 우선순위",
-  },
-  STOCK_AGE: {
-    label: "재고 등록 시간 기준",
-    value: "재고 등록 시간을 기준으로 선택",
-  },
-};
-
 function filterOrderForSortMode(
   value: OrderMatchingCandidateSortMode
 ): MatchingFilterBasis[] {
@@ -140,96 +128,6 @@ function gradeOrderFromTiers(tiers: OrderMatchingPriorityTierDto[]) {
   return [...uniqueOrderedGrades, ...missingGrades];
 }
 
-const orderItemRules: RuleField[] = [
-  {
-    label: "취소 여부",
-    value: "취소되지 않은 주문 아이템",
-    source: "order_matching_work_queue.canceled != 1",
-    note: "취소된 주문 아이템은 자동 매칭 대상에서 제외합니다.",
-  },
-  {
-    label: "매칭 가능 수량",
-    value: "matchable_quantity > 0",
-    source: "order_matching_work_queue.matchable_quantity",
-    note: "실제로 출고 가능한 수량이 남아 있는 아이템만 처리합니다.",
-  },
-  {
-    label: "상품 매핑 상태",
-    value: "MAPPED",
-    source: "order_matching_work_queue.mapping_status",
-    note: "채널 상품이 QuickHack 판매 오퍼에 연결되어 있어야 합니다.",
-  },
-  {
-    label: "판매 오퍼",
-    value: "sales_offer_id 필수",
-    source: "order_matching_work_queue.sales_offer_id",
-    note: "기종, 옵션 조건과 보증그룹이 확정된 주문만 자동 매칭합니다.",
-  },
-];
-
-const inventoryCandidateRules: RuleField[] = [
-  {
-    label: "재고 상태",
-    value: "판매가능 재고",
-    source: "inventory.inventory_status = SELLABLE",
-    note: "매입 확정 후 판매 가능한 재고만 예약 후보로 사용합니다.",
-  },
-  {
-    label: "출고 이력",
-    value: "활성 매칭 없음",
-    source: "match_worker_allocation active none",
-    note: "이미 주문 매칭 흐름에 들어간 PG는 후보에서 제외합니다.",
-  },
-  {
-    label: "기존 주문 매칭",
-    value: "활성 매칭 없음",
-    source: "MATCHED / INVOICE_ISSUED 없음",
-    note: "다른 주문에 묶인 PG가 중복 예약되지 않도록 막습니다.",
-  },
-];
-
-const matchingBasisRules: RuleField[] = [
-  {
-    label: "기종",
-    value: "model",
-    source: "sales_offers.model_option_id",
-    note: "판매 오퍼의 기종과 실제 재고 SKU 기종이 일치해야 합니다.",
-  },
-  {
-    label: "용량",
-    value: "storage",
-    source: "sales_offers.storage_match_mode / storage_option_id",
-    note: "판매 오퍼의 용량 조건을 재고 후보 조회에 적용합니다.",
-  },
-  {
-    label: "보증그룹",
-    value: "warrantyGroup",
-    source: "sales_offers.warranty_group_option_id",
-    note: "보증그룹에 따라 판매등급 우선순위를 적용합니다.",
-  },
-];
-
-const workerFields: RuleField[] = [
-  {
-    label: "worker",
-    value: "Order inventory matching",
-    source: "quickhack_server/workers/registry.ts",
-    note: "판매 채널 주문을 통합해 재고 매칭을 실행하는 worker입니다.",
-  },
-  {
-    label: "기본 실행 주기",
-    value: "120초",
-    source: "defaultIntervalSeconds",
-    note: "시스템 상태 메뉴에서 스케줄을 켜고 끌 수 있습니다.",
-  },
-  {
-    label: "1회 처리량",
-    value: "최대 100개 주문 아이템",
-    source: "matchOrderInventory({ limit: 100 })",
-    note: "worker 1회 실행 기준 처리량입니다.",
-  },
-];
-
 function rowKey(row: OrderMatchingSalesOfferPolicyRow) {
   return String(row.salesOfferId);
 }
@@ -271,6 +169,8 @@ function FieldGroup({
   description: string;
   fields: RuleField[];
 }) {
+  const t = useTranslations("salesChannel.policy");
+
   return (
     <section className="overflow-hidden rounded-md border bg-card">
       <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
@@ -284,7 +184,7 @@ function FieldGroup({
           </div>
         </div>
         <Badge variant="neutral" className="shrink-0">
-          수정 불가
+          {t("common.readOnly")}
         </Badge>
       </div>
 
@@ -384,6 +284,20 @@ function FilterOrderEditor({
   tiers: OrderMatchingPriorityTierDto[];
   onTiersChange: (tiers: OrderMatchingPriorityTierDto[]) => void;
 }) {
+  const t = useTranslations("salesChannel.policy");
+  const matchingFilterBasisItems: Record<
+    MatchingFilterBasis,
+    { label: string; value: string }
+  > = {
+    SALE_GRADE: {
+      label: t("basis.saleGrade.label"),
+      value: t("basis.saleGrade.value"),
+    },
+    STOCK_AGE: {
+      label: t("basis.stockAge.label"),
+      value: t("basis.stockAge.value"),
+    },
+  };
   const order = filterOrderForSortMode(value);
   const stockAgeDirection = stockAgeDirectionForSortMode(value);
   const [draggedItem, setDraggedItem] =
@@ -410,8 +324,8 @@ function FilterOrderEditor({
   return (
     <section className="grid gap-3 rounded-md border bg-background p-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">후보 필터 순서</h3>
-        <Badge variant="neutral">위에서 아래 순서</Badge>
+        <h3 className="text-sm font-semibold">{t("filter.title")}</h3>
+        <Badge variant="neutral">{t("filter.order")}</Badge>
       </div>
       <div className="grid gap-2">
         {order.map((item, index) => {
@@ -457,7 +371,7 @@ function FilterOrderEditor({
               {item === "STOCK_AGE" ? (
                 <div className="border-t pt-3">
                   <label className="grid max-w-sm gap-1.5 text-xs text-muted-foreground">
-                    재고 선택 방향
+                    {t("filter.direction")}
                     <Select
                       value={stockAgeDirection}
                       onValueChange={(nextValue) =>
@@ -469,10 +383,10 @@ function FilterOrderEditor({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="RECENT_FIRST">
-                          최근 재고부터 선택
+                          {t("filter.recentFirst")}
                         </SelectItem>
                         <SelectItem value="OLD_FIRST">
-                          오래된 재고부터 선택
+                          {t("filter.oldFirst")}
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -496,11 +410,13 @@ function SalesOfferPolicyList({
   selectedKey: string;
   onSelect: (key: string) => void;
 }) {
+  const t = useTranslations("salesChannel.policy");
+
   return (
     <div className="min-h-0 overflow-auto border-t">
       {rows.length === 0 ? (
         <div className="grid min-h-40 place-items-center px-4 text-sm text-muted-foreground">
-          표시할 판매 오퍼가 없습니다.
+          {t("list.empty")}
         </div>
       ) : (
         <div className="grid divide-y">
@@ -526,20 +442,20 @@ function SalesOfferPolicyList({
                     variant={!row.isActive ? "warning" : row.policy.source === "SAVED" ? "success" : "neutral"}
                   >
                     {!row.isActive
-                      ? "중지"
+                      ? t("common.stopped")
                       : row.policy.source === "SAVED"
-                        ? "개별"
-                        : "기본"}
+                        ? t("common.saved")
+                        : t("common.default")}
                   </Badge>
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
-                  {row.model} / {row.requiredStorage || "전체 용량"} /{" "}
-                  {row.requiredColor || "전체 색상"} / {row.requiredWarrantyLabel || "-"}
+                  {row.model} / {row.requiredStorage || t("common.allStorage")} /{" "}
+                  {row.requiredColor || t("common.allColor")} / {row.requiredWarrantyLabel || "-"}
                 </div>
                 <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                  <span>채널매핑 {row.mappedVendorItemCount.toLocaleString("ko-KR")}</span>
+                  <span>{t("list.mappings", { count: row.mappedVendorItemCount })}</span>
                   <span>/</span>
-                  <span>주문 {row.orderItemCount.toLocaleString("ko-KR")}</span>
+                  <span>{t("list.orders", { count: row.orderItemCount })}</span>
                 </div>
               </button>
             );
@@ -557,6 +473,7 @@ function TierEditor({
   tiers: OrderMatchingPriorityTierDto[];
   onChange: (tiers: OrderMatchingPriorityTierDto[]) => void;
 }) {
+  const t = useTranslations("salesChannel.policy");
   const selectedGrades = React.useMemo(
     () =>
       new Set(
@@ -639,9 +556,9 @@ function TierEditor({
   return (
     <div className="grid gap-3">
       <div>
-        <h3 className="text-sm font-semibold">판매등급 후보 우선순위</h3>
+        <h3 className="text-sm font-semibold">{t("tier.title")}</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          등급 버튼을 선택하면 후보에 포함되고, 드래그하면 선택된 등급의 순서가 바뀝니다.
+          {t("tier.description")}
         </p>
       </div>
 
@@ -676,7 +593,9 @@ function TierEditor({
               >
                 <span>{grade}</span>
                 <span className="text-[11px] font-medium">
-                  {selected ? `${selectedIndex + 1}순위` : "제외"}
+                  {selected
+                    ? t("tier.rank", { rank: selectedIndex + 1 })
+                    : t("tier.excluded")}
                 </span>
               </button>
               {index < gradeOrder.length - 1 ? (
@@ -705,10 +624,12 @@ function PolicyEditor({
   onSave: () => void;
   onReset: () => void;
 }) {
+  const t = useTranslations("salesChannel.policy");
+
   if (!row || !draft) {
     return (
       <div className="grid min-h-[480px] place-items-center rounded-md border bg-card text-sm text-muted-foreground">
-        판매 오퍼를 선택하세요.
+        {t("editor.select")}
       </div>
     );
   }
@@ -726,12 +647,14 @@ function PolicyEditor({
               {row.offerCode}
             </h2>
             <Badge variant={row.policy.source === "SAVED" ? "success" : "neutral"}>
-              {row.policy.source === "SAVED" ? "개별 정책" : "기본 정책"}
+              {row.policy.source === "SAVED"
+                ? t("editor.individualPolicy")
+                : t("editor.defaultPolicy")}
             </Badge>
           </div>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {row.model} / {row.requiredStorage || "전체 용량"} /{" "}
-            {row.requiredColor || "전체 색상"} / {row.requiredWarrantyLabel || "-"}
+            {row.model} / {row.requiredStorage || t("common.allStorage")} /{" "}
+            {row.requiredColor || t("common.allColor")} / {row.requiredWarrantyLabel || "-"}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -743,61 +666,63 @@ function PolicyEditor({
             disabled={isSaving || row.policy.source !== "SAVED"}
           >
             <Trash2 className="size-4" />
-            기본값
+            {t("editor.reset")}
           </Button>
           <Button type="button" size="sm" onClick={onSave} disabled={isSaving}>
             <Save className={cn("size-4", isSaving && "animate-pulse")} />
-            저장
+            {t("editor.save")}
           </Button>
         </div>
       </div>
 
       <div className="grid gap-3 rounded-md border bg-background p-3 md:grid-cols-2 xl:grid-cols-4">
         <div>
-          <div className="text-xs text-muted-foreground">판매 오퍼</div>
+          <div className="text-xs text-muted-foreground">{t("editor.offer")}</div>
           <div className="mt-1 truncate text-sm font-medium">
             {row.offerCode}
           </div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">기종</div>
+          <div className="text-xs text-muted-foreground">{t("editor.model")}</div>
           <div className="mt-1 truncate text-sm font-medium">
             {row.model || "-"}
           </div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">보증그룹</div>
+          <div className="text-xs text-muted-foreground">{t("editor.warrantyGroup")}</div>
           <div className="mt-1 truncate text-sm font-medium">
             {row.requiredWarrantyLabel || "-"}
           </div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">채널 매핑 / 주문</div>
+          <div className="text-xs text-muted-foreground">{t("editor.mappingOrders")}</div>
           <div className="mt-1 truncate text-sm font-medium">
-            {row.mappedVendorItemCount.toLocaleString("ko-KR")} /{" "}
-            {row.orderItemCount.toLocaleString("ko-KR")}건
+            {t("editor.mappingOrdersValue", {
+              mappings: row.mappedVendorItemCount,
+              orders: row.orderItemCount,
+            })}
           </div>
         </div>
       </div>
 
       <div className="grid gap-3 xl:grid-cols-2">
         <label className="grid gap-1.5 text-xs text-muted-foreground">
-          정책 이름
+          {t("editor.policyName")}
           <Input
             value={draft.policyName ?? ""}
             onChange={(event) => update("policyName", event.target.value || null)}
-            placeholder="예: S24 2년보증 A 우선"
+            placeholder={t("editor.policyNamePlaceholder")}
           />
         </label>
         <div className="grid gap-2 rounded-md border bg-background px-3 py-2">
           <CheckboxLine
             checked={draft.autoMatchEnabled}
-            label="이 판매 오퍼 자동 매칭 사용"
+            label={t("editor.autoMatch")}
             onChange={(checked) => update("autoMatchEnabled", checked)}
           />
           <CheckboxLine
             checked={draft.gradeFallbackEnabled}
-            label="다음 등급까지 자동 탐색"
+            label={t("editor.gradeFallback")}
             onChange={(checked) => update("gradeFallbackEnabled", checked)}
           />
         </div>
@@ -823,6 +748,7 @@ function PolicyEditor({
 }
 
 export function OrderMatchingPolicyView() {
+  const t = useTranslations("salesChannel.policy");
   const { runGuardedAction } = useUnsavedChanges();
   const [rows, setRows] = React.useState<OrderMatchingSalesOfferPolicyRow[]>([]);
   const [query, setQuery] = React.useState("");
@@ -832,6 +758,27 @@ export function OrderMatchingPolicyView() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [messageTone, setMessageTone] = React.useState<"neutral" | "success" | "danger">("neutral");
+  const orderItemRules: RuleField[] = [
+    { label: t("rules.orderCanceled.label"), value: t("rules.orderCanceled.value"), source: "order_matching_work_queue.canceled != 1", note: t("rules.orderCanceled.note") },
+    { label: t("rules.matchableQuantity.label"), value: t("rules.matchableQuantity.value"), source: "order_matching_work_queue.matchable_quantity", note: t("rules.matchableQuantity.note") },
+    { label: t("rules.mappingStatus.label"), value: t("rules.mappingStatus.value"), source: "order_matching_work_queue.mapping_status", note: t("rules.mappingStatus.note") },
+    { label: t("rules.salesOffer.label"), value: t("rules.salesOffer.value"), source: "order_matching_work_queue.sales_offer_id", note: t("rules.salesOffer.note") },
+  ];
+  const inventoryCandidateRules: RuleField[] = [
+    { label: t("rules.inventoryStatus.label"), value: t("rules.inventoryStatus.value"), source: "inventory.inventory_status = SELLABLE", note: t("rules.inventoryStatus.note") },
+    { label: t("rules.shipmentHistory.label"), value: t("rules.shipmentHistory.value"), source: "match_worker_allocation active none", note: t("rules.shipmentHistory.note") },
+    { label: t("rules.existingMatch.label"), value: t("rules.existingMatch.value"), source: "MATCHED / INVOICE_ISSUED none", note: t("rules.existingMatch.note") },
+  ];
+  const matchingBasisRules: RuleField[] = [
+    { label: t("rules.model.label"), value: t("rules.model.value"), source: "sales_offers.model_option_id", note: t("rules.model.note") },
+    { label: t("rules.storage.label"), value: t("rules.storage.value"), source: "sales_offers.storage_match_mode / storage_option_id", note: t("rules.storage.note") },
+    { label: t("rules.warrantyGroup.label"), value: t("rules.warrantyGroup.value"), source: "sales_offers.warranty_group_option_id", note: t("rules.warrantyGroup.note") },
+  ];
+  const workerFields: RuleField[] = [
+    { label: t("worker.name.label"), value: t("worker.name.value"), source: "quickhack_server/workers/registry.ts", note: t("worker.name.note") },
+    { label: t("worker.interval.label"), value: t("worker.interval.value"), source: "defaultIntervalSeconds", note: t("worker.interval.note") },
+    { label: t("worker.batch.label"), value: t("worker.batch.value"), source: "matchOrderInventory({ limit: 100 })", note: t("worker.batch.note") },
+  ];
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = React.useMemo(
@@ -858,8 +805,8 @@ export function OrderMatchingPolicyView() {
   useUnsavedForm({
     id: ORDER_MATCHING_POLICY_FORM_ID,
     label: selectedRow
-      ? `${selectedRow.offerCode} 주문 매칭 정책`
-      : "주문 매칭 정책",
+      ? t("unsaved.formOffer", { offer: selectedRow.offerCode })
+      : t("unsaved.form"),
     enabled: selectedRow !== null && draft !== null,
     isDirty:
       draft !== null &&
@@ -883,7 +830,7 @@ export function OrderMatchingPolicyView() {
         | null;
 
       if (!response.ok || !payload?.ok || !payload.data) {
-        throw new Error(payload?.message || "주문 매칭 정책을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.loadFailed")));
       }
 
       const nextSelectedRow =
@@ -893,7 +840,7 @@ export function OrderMatchingPolicyView() {
       setRows(payload.data.rows);
       setSelectedKey(nextSelectedRow ? rowKey(nextSelectedRow) : "");
       setDraft(nextSelectedRow ? policyDraft(nextSelectedRow.policy) : null);
-      setMessage(`판매 오퍼 정책 ${payload.data.rows.length.toLocaleString("ko-KR")}건을 불러왔습니다.`);
+      setMessage(t("message.loaded", { count: payload.data.rows.length }));
       setMessageTone("success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -901,7 +848,7 @@ export function OrderMatchingPolicyView() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     queueMicrotask(() => void loadPolicies());
@@ -918,7 +865,7 @@ export function OrderMatchingPolicyView() {
       | null;
 
     if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.message || "주문 매칭 정책 저장에 실패했습니다.");
+      throw new Error(legacyApiMessage(payload, t("message.saveFailed")));
     }
 
     return payload;
@@ -947,7 +894,7 @@ export function OrderMatchingPolicyView() {
           priorityOrder: index + 1,
         })),
       });
-      setMessage("판매 오퍼 주문 매칭 정책을 저장했습니다.");
+      setMessage(t("message.saved"));
       setMessageTone("success");
       await loadPolicies(selectedKey);
     } catch (error) {
@@ -977,7 +924,7 @@ export function OrderMatchingPolicyView() {
         expectedPolicyId: selectedRow.policy.policyId,
         expectedVersion: selectedRow.policy.version,
       });
-      setMessage("판매 오퍼 정책을 기본값으로 되돌렸습니다.");
+      setMessage(t("message.reset"));
       setMessageTone("success");
       await loadPolicies(selectedKey);
     } catch (error) {
@@ -1001,7 +948,7 @@ export function OrderMatchingPolicyView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [ORDER_MATCHING_POLICY_FORM_ID],
-      targetLabel: `${nextRow.offerCode} 주문 매칭 정책 열기`,
+      targetLabel: t("unsaved.open", { offer: nextRow.offerCode }),
       action: () => {
         setSelectedKey(nextKey);
         setDraft(policyDraft(nextRow.policy));
@@ -1013,7 +960,7 @@ export function OrderMatchingPolicyView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [ORDER_MATCHING_POLICY_FORM_ID],
-      targetLabel: "주문 매칭 정책 새로고침",
+      targetLabel: t("unsaved.reload"),
       action: () => {
         void loadPolicies(selectedKey);
       },
@@ -1049,15 +996,15 @@ export function OrderMatchingPolicyView() {
                   <ListChecks className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold">판매 오퍼별 우선순위 정책</h2>
+                  <h2 className="text-sm font-semibold">{t("page.title")}</h2>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    QuickHack 판매상품 조합마다 후보 재고 탐색 순서를 지정합니다.
+                    {t("page.description")}
                   </p>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <Badge variant="neutral">
-                  개별 {savedPolicyCount.toLocaleString("ko-KR")}건
+                  {t("page.individualCount", { count: savedPolicyCount })}
                 </Badge>
                 <Button
                   type="button"
@@ -1069,7 +1016,7 @@ export function OrderMatchingPolicyView() {
                   <RefreshCcw
                     className={cn("size-4", isLoading && "animate-spin")}
                   />
-                  새로고침
+                  {t("page.refresh")}
                 </Button>
               </div>
             </div>
@@ -1095,21 +1042,21 @@ export function OrderMatchingPolicyView() {
                   <SearchInput
                     value={query}
                     onValueChange={setQuery}
-                    placeholder="오퍼 코드, 기종, 용량, 색상 검색"
+                    placeholder={t("page.searchPlaceholder")}
                   />
                   <div className="grid grid-cols-3 overflow-hidden rounded-md border bg-background text-center">
                     <div className="border-r px-2 py-2">
-                      <div className="text-xs text-muted-foreground">전체</div>
+                      <div className="text-xs text-muted-foreground">{t("page.total")}</div>
                       <div className="font-semibold tabular-nums">{rows.length}</div>
                     </div>
                     <div className="border-r px-2 py-2">
-                      <div className="text-xs text-muted-foreground">개별</div>
+                      <div className="text-xs text-muted-foreground">{t("page.individual")}</div>
                       <div className="font-semibold tabular-nums">
                         {savedPolicyCount}
                       </div>
                     </div>
                     <div className="px-2 py-2">
-                      <div className="text-xs text-muted-foreground">검색</div>
+                      <div className="text-xs text-muted-foreground">{t("page.search")}</div>
                       <div className="font-semibold tabular-nums">
                         {filteredRows.length}
                       </div>
@@ -1126,7 +1073,7 @@ export function OrderMatchingPolicyView() {
               <div className="min-h-0 overflow-auto p-4">
                 {isLoading ? (
                   <div className="grid min-h-[480px] place-items-center rounded-md border bg-background text-sm text-muted-foreground">
-                    판매 오퍼 정책을 불러오는 중입니다.
+                    {t("page.loading")}
                   </div>
                 ) : (
                   <PolicyEditor
@@ -1144,22 +1091,22 @@ export function OrderMatchingPolicyView() {
 
           <FieldGroup
             icon={ClipboardList}
-            title="주문 아이템 고정 조건"
-            description="자동 매칭 worker가 주문 아이템을 처리 대상으로 삼기 전에 반드시 확인하는 조건입니다."
+            title={t("sections.orderTitle")}
+            description={t("sections.orderDescription")}
             fields={orderItemRules}
           />
 
           <FieldGroup
             icon={PackageCheck}
-            title="후보 재고 고정 조건"
-            description="실제 PG 재고가 주문에 예약되기 전에 반드시 만족해야 하는 조건입니다."
+            title={t("sections.inventoryTitle")}
+            description={t("sections.inventoryDescription")}
             fields={inventoryCandidateRules}
           />
 
           <FieldGroup
             icon={Store}
-            title="판매상품 조합 기준"
-            description="채널 상품 매핑에서 넘어온 값과 QuickHack 판매상품 조합을 기준으로 후보 재고를 좁힙니다."
+            title={t("sections.matchingTitle")}
+            description={t("sections.matchingDescription")}
             fields={matchingBasisRules}
           />
 
@@ -1167,31 +1114,31 @@ export function OrderMatchingPolicyView() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="size-4 text-primary" />
-                <h2 className="text-sm font-semibold">자동 매칭 처리 순서</h2>
+                <h2 className="text-sm font-semibold">{t("sections.flowTitle")}</h2>
               </div>
-              <Badge variant="success">현재 코드 기준</Badge>
+              <Badge variant="success">{t("sections.currentCode")}</Badge>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <ReadOnlyStep
                 index={1}
-                title="주문 대상 확인"
-                text="취소, 수량, 상품 매핑, 판매상품 조합 조건을 먼저 확인합니다."
+                title={t("sections.step1.title")}
+                text={t("sections.step1.text")}
               />
               <ReadOnlyStep
                 index={2}
-                title="후보 재고 조회"
-                text="판매가능 재고 중 출고나 활성 매칭이 없는 PG만 가져옵니다."
+                title={t("sections.step2.title")}
+                text={t("sections.step2.text")}
               />
               <ReadOnlyStep
                 index={3}
-                title="PG 예약"
-                text="선택된 PG의 재고 상태를 예약으로 바꾸고 매칭 이력을 남깁니다."
+                title={t("sections.step3.title")}
+                text={t("sections.step3.text")}
                 tone="success"
               />
               <ReadOnlyStep
                 index={4}
-                title="주문 상태 갱신"
-                text="아이템, 배송 단위, 주문 전체의 매칭 상태를 다시 계산합니다."
+                title={t("sections.step4.title")}
+                text={t("sections.step4.text")}
               />
             </div>
           </section>
@@ -1199,22 +1146,14 @@ export function OrderMatchingPolicyView() {
           <section className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              <p>
-                판매 오퍼별 정책은 후보 탐색 우선순위만 조정합니다. 취소 주문 제외,
-                판매가능 재고만 사용, 이미 출고/매칭된 PG 제외 같은 안전 조건은
-                운영 화면에서 수정할 수 없습니다.
-              </p>
+              <p>{t("sections.safety")}</p>
             </div>
           </section>
 
           <section className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
-              <p>
-                지금 단계에서는 정책 저장 구조와 UI를 먼저 잡았습니다. 실제 자동
-                매칭 worker가 이 판매 오퍼 정책을 읽어 후보 조회에 적용하는 부분은
-                다음 단계에서 연결합니다.
-              </p>
+              <p>{t("sections.implementation")}</p>
             </div>
           </section>
         </div>

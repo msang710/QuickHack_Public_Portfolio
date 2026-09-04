@@ -3,13 +3,14 @@
 
 import * as React from "react";
 import { CalendarDays, RotateCcw } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { Input } from "@/quickhack_client/components/ui/input";
 import {
   resolveClosedStatisticsPeriod,
   resolveStatisticsPeriodSelection,
-  statisticsPeriodErrorMessage,
+  StatisticsPeriodError,
   type StatisticsDateRange,
   type StatisticsPeriodSelection,
 } from "@/quickhack_shared/statistics/statistics-period";
@@ -39,6 +40,7 @@ export function StatisticsPeriodToolbar({
   selection,
   onSelectionChange,
 }: StatisticsPeriodToolbarProps) {
+  const t = useTranslations("statistics.periodToolbar");
   const appliedKind = selection.kind;
   const appliedFromDate =
     selection.kind === "custom" ? selection.fromDate : "";
@@ -77,7 +79,7 @@ export function StatisticsPeriodToolbar({
     event.preventDefault();
 
     if (!draft.fromDate || !draft.toDate) {
-      setErrorMessage("통계 시작일과 종료일을 함께 입력해야 합니다.");
+      setErrorMessage(t("error.incomplete"));
       return;
     }
 
@@ -94,10 +96,18 @@ export function StatisticsPeriodToolbar({
         toDate: period.range.toDate,
       });
     } catch (error: unknown) {
-      setErrorMessage(
-        statisticsPeriodErrorMessage(error) ??
-          "통계 기간을 확인하지 못했습니다."
-      );
+      if (error instanceof StatisticsPeriodError) {
+        const key = error.code === "STATISTICS_PERIOD_INCOMPLETE_RANGE"
+          ? "error.incomplete"
+          : error.code === "STATISTICS_PERIOD_INVALID_DATE"
+            ? "error.invalidDate"
+            : error.code === "STATISTICS_PERIOD_REVERSED_RANGE"
+              ? "error.reversed"
+              : "error.openDate";
+        setErrorMessage(t(key));
+      } else {
+        setErrorMessage(t("error.unknown"));
+      }
     }
   }
 
@@ -109,7 +119,7 @@ export function StatisticsPeriodToolbar({
 
   return (
     <section
-      aria-label="통계 조회 기간"
+      aria-label={t("aria")}
       className="rounded-md border bg-popover px-4 py-3"
     >
       <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-end 2xl:justify-between">
@@ -119,14 +129,13 @@ export function StatisticsPeriodToolbar({
               aria-hidden="true"
               className="size-4 text-muted-foreground"
             />
-            <div className="text-sm font-semibold">통계 조회 기간</div>
+            <div className="text-sm font-semibold">{t("title")}</div>
             <Badge variant={appliedKind === "default" ? "sky" : "purple"}>
-              {appliedKind === "default" ? "기본 90일" : "직접 지정"}
+              {appliedKind === "default" ? t("default") : t("custom")}
             </Badge>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            적용 중: {selectedRange.fromDate} ~ {selectedRange.toDate} · 한국
-            시간 기준 어제까지
+            {t("applied", { from: selectedRange.fromDate, to: selectedRange.toDate })}
           </div>
         </div>
 
@@ -136,7 +145,7 @@ export function StatisticsPeriodToolbar({
         >
           <label className="grid min-w-[150px] flex-1 gap-1 2xl:flex-none">
             <span className="text-xs font-medium text-muted-foreground">
-              시작일
+              {t("from")}
             </span>
             <Input
               aria-describedby={
@@ -152,7 +161,7 @@ export function StatisticsPeriodToolbar({
           </label>
           <label className="grid min-w-[150px] flex-1 gap-1 2xl:flex-none">
             <span className="text-xs font-medium text-muted-foreground">
-              종료일
+              {t("to")}
             </span>
             <Input
               aria-describedby={
@@ -167,7 +176,7 @@ export function StatisticsPeriodToolbar({
             />
           </label>
           <Button disabled={draftMatchesApplied} type="submit">
-            기간 적용
+            {t("apply")}
           </Button>
           <Button
             disabled={!canReset}
@@ -176,7 +185,7 @@ export function StatisticsPeriodToolbar({
             variant="outline"
           >
             <RotateCcw aria-hidden="true" />
-            기본 90일로 되돌리기
+            {t("reset")}
           </Button>
         </form>
       </div>

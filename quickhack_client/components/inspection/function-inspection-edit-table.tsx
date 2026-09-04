@@ -1,6 +1,8 @@
 // QuickHack note: 기능 검수 행의 대부분이 직접 편집 대상이라 전용 표 컴포넌트로 분리합니다.
 "use client";
 
+import { useTranslations } from "next-intl";
+
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Input } from "@/quickhack_client/components/ui/input";
 import {
@@ -40,8 +42,19 @@ export type FunctionRow = {
   storage: string;
   firstCallDate: string;
   account: string;
+  accountStatus?: "UNKNOWN" | "NONE" | "PRESENT" | "QUERY_FAILED";
   cameraCheck: string;
   warning: string;
+  warningCodes?: Array<
+    | "CARRIER_REVIEW"
+    | "ACCOUNT_REVIEW"
+    | "ACCOUNT_QUERY_FAILED"
+    | "ADB_OFFLINE"
+    | "ADB_UNAUTHORIZED"
+    | "ADB_CONNECTION_UNKNOWN"
+    | "ADB_QUERY_FAILED"
+  >;
+  warningDetail?: string | null;
   pg: string;
   imei: string;
   functionDefect: string;
@@ -83,24 +96,64 @@ export function storageValuesForProduct(
   );
 }
 
-function adbStateBadge(connectionState: string) {
+type EditTableTranslator = ReturnType<typeof useTranslations<"inspection.editTable">>;
+
+function adbStateBadge(connectionState: string, t: EditTableTranslator) {
   if (connectionState === "device") {
-    return <Badge variant="success">연결됨</Badge>;
+    return <Badge variant="success">{t("connected")}</Badge>;
   }
 
   if (connectionState === "offline") {
-    return <Badge variant="warning">offline</Badge>;
+    return <Badge variant="warning">{t("offline")}</Badge>;
   }
 
   if (connectionState === "unauthorized") {
-    return <Badge variant="danger">unauthorized</Badge>;
+    return <Badge variant="danger">{t("unauthorized")}</Badge>;
   }
 
   if (connectionState === "manual") {
-    return <Badge variant="neutral">수동</Badge>;
+    return <Badge variant="neutral">{t("manual")}</Badge>;
+  }
+
+  if (connectionState === "disconnected") {
+    return <Badge variant="warning">{t("disconnected")}</Badge>;
   }
 
   return <Badge variant="warning">{connectionState || "-"}</Badge>;
+}
+
+function adbAccountText(row: FunctionRow, t: EditTableTranslator) {
+  if (row.accountStatus === "NONE") return t("account.none");
+  if (row.accountStatus === "PRESENT") return t("account.present");
+  if (row.accountStatus === "QUERY_FAILED") return t("account.queryFailed");
+  return row.account || t("unconnected");
+}
+
+function adbWarningText(row: FunctionRow, t: EditTableTranslator) {
+  const codes = row.warningCodes ?? [];
+  if (codes.length === 0) {
+    return row.warning || "-";
+  }
+
+  return codes
+    .map((code) => {
+      if (code === "CARRIER_REVIEW") return t("warning.carrierReview");
+      if (code === "ACCOUNT_REVIEW") return t("warning.accountReview");
+      if (code === "ACCOUNT_QUERY_FAILED") return t("warning.accountQueryFailed");
+      if (code === "ADB_OFFLINE") return t("warning.adbOffline");
+      if (code === "ADB_UNAUTHORIZED") return t("warning.adbUnauthorized");
+      if (code === "ADB_QUERY_FAILED") {
+        return t("warning.adbQueryFailed", { detail: row.warningDetail ?? "-" });
+      }
+      return t("warning.adbConnectionUnknown", {
+        state: row.warningDetail ?? "unknown",
+      });
+    })
+    .join("\n");
+}
+
+function adbRowHasWarning(row: FunctionRow) {
+  return (row.warningCodes?.length ?? 0) > 0 || Boolean(row.warning);
 }
 
 function isManualFunctionRow(row: FunctionRow) {
@@ -117,25 +170,27 @@ export function FunctionInspectionEditTable({
   updateFunctionRow,
   cameraCheckForProduct,
 }: FunctionInspectionEditTableProps) {
+  const t = useTranslations("inspection.editTable");
+
   return (
     <div className="min-w-[1660px]">
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-secondary">
           <TableRow>
-            <TableHead className="w-[70px]">번호</TableHead>
-            <TableHead className="w-[150px]">ADB Serial</TableHead>
-            <TableHead className="w-[100px]">상태</TableHead>
-            <TableHead className="w-[160px]">제품명</TableHead>
-            <TableHead className="w-[110px]">통신사</TableHead>
-            <TableHead className="w-[110px]">저장공간</TableHead>
-            <TableHead className="w-[130px]">최초통화일</TableHead>
-            <TableHead className="w-[100px]">계정</TableHead>
-            <TableHead className="w-[170px]">카메라 점검 배율</TableHead>
-            <TableHead className="w-[170px]">확인사항</TableHead>
+            <TableHead className="w-[70px]">{t("columns.number")}</TableHead>
+            <TableHead className="w-[150px]">{t("columns.adbSerial")}</TableHead>
+            <TableHead className="w-[100px]">{t("columns.status")}</TableHead>
+            <TableHead className="w-[160px]">{t("columns.product")}</TableHead>
+            <TableHead className="w-[110px]">{t("columns.carrier")}</TableHead>
+            <TableHead className="w-[110px]">{t("columns.storage")}</TableHead>
+            <TableHead className="w-[130px]">{t("columns.firstCallDate")}</TableHead>
+            <TableHead className="w-[100px]">{t("columns.account")}</TableHead>
+            <TableHead className="w-[170px]">{t("columns.cameraCheck")}</TableHead>
+            <TableHead className="w-[170px]">{t("columns.warning")}</TableHead>
             <TableHead className="w-[170px]">PG</TableHead>
             <TableHead className="w-[180px]">IMEI</TableHead>
-            <TableHead className="w-[230px]">기능하자</TableHead>
-            <TableHead className="w-[100px]">매입처 반품</TableHead>
+            <TableHead className="w-[230px]">{t("columns.functionDefect")}</TableHead>
+            <TableHead className="w-[100px]">{t("columns.supplierReturn")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -152,13 +207,13 @@ export function FunctionInspectionEditTable({
               <TableCell className="font-mono text-xs">
                 {isManualFunctionRow(row) ? (
                   <Badge variant="neutral" className="font-sans">
-                    수동
+                    {t("manual")}
                   </Badge>
                 ) : (
                   row.serial || "-"
                 )}
               </TableCell>
-              <TableCell>{adbStateBadge(row.connectionState)}</TableCell>
+              <TableCell>{adbStateBadge(row.connectionState, t)}</TableCell>
               <TableCell>
                 <SearchCombobox
                   value={row.product}
@@ -166,8 +221,8 @@ export function FunctionInspectionEditTable({
                   isValidValue={(value) =>
                     isOptionValue(value, criteriaRuntime.productValues)
                   }
-                  placeholder="제품명 선택"
-                  searchPlaceholder="제품명 또는 모델코드 검색"
+                  placeholder={t("placeholders.product")}
+                  searchPlaceholder={t("placeholders.productSearch")}
                   onValueChange={(product) => {
                     updateFunctionRow(row.id, {
                       product,
@@ -190,7 +245,7 @@ export function FunctionInspectionEditTable({
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="통신사 선택" />
+                    <SelectValue placeholder={t("placeholders.carrier")} />
                   </SelectTrigger>
                   <SelectContent>
                     {productCriteria.carriers.map((carrier) => (
@@ -226,7 +281,7 @@ export function FunctionInspectionEditTable({
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="저장공간 선택" />
+                        <SelectValue placeholder={t("placeholders.storage")} />
                       </SelectTrigger>
                       <SelectContent>
                         {storageOptions.map((storage) => (
@@ -261,9 +316,9 @@ export function FunctionInspectionEditTable({
               <TableCell>
                 <div className="flex min-h-9 items-center whitespace-nowrap rounded-md border border-transparent px-2 py-2 text-sm">
                   {isManualFunctionRow(row) ? (
-                    <Badge variant="neutral">수동</Badge>
+                    <Badge variant="neutral">{t("manual")}</Badge>
                   ) : (
-                    row.account || "연결되지 않음"
+                    adbAccountText(row, t)
                   )}
                 </div>
               </TableCell>
@@ -275,14 +330,15 @@ export function FunctionInspectionEditTable({
               <TableCell
                 className={cn(
                   "whitespace-pre-wrap text-xs",
-                  row.warning !== "정상" && "font-semibold text-red-600"
+                  adbRowHasWarning(row) && "font-semibold text-red-600"
                 )}
               >
-                {row.warning || "-"}
+                {adbWarningText(row, t)}
               </TableCell>
               <TableCell>
                 <Input
                   value={row.pg}
+                  placeholder={t("placeholders.pgAuto")}
                   onChange={(event) =>
                     updateFunctionRow(row.id, {
                       pg: event.target.value.toUpperCase(),

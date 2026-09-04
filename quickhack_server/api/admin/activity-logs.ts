@@ -30,14 +30,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "LEADER")) {
     return NextResponse.json(
-      { ok: false, message: "직원 작업 이력 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (error instanceof KeysetCursorError) {
       return NextResponse.json(
-        { ok: false, code: error.code, message: error.message },
+        { ok: false, code: error.code },
         { status: 400 }
       );
     }

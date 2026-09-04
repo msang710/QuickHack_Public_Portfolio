@@ -55,23 +55,9 @@ export class StatisticsPeriodError extends Error {
   }
 }
 
-const STATISTICS_PERIOD_ERROR_MESSAGES: Record<
-  StatisticsPeriodErrorCode,
-  string
-> = {
-  STATISTICS_PERIOD_INCOMPLETE_RANGE:
-    "통계 시작일과 종료일을 함께 입력해야 합니다.",
-  STATISTICS_PERIOD_INVALID_DATE:
-    "통계 기간은 YYYY-MM-DD 형식의 올바른 날짜여야 합니다.",
-  STATISTICS_PERIOD_REVERSED_RANGE:
-    "통계 시작일은 종료일보다 늦을 수 없습니다.",
-  STATISTICS_PERIOD_OPEN_DATE_NOT_ALLOWED:
-    "통계 종료일은 한국 시간 기준 어제까지만 지정할 수 있습니다.",
-};
-
-export function statisticsPeriodErrorMessage(error: unknown) {
+export function statisticsPeriodErrorCode(error: unknown) {
   return error instanceof StatisticsPeriodError
-    ? STATISTICS_PERIOD_ERROR_MESSAGES[error.code]
+    ? error.code
     : null;
 }
 

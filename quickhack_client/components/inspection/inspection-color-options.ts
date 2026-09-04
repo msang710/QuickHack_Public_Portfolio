@@ -7,7 +7,10 @@ function uniqueSorted(values: Iterable<string>) {
   );
 }
 
-function colorDescription(models: string[]) {
+function colorDescription(
+  models: string[],
+  formatMoreModels: (visible: string, remaining: number) => string
+) {
   if (models.length === 0) {
     return "";
   }
@@ -16,7 +19,7 @@ function colorDescription(models: string[]) {
     return models.join(", ");
   }
 
-  return `${models.slice(0, 3).join(", ")} 외 ${models.length - 3}개 기종`;
+  return formatMoreModels(models.slice(0, 3).join(", "), models.length - 3);
 }
 
 // QuickHack object: 공식 색상명을 상품 기준값의 기종 관계로 정렬하고 기종 설명을 붙인 검수용 옵션으로 변환합니다.
@@ -24,10 +27,12 @@ export function buildInspectionColorOptions({
   colors,
   colorModelsByColor,
   rawOptions,
+  formatMoreModels,
 }: {
   colors: string[];
   colorModelsByColor: Record<string, string[]>;
   rawOptions: ProductCriteriaOptionDto[];
+  formatMoreModels: (visible: string, remaining: number) => string;
 }): ProductOption[] {
   const modelsByColor = new Map<string, Set<string>>();
 
@@ -71,7 +76,7 @@ export function buildInspectionColorOptions({
   return colors
     .map((color) => {
       const models = uniqueSorted(modelsByColor.get(color) ?? []);
-      const description = colorDescription(models);
+      const description = colorDescription(models, formatMoreModels);
       const firstModel = models[0] ?? "\uffff";
 
       return {

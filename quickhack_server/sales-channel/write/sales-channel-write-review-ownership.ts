@@ -31,20 +31,19 @@ type AttemptMetadata = {
 
 type StateConflict = {
   code: string;
-  message: string;
 };
 
 function inProgressError() {
   return publicConflict(
     "SALES_CHANNEL_WRITE_REVIEW_IN_PROGRESS",
-    "같은 외부 API 요청의 상태 점검 또는 내부 확정 작업이 이미 진행 중입니다. 완료 후 다시 시도하세요."
+    "SALES_CHANNEL_WRITE_REVIEW_IN_PROGRESS"
   );
 }
 
 function ownershipLostError() {
   return publicConflict(
     REVIEW_OWNERSHIP_LOST_CODE,
-    "이 작업의 처리 소유권이 만료되었거나 다른 작업으로 넘어갔습니다. 최신 상태를 확인하세요."
+    REVIEW_OWNERSHIP_LOST_CODE
   );
 }
 
@@ -174,7 +173,7 @@ export async function claimSalesChannelWriteReviewOperationInTransaction(
   if (!request) {
     throw publicNotFound(
       "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND",
-      "외부 API 대기 요청을 찾을 수 없습니다."
+      "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND"
     );
   }
 
@@ -183,7 +182,7 @@ export async function claimSalesChannelWriteReviewOperationInTransaction(
     (input.requiredFailureStage !== undefined &&
       request.failure_stage !== input.requiredFailureStage)
   ) {
-    throw publicConflict(input.stateConflict.code, input.stateConflict.message);
+    throw publicConflict(input.stateConflict.code, input.stateConflict.code);
   }
 
   await releaseExpiredOperationIfNeeded(tx, {
@@ -429,7 +428,7 @@ export async function assertNoActiveSalesChannelWriteReviewOperation(
   if (!request) {
     throw publicNotFound(
       "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND",
-      "외부 API 대기 요청을 찾을 수 없습니다."
+      "SALES_CHANNEL_WRITE_REQUEST_NOT_FOUND"
     );
   }
 

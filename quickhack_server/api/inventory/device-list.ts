@@ -42,14 +42,14 @@ export async function GET(request: NextRequest) {
         return apiFailureResponse({
           status: 401,
           code: "AUTHENTICATION_REQUIRED",
-          message: "로그인이 필요합니다.",
+
         });
       }
       if (!canAccessRole(user.role, "VIEWER")) {
         return apiFailureResponse({
           status: 403,
           code: "PERMISSION_DENIED",
-          message: "기기 목록 조회 권한이 없습니다.",
+
         });
       }
       setOperationTraceUserId(user.userId);
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
           return apiFailureResponse({
             status: 400,
             code: "DEVICE_LIST_CONTEXT_INVALID",
-            message: "지원하지 않는 기기 목록 조회 구분입니다.",
+
           });
         }
         const context = requestedContext;

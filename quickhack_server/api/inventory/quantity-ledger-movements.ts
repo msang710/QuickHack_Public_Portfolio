@@ -56,7 +56,7 @@ export async function GET(
         return apiFailureResponse({
           status: 401,
           code: "AUTHENTICATION_REQUIRED",
-          message: "로그인이 필요합니다.",
+
         });
       }
 
@@ -64,7 +64,7 @@ export async function GET(
         return apiFailureResponse({
           status: 403,
           code: "PERMISSION_DENIED",
-          message: "재고 수불 이력 조회 권한이 없습니다.",
+
         });
       }
 
@@ -99,7 +99,7 @@ export async function GET(
           return apiFailureResponse({
             status: 404,
             code: "INVENTORY_QUANTITY_BALANCE_NOT_FOUND",
-            message: "재고 수량 잔액을 찾을 수 없습니다.",
+
           });
         }
 

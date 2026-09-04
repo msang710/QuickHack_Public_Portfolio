@@ -34,7 +34,7 @@ export async function resolveInboundBatchId(
   if (!Number.isInteger(batchNo) || batchNo <= 0) {
     throw publicBadRequest(
       "INBOUND_BATCH_REFERENCE_INVALID",
-      "차수 번호는 1 이상의 숫자여야 합니다."
+      "INBOUND_BATCH_REFERENCE_INVALID"
     );
   }
 
@@ -52,7 +52,7 @@ export async function resolveInboundBatchId(
   if (!batch) {
     throw publicConflict(
       "INBOUND_BATCH_NOT_REGISTERED",
-      `${batchDate} ${batchNo}차가 차수 지정 메뉴에 등록되어 있지 않습니다.`
+      "INBOUND_BATCH_NOT_REGISTERED"
     );
   }
 

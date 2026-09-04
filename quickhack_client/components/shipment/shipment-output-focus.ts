@@ -40,7 +40,8 @@ export function isMatchedWarrantyTabKey(
 
 export function shipmentOutputFocusForReplacement(
   replacement: InvoiceReplacement,
-  returnMenuId: ShipmentOutputReturnMenuId
+  returnMenuId: ShipmentOutputReturnMenuId,
+  fallbackBatchLabel: string
 ): ShipmentOutputFocus | null {
   if (
     !replacement.issueBatchId ||
@@ -58,7 +59,7 @@ export function shipmentOutputFocusForReplacement(
     tabKey: replacement.shipmentListPrintTabKey,
     batchLabel:
       replacement.shipmentListPrintBatchLabel ??
-      `출력 차수 #${replacement.shipmentListPrintBatchId}`,
+      fallbackBatchLabel,
     trackingNumber:
       replacement.candidateTrackingNumber ?? replacement.oldTrackingNumber,
     returnMenuId,

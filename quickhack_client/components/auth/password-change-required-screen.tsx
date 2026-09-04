@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { Database, Loader2, LogOut } from "lucide-react";
 import type { AuthUser } from "@/quickhack_shared/auth/auth-constants";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -13,6 +14,7 @@ export function PasswordChangeRequiredScreen({
 }: {
   currentUser: AuthUser;
 }) {
+  const t = useTranslations("auth.passwordRequired");
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const [logoutError, setLogoutError] = React.useState("");
 
@@ -25,7 +27,7 @@ export function PasswordChangeRequiredScreen({
     setLogoutError("");
 
     try {
-      await requestQuickHackLogout();
+      await requestQuickHackLogout(fetch, t("logoutFailed"));
       window.location.reload();
     } catch (error) {
       setLogoutError(error instanceof Error ? error.message : String(error));
@@ -45,18 +47,16 @@ export function PasswordChangeRequiredScreen({
               </div>
               <div>
                 <h1 className="text-lg font-semibold">QuickHack</h1>
-                <p className="text-sm text-muted-foreground">내부 ERP/WMS</p>
+                <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
               </div>
             </div>
 
             <div className="max-w-md">
               <h2 className="text-2xl font-semibold tracking-normal">
-                비밀번호 변경이 필요합니다
+                {t("title")}
               </h2>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                {currentUser.displayName} 계정은 임시 비밀번호로
-                로그인했습니다. 새 비밀번호를 설정하기 전에는 업무
-                메뉴와 다른 계정 설정을 사용할 수 없습니다.
+                {t("description", { name: currentUser.displayName })}
               </p>
             </div>
           </div>
@@ -78,7 +78,7 @@ export function PasswordChangeRequiredScreen({
               ) : (
                 <LogOut className="size-4" />
               )}
-              로그아웃
+              {t("logout")}
             </Button>
           </div>
         </div>

@@ -38,7 +38,7 @@ function parseOptionalUserId(value: string | null) {
   if (!value) return null;
   const userId = Number(value);
   if (!Number.isInteger(userId) || userId <= 0) {
-    throw publicBadRequest("INVALID_ACCOUNT_ID", "계정 정보가 올바르지 않습니다.");
+    throw publicBadRequest("INVALID_ACCOUNT_ID", "INVALID_ACCOUNT_ID");
   }
   return userId;
 }
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
   const body = parseJsonObject(bodyText);
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       );
       return NextResponse.json({
         ok: true,
-        message: "USB 기기 등록 요청을 시작했습니다.",
+        resultCode: "MOBILE_DEVICE_PROVISION_STARTED",
         ...result,
       });
     }
@@ -130,10 +130,10 @@ export async function POST(request: NextRequest) {
         },
         authResult.securityContext
       );
-      return NextResponse.json({ ok: true, message: "모바일 기기 등록을 폐기했습니다.", item });
+      return NextResponse.json({ ok: true, resultCode: "MOBILE_DEVICE_REVOKED", item });
     }
     return NextResponse.json(
-      { ok: false, message: "지원하지 않는 모바일 기기 작업입니다." },
+      { ok: false, code: "ACTION_UNSUPPORTED" },
       { status: 400 }
     );
   } catch (error) {

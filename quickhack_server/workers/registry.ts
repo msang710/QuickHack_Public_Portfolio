@@ -4,6 +4,7 @@ import {
   LOGEN_WORKER_KEY,
   OBSERVABILITY_WORKER_KEY,
   MANUAL_ORDER_MATCH_WORKER_KEY,
+  INSPECTION_PG_WORKER_KEY,
   ORDER_MATCHING_WORKER_KEY,
   STATISTICS_WORKER_KEY,
 } from "@/quickhack_server/workers/worker-keys";
@@ -428,6 +429,28 @@ export const registeredWorkers: RegisteredWorker[] = [
         summaryText: result.summaryText,
         progressCurrent: result.deletedCount,
         progressTotal: null,
+      };
+    },
+  },
+  {
+    key: INSPECTION_PG_WORKER_KEY.retention,
+    name: "Inspection PG reservation retention",
+    type: "DATABASE_MAINTENANCE",
+    defaultIntervalSeconds: 15 * 60,
+    defaultScheduleEnabled: true,
+    initialScheduleMode: "NEXT_SCHEDULE",
+    maxAttempts: 2,
+    lockSeconds: 5 * 60,
+    async run(context) {
+      const { expireInspectionPgReservations } = await import(
+        "@/quickhack_server/inspection/pg-issuance-service"
+      );
+      const result = await expireInspectionPgReservations({ context });
+      return {
+        summary: result,
+        summaryText: result.summaryText,
+        progressCurrent: result.abandonedCount,
+        progressTotal: result.candidateCount,
       };
     },
   },

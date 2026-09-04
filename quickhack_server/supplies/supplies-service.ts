@@ -68,14 +68,6 @@ const OPEN_REORDER_STATUSES: SupplyReorderStatus[] = [
   SUPPLY_REORDER_STATUS.approved,
   SUPPLY_REORDER_STATUS.ordered,
 ];
-const SUPPLY_RULE_FILTER_LABELS: Record<SupplyConsumptionRuleFilter, string> = {
-  channel: "판매 채널",
-  model: "기종",
-  saleGrade: "판매등급",
-  warranty: "보증 조건",
-  inventoryStatus: "재고 상태",
-};
-
 function supplyForecastCalculationFields(calculation: Record<string, unknown>) {
   return Object.entries(calculation).map(([fieldName, value]) => ({
     field_name: fieldName,
@@ -121,9 +113,7 @@ function validateSupplyRuleFilters(
 
   throw publicBadRequest(
     "UNSUPPORTED_SUPPLY_RULE_FILTER",
-    `${trigger} 계산 기준에서는 ${unsupportedFilters
-      .map((filter) => SUPPLY_RULE_FILTER_LABELS[filter])
-      .join(", ")} 필터를 사용할 수 없습니다.`,
+    "UNSUPPORTED_SUPPLY_RULE_FILTER",
     {
       triggerType: trigger,
       unsupportedFilters,
@@ -146,7 +136,7 @@ function positiveInteger(value: unknown, label: string) {
   if (number <= 0) {
     throw publicBadRequest(
       "INVALID_SUPPLY_POSITIVE_INTEGER",
-      `${label} 값은 1 이상이어야 합니다.`
+      "INVALID_SUPPLY_POSITIVE_INTEGER"
     );
   }
 
@@ -171,7 +161,7 @@ function strictNonNegativeInteger(value: unknown, label: string) {
   if (number === null || number < 0) {
     throw publicBadRequest(
       "INVALID_SUPPLY_NON_NEGATIVE_INTEGER",
-      `${label} 값은 0 이상의 정수여야 합니다.`
+      "INVALID_SUPPLY_NON_NEGATIVE_INTEGER"
     );
   }
 
@@ -184,7 +174,7 @@ function strictPositiveMovementInteger(value: unknown, label: string) {
   if (number === null || number <= 0) {
     throw publicBadRequest(
       "INVALID_SUPPLY_POSITIVE_INTEGER",
-      `${label} 값은 1 이상의 정수여야 합니다.`
+      "INVALID_SUPPLY_POSITIVE_INTEGER"
     );
   }
 
@@ -197,7 +187,7 @@ function roundedPositiveInteger(value: unknown, label: string) {
   if (number === null) {
     throw publicBadRequest(
       "INVALID_SUPPLY_POSITIVE_INTEGER",
-      `${label} 값은 반올림 후 1 이상이어야 합니다.`
+      "INVALID_SUPPLY_POSITIVE_INTEGER"
     );
   }
 
@@ -227,7 +217,7 @@ function optionalMovementId(
   if (id === null || id <= 0) {
     throw publicBadRequest(
       "INVALID_SUPPLY_MOVEMENT_REFERENCE_ID",
-      `${label} 값은 1 이상의 정수여야 합니다.`
+      "INVALID_SUPPLY_MOVEMENT_REFERENCE_ID"
     );
   }
 
@@ -248,7 +238,7 @@ function requiredExpectedRevision(input: SupplyInput, label: string) {
   ) {
     throw publicBadRequest(
       "SUPPLY_REVISION_REQUIRED",
-      `${label}을(를) 수정하려면 현재 revision이 필요합니다.`
+      "SUPPLY_REVISION_REQUIRED"
     );
   }
 
@@ -478,7 +468,7 @@ function movementType(value: unknown): SupplyMovementType {
 
   throw publicBadRequest(
     "INVALID_SUPPLY_MOVEMENT_TYPE",
-    "지원하지 않는 비품 수량 변동 유형입니다."
+    "INVALID_SUPPLY_MOVEMENT_TYPE"
   );
 }
 
@@ -488,7 +478,7 @@ function supplyMovementOperationId(value: unknown) {
   if (!operationId) {
     throw publicBadRequest(
       "SUPPLY_MOVEMENT_OPERATION_ID_REQUIRED",
-      "비품 수량 변경 작업 ID가 필요합니다."
+      "SUPPLY_MOVEMENT_OPERATION_ID_REQUIRED"
     );
   }
 
@@ -498,7 +488,7 @@ function supplyMovementOperationId(value: unknown) {
   ) {
     throw publicBadRequest(
       "INVALID_SUPPLY_MOVEMENT_OPERATION_ID",
-      "비품 수량 변경 작업 ID 형식이 올바르지 않습니다."
+      "INVALID_SUPPLY_MOVEMENT_OPERATION_ID"
     );
   }
 
@@ -518,7 +508,7 @@ function triggerType(value: unknown): SupplyConsumptionTrigger {
 
   throw publicBadRequest(
     "INVALID_SUPPLY_CONSUMPTION_TRIGGER",
-    "지원하지 않는 비품 소요 계산 기준입니다."
+    "INVALID_SUPPLY_CONSUMPTION_TRIGGER"
   );
 }
 
@@ -534,7 +524,7 @@ function outboundConsumptionPolicy(
   ) {
     throw publicBadRequest(
       "INVALID_SUPPLY_CONSUMPTION_POLICY",
-      "\uBE44\uD488 \uCC28\uAC10 \uC2DC\uC810 \uC815\uCC45\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+      "INVALID_SUPPLY_CONSUMPTION_POLICY"
     );
   }
 
@@ -554,7 +544,7 @@ function reorderStatus(value: unknown): SupplyReorderStatus {
 
   throw publicBadRequest(
     "INVALID_SUPPLY_REORDER_STATUS",
-    "지원하지 않는 비품 재구매 상태입니다."
+    "INVALID_SUPPLY_REORDER_STATUS"
   );
 }
 
@@ -598,13 +588,13 @@ function supplyReorderConcurrentStateError(
   ) {
     return publicConflict(
       "SUPPLY_REORDER_RECEIPT_FINALIZED",
-      "입고 완료된 재구매 요청의 상태와 입고 수량은 변경할 수 없습니다. 비품 수량 조정으로 정정해 주세요."
+      "SUPPLY_REORDER_RECEIPT_FINALIZED"
     );
   }
 
   return publicConflict(
     "SUPPLY_REORDER_STATE_CHANGED",
-    "재구매 요청 상태가 다른 작업에서 변경되었습니다. 최신 상태를 다시 확인한 뒤 저장해 주세요.",
+    "SUPPLY_REORDER_STATE_CHANGED",
     {
       expectedStatus: input.expectedStatus,
       currentStatus: current.request_status,
@@ -842,7 +832,7 @@ export async function getSupplyWorkspaceData(
       if (error instanceof KeysetCursorError) {
         throw publicBadRequest(
           "SUPPLY_REORDER_CURSOR_INVALID",
-          "재구매 완료 이력 커서가 유효하지 않습니다. 목록을 처음부터 다시 조회해 주세요."
+          "SUPPLY_REORDER_CURSOR_INVALID"
         );
       }
       throw error;
@@ -996,14 +986,14 @@ function supplyData(input: SupplyInput, user: AuthUser) {
   if (!supplyCode) {
     throw publicBadRequest(
       "SUPPLY_CODE_REQUIRED",
-      "비품 코드를 입력해야 합니다."
+      "SUPPLY_CODE_REQUIRED"
     );
   }
 
   if (!supplyName) {
     throw publicBadRequest(
       "SUPPLY_NAME_REQUIRED",
-      "비품명을 입력해야 합니다."
+      "SUPPLY_NAME_REQUIRED"
     );
   }
 
@@ -1082,13 +1072,13 @@ export async function saveSupply(
     if (supplyId && !before) {
       throw publicConflict(
         "SUPPLY_MASTER_NOT_FOUND",
-        "수정할 비품 정보를 찾을 수 없습니다. 목록을 새로 고쳐 주세요."
+        "SUPPLY_MASTER_NOT_FOUND"
       );
     }
     if (before && before.revision !== expectedRevision) {
       throw publicConflict(
         "SUPPLY_MASTER_STALE_STATE",
-        "비품 정보가 다른 작업에서 변경되었습니다. 최신 상태를 다시 확인한 뒤 저장해 주세요.",
+        "SUPPLY_MASTER_STALE_STATE",
         { currentRevision: before.revision }
       );
     }
@@ -1136,7 +1126,7 @@ export async function saveSupply(
       if (changed.count !== 1) {
         throw publicConflict(
           "SUPPLY_MASTER_STALE_STATE",
-          "비품 정보가 다른 작업에서 변경되었습니다. 최신 상태를 다시 확인한 뒤 저장해 주세요."
+          "SUPPLY_MASTER_STALE_STATE"
         );
       }
       supply = await tx.supplies.findUniqueOrThrow({
@@ -1255,7 +1245,7 @@ export async function recordSupplyMovementInTransaction(
     ) {
       throw publicConflict(
         "SUPPLY_MOVEMENT_IDEMPOTENCY_CONFLICT",
-        "같은 비품 수량 변경 요청이 서로 다른 내용으로 중복되었습니다."
+        "SUPPLY_MOVEMENT_IDEMPOTENCY_CONFLICT"
       );
     }
 
@@ -1280,7 +1270,7 @@ export async function recordSupplyMovementInTransaction(
   if (afterQuantity < 0) {
     throw publicConflict(
       "SUPPLY_STOCK_NEGATIVE",
-      "비품 재고 수량은 0보다 작아질 수 없습니다."
+      "SUPPLY_STOCK_NEGATIVE"
     );
   }
 
@@ -1306,7 +1296,7 @@ export async function recordSupplyMovementInTransaction(
   if (updatedInventory.count !== 1) {
     throw publicConflict(
       "SUPPLY_STOCK_STALE_STATE",
-      "\uBE44\uD488 \uC218\uB7C9\uC774 \uB3D9\uC2DC\uC5D0 \uBCC0\uACBD\uB418\uC5B4 \uCC98\uB9AC\uB97C \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694."
+      "SUPPLY_STOCK_STALE_STATE"
     );
   }
 
@@ -1433,13 +1423,13 @@ export async function saveSupplyConsumptionRule(
     if (ruleId && !before) {
       throw publicConflict(
         "SUPPLY_CONSUMPTION_RULE_NOT_FOUND",
-        "수정할 비품 소모 규칙을 찾을 수 없습니다. 목록을 새로 고쳐 주세요."
+        "SUPPLY_CONSUMPTION_RULE_NOT_FOUND"
       );
     }
     if (before && before.revision !== expectedRevision) {
       throw publicConflict(
         "SUPPLY_CONSUMPTION_RULE_STALE_STATE",
-        "비품 소모 규칙이 다른 작업에서 변경되었습니다. 최신 상태를 다시 확인한 뒤 저장해 주세요.",
+        "SUPPLY_CONSUMPTION_RULE_STALE_STATE",
         { currentRevision: before.revision }
       );
     }
@@ -1474,7 +1464,7 @@ export async function saveSupplyConsumptionRule(
       if (overlappingRule) {
         throw publicConflict(
           "SUPPLY_CONSUMPTION_RULE_OVERLAP",
-          "동일한 비품에 함께 적용될 수 있는 활성 소모 규칙이 이미 있습니다.",
+          "SUPPLY_CONSUMPTION_RULE_OVERLAP",
           {
             supplyId,
             ruleId,
@@ -1513,7 +1503,7 @@ export async function saveSupplyConsumptionRule(
       if (changed.count !== 1) {
         throw publicConflict(
           "SUPPLY_CONSUMPTION_RULE_STALE_STATE",
-          "비품 소모 규칙이 다른 작업에서 변경되었습니다. 최신 상태를 다시 확인한 뒤 저장해 주세요."
+          "SUPPLY_CONSUMPTION_RULE_STALE_STATE"
         );
       }
       rule = await tx.supply_consumption_rules.findUniqueOrThrow({
@@ -1657,7 +1647,7 @@ async function businessRuleExpectedUsage(
       if (incompletePurchasedCount > 0) {
         throw publicConflict(
           "SUPPLY_FORECAST_SOURCE_INCOMPLETE",
-          "매입 확정 시각이 없는 매입 완료 데이터가 있어 비품 예측을 계산할 수 없습니다.",
+          "SUPPLY_FORECAST_SOURCE_INCOMPLETE",
           { source: "PURCHASED_DEVICE", incompleteCount: incompletePurchasedCount }
         );
       }
@@ -1753,7 +1743,7 @@ async function businessRuleExpectedUsage(
       if (incompleteLegacyCount + incompleteChannelCount > 0) {
         throw publicConflict(
           "SUPPLY_FORECAST_SOURCE_INCOMPLETE",
-          "주문 시각이 없는 주문 데이터가 있어 비품 예측을 계산할 수 없습니다.",
+          "SUPPLY_FORECAST_SOURCE_INCOMPLETE",
           {
             source: "ORDER_ITEM",
             incompleteCount: incompleteLegacyCount + incompleteChannelCount,
@@ -1893,7 +1883,7 @@ async function businessRuleExpectedUsage(
       if (incompleteReturnCount > 0) {
         throw publicConflict(
           "SUPPLY_FORECAST_SOURCE_INCOMPLETE",
-          "완료 시각이 없는 반품 입고 확인 데이터가 있어 비품 예측을 계산할 수 없습니다.",
+          "SUPPLY_FORECAST_SOURCE_INCOMPLETE",
           { source: "RETURN_RECEIVED", incompleteCount: incompleteReturnCount }
         );
       }
@@ -2085,22 +2075,22 @@ function forecastValidationStatus(
   errorRatePercent: number | null
 ) {
   if (elapsedDays <= 0) {
-    return "검증 대기";
+    return "PENDING" as const;
   }
 
   if (predictedUsage === 0 && actualUsage === 0) {
-    return "사용 없음";
+    return "NO_USAGE" as const;
   }
 
   if (errorRatePercent !== null && errorRatePercent <= 20) {
-    return "양호";
+    return "GOOD" as const;
   }
 
   if (errorRatePercent !== null && errorRatePercent <= 40) {
-    return "주의";
+    return "WARNING" as const;
   }
 
-  return "오차 큼";
+  return "HIGH_ERROR" as const;
 }
 
 async function buildSupplyForecastValidations(
@@ -2581,7 +2571,7 @@ export async function updateSupplyReorderRequest(
     if (status === SUPPLY_REORDER_STATUS.received && !receivedQuantity) {
       throw publicBadRequest(
         "SUPPLY_REORDER_RECEIVED_QUANTITY_REQUIRED",
-        "입고 완료 상태에는 1개 이상의 입고 수량이 필요합니다."
+        "SUPPLY_REORDER_RECEIVED_QUANTITY_REQUIRED"
       );
     }
 
@@ -2592,7 +2582,7 @@ export async function updateSupplyReorderRequest(
     ) {
       throw publicConflict(
         "SUPPLY_REORDER_RECEIPT_FINALIZED",
-        "입고 완료된 재구매 요청의 상태와 입고 수량은 변경할 수 없습니다. 비품 수량 조정으로 정정해 주세요."
+        "SUPPLY_REORDER_RECEIPT_FINALIZED"
       );
     }
 
@@ -2603,7 +2593,7 @@ export async function updateSupplyReorderRequest(
 
       throw publicConflict(
         "SUPPLY_REORDER_STALE_STATE",
-        "재구매 요청이 다른 작업에서 변경되었습니다. 최신 상태를 다시 확인한 뒤 저장해 주세요.",
+        "SUPPLY_REORDER_STALE_STATE",
         {
           expectedRevision,
           currentRevision: before.revision,
@@ -2662,7 +2652,7 @@ export async function updateSupplyReorderRequest(
         if (isUniqueConflict(error)) {
           throw publicConflict(
             "SUPPLY_REORDER_OPEN_CONFLICT",
-            "동일한 비품에 이미 진행 중인 재구매 요청이 있습니다."
+            "SUPPLY_REORDER_OPEN_CONFLICT"
           );
         }
 

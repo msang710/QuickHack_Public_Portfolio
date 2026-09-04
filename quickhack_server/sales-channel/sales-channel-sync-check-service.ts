@@ -687,8 +687,7 @@ function presentReturnIntegrity(row: {
     externalOrderId: row.external_order_id,
     externalShipmentId: row.external_shipment_id ?? "",
     integrityStatus: row.item_integrity_status,
-    message:
-      "반품 전체 수량과 item별 수량이 일치하지 않아 작업 대상을 자동 확정하지 않았습니다.",
+    messageCode: "RETURN_ITEM_QUANTITY_MISMATCH",
   };
 }
 
@@ -710,8 +709,7 @@ function presentExchangeIntegrity(row: {
     externalOrderId: row.external_order_id,
     externalShipmentId: row.external_shipment_id ?? "",
     integrityStatus: row.scope_integrity_status,
-    message:
-      "교환의 원배송 범위를 확인할 수 없어 주문 전체를 보수적으로 보호하고 있습니다.",
+    messageCode: "EXCHANGE_ORIGINAL_SHIPMENT_UNKNOWN",
   };
 }
 
@@ -734,7 +732,7 @@ export async function getSalesChannelInventoryVerificationItem(
   if (!state) {
     throw publicNotFound(
       "INVENTORY_VERIFICATION_NOT_FOUND",
-      "재고 동기화 점검 상태를 찾을 수 없습니다."
+      "INVENTORY_VERIFICATION_NOT_FOUND"
     );
   }
 
@@ -756,14 +754,14 @@ export async function recheckSalesChannelInventoryVerification(input: {
   if (!state) {
     throw publicNotFound(
       "INVENTORY_VERIFICATION_NOT_FOUND",
-      "재고 동기화 점검 상태를 찾을 수 없습니다."
+      "INVENTORY_VERIFICATION_NOT_FOUND"
     );
   }
 
   if (!RECHECKABLE_STATUS_SET.has(state.verification_status)) {
     throw publicConflict(
       "INVENTORY_VERIFICATION_NOT_RECHECKABLE",
-      "불일치 또는 점검 실패 상태만 다시 점검할 수 있습니다.",
+      "INVENTORY_VERIFICATION_NOT_RECHECKABLE",
       {
         verificationStateId: input.verificationStateId,
         verificationStatus: state.verification_status,
@@ -782,7 +780,7 @@ export async function recheckSalesChannelInventoryVerification(input: {
   if (!latest) {
     throw publicNotFound(
       "INVENTORY_VERIFICATION_NOT_FOUND",
-      "재고 동기화 점검 상태를 찾을 수 없습니다."
+      "INVENTORY_VERIFICATION_NOT_FOUND"
     );
   }
 

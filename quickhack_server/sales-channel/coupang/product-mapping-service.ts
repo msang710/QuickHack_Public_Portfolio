@@ -169,7 +169,7 @@ function requiredText(value: unknown, fieldName: string) {
   if (!text) {
     throw publicBadRequest(
       "COUPANG_PRODUCT_MAPPING_VALUE_REQUIRED",
-      `${fieldName} 값이 필요합니다.`
+      "COUPANG_PRODUCT_MAPPING_VALUE_REQUIRED"
     );
   }
 
@@ -440,7 +440,7 @@ function sellerProductsFromPayload(payload: unknown) {
   if (!isRecord(payload)) {
     throw publicUnavailable(
       "COUPANG_CATALOG_PAYLOAD_INVALID",
-      "쿠팡 상품 목록 응답 형식을 확인할 수 없습니다."
+      "COUPANG_CATALOG_PAYLOAD_INVALID"
     );
   }
 
@@ -452,7 +452,7 @@ function sellerProductsFromPayload(payload: unknown) {
   if (!hasOfficialList && !hasLegacyProductList && !hasEmbeddedOptionList) {
     throw publicUnavailable(
       "COUPANG_CATALOG_PAYLOAD_INVALID",
-      "쿠팡 상품 목록 응답에서 상품 배열을 확인할 수 없습니다."
+      "COUPANG_CATALOG_PAYLOAD_INVALID"
     );
   }
 
@@ -516,7 +516,7 @@ export async function listCoupangProductOptions(
     if (nextToken && seenTokens.has(nextToken)) {
       throw publicUnavailable(
         "COUPANG_CATALOG_PAGINATION_INCOMPLETE",
-        "쿠팡 상품 목록의 페이지 토큰이 반복되어 전체 목록을 확인하지 못했습니다."
+        "COUPANG_CATALOG_PAGINATION_INCOMPLETE"
       );
     }
 
@@ -527,7 +527,7 @@ export async function listCoupangProductOptions(
     if (pageCount >= maxPages) {
       throw publicUnavailable(
         "COUPANG_CATALOG_PAGE_LIMIT_EXCEEDED",
-        "쿠팡 상품 목록이 안전 조회 한도를 초과해 전체 목록을 확인하지 못했습니다."
+        "COUPANG_CATALOG_PAGE_LIMIT_EXCEEDED"
       );
     }
 
@@ -552,7 +552,7 @@ export async function listCoupangProductOptions(
         if (!sellerProductId) {
           throw publicUnavailable(
             "COUPANG_CATALOG_PRODUCT_ID_MISSING",
-            "쿠팡 상품 목록에 sellerProductId가 없는 항목이 있어 전체 옵션을 확인하지 못했습니다."
+            "COUPANG_CATALOG_PRODUCT_ID_MISSING"
           );
         }
 
@@ -568,7 +568,7 @@ export async function listCoupangProductOptions(
         if (detailOptions.length === 0) {
           throw publicUnavailable(
             "COUPANG_CATALOG_PRODUCT_DETAIL_INCOMPLETE",
-            `쿠팡 상품 ${sellerProductId}의 옵션 상세를 확인하지 못했습니다.`
+            "COUPANG_CATALOG_PRODUCT_DETAIL_INCOMPLETE"
           );
         }
 
@@ -580,7 +580,7 @@ export async function listCoupangProductOptions(
       if (result.status === "rejected") {
         throw publicUnavailable(
           "COUPANG_CATALOG_PRODUCT_DETAIL_FAILED",
-          "쿠팡 상품 상세 일부를 확인하지 못해 전체 목록을 갱신하지 않았습니다.",
+          "COUPANG_CATALOG_PRODUCT_DETAIL_FAILED",
           { failedDetailCount: 1 }
         );
       }
@@ -1077,7 +1077,7 @@ export async function setCoupangProductMapping(input: {
       if (!offer || offer.is_active !== 1) {
         throw publicNotFound(
           "ACTIVE_SALES_OFFER_NOT_FOUND",
-          `활성 판매 오퍼를 찾을 수 없습니다: ${salesOfferId}`
+          "ACTIVE_SALES_OFFER_NOT_FOUND"
         );
       }
 
@@ -1086,7 +1086,7 @@ export async function setCoupangProductMapping(input: {
       if (!offerDefinition) {
         throw publicNotFound(
           "ACTIVE_SALES_OFFER_NOT_FOUND",
-          `활성 판매 오퍼를 찾을 수 없습니다: ${salesOfferId}`
+          "ACTIVE_SALES_OFFER_NOT_FOUND"
         );
       }
     }
@@ -1248,7 +1248,7 @@ export async function getCoupangInventoryCandidates(externalVendorItemId: string
       requiredStorage: null,
       requiredColor: null,
       candidates: [],
-      warnings: ["쿠팡 상품 매핑 행을 찾을 수 없습니다."],
+      warnings: [{ code: "MAPPING_NOT_FOUND" as const }],
     };
   }
 
@@ -1261,7 +1261,7 @@ export async function getCoupangInventoryCandidates(externalVendorItemId: string
       requiredStorage: null,
       requiredColor: null,
       candidates: [],
-      warnings: ["판매 상품 조합 매핑 전에는 재고 후보를 조회하지 않습니다."],
+      warnings: [{ code: "MAPPING_REQUIRED" as const }],
     };
   }
 
@@ -1279,7 +1279,7 @@ export async function getCoupangInventoryCandidates(externalVendorItemId: string
       requiredStorage: null,
       requiredColor: null,
       candidates: [],
-      warnings: ["연결된 판매 오퍼가 없거나 비활성화되어 있습니다."],
+      warnings: [{ code: "MAPPED_OFFER_INACTIVE" as const }],
     };
   }
 

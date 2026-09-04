@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -37,10 +39,6 @@ import {
   mutationWakeDeferred,
   type MutationReceipt,
 } from "@/quickhack_shared/core/mutation-receipt";
-import {
-  SALES_CHANNEL_WRITE_REQUEST_LABELS,
-  SALES_CHANNEL_WRITE_STATUS_LABELS,
-} from "@/quickhack_shared/sales-channel/write-requests";
 import type {
   SalesChannelWriteControlDto,
   SalesChannelWriteReviewItemDto,
@@ -53,30 +51,6 @@ type ApiResponse = {
   items?: SalesChannelWriteReviewItemDto[];
   controls?: SalesChannelWriteControlDto[];
   receipt?: MutationReceipt<unknown>;
-};
-
-const STATUS_OPTIONS = [
-  ["UNRESOLVED", "확인 필요"],
-  ["ALL", "전체"],
-  ["LOCAL_PENDING", "내부 확정 필요"],
-  ["COMPLETED", "처리 완료"],
-  ["PARTIALLY_COMPLETED", "일부 처리 완료"],
-  ["NOT_APPLIED", "채널 미반영"],
-  ["REJECTED", "요청 차단"],
-] as const;
-
-const TARGET_EXTERNAL_STATUS_LABELS: Record<string, string> = {
-  PENDING: "대기",
-  SUCCEEDED: "성공",
-  NOT_APPLIED: "미반영",
-  UNKNOWN: "확인 필요",
-};
-
-const TARGET_LOCAL_STATUS_LABELS: Record<string, string> = {
-  PENDING: "대기",
-  SUCCEEDED: "완료",
-  NOT_REQUIRED: "불필요",
-  FAILED: "실패",
 };
 
 function DetailLine({ label, value }: { label: string; value: React.ReactNode }) {
@@ -94,6 +68,7 @@ export function SalesChannelWriteControlAlerts({
   working: boolean;
   onResume: (control: SalesChannelWriteControlDto) => unknown | Promise<unknown>;
 }) {
+  const t = useTranslations("admin.writeReview");
   const pausedControls = controls.filter((control) => control.isPaused);
 
   if (pausedControls.length === 0) return null;
@@ -101,20 +76,21 @@ export function SalesChannelWriteControlAlerts({
   return (
     <div className="flex flex-wrap items-center gap-3 border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
       <PauseCircle className="size-4 shrink-0" />
-      <strong>외부 쓰기 일시 정지</strong>
+      <strong>{t("control.paused")}</strong>
       {pausedControls.map((control) => (
         <div key={control.id} className="flex items-center gap-2">
-          <span>
-            {control.channel} {control.requestType} · 연속{" "}
-            {control.consecutiveFailureCount}회
-          </span>
+          <span>{t("control.failures", {
+            channel: control.channel,
+            type: control.requestType,
+            count: control.consecutiveFailureCount,
+          })}</span>
           <Button
             size="sm"
             variant="outline"
             disabled={working}
             onClick={() => void onResume(control)}
           >
-            다시 열기
+            {t("control.resume")}
           </Button>
         </div>
       ))}
@@ -144,6 +120,45 @@ export function SalesChannelWriteReviewDetail({
   ) => unknown | Promise<unknown>;
   onOpenSourceMenu?: (menuId: string) => void;
 }) {
+  const t = useTranslations("admin.writeReview");
+  const requestTypeLabels: Record<string, string> = {
+    ORDER_STATUS_INSTRUCT: t("requestType.orderStatusInstruct"),
+    COUPANG_INVOICE_UPLOAD: t("requestType.invoiceUpload"),
+    COUPANG_INVOICE_UPDATE: t("requestType.invoiceUpdate"),
+    RETURN_STOPPED_SHIPMENT: t("requestType.stoppedShipment"),
+    RETURN_RECEIVE_CONFIRMATION: t("requestType.returnReceive"),
+    RETURN_APPROVAL: t("requestType.returnApproval"),
+    COUPANG_INVENTORY_QUANTITY_UPDATE: t("requestType.inventoryUpdate"),
+  };
+  const targetExternalStatusLabels: Record<string, string> = {
+    PENDING: t("targetStatus.pending"),
+    SUCCEEDED: t("targetStatus.externalSucceeded"),
+    NOT_APPLIED: t("targetStatus.notApplied"),
+    UNKNOWN: t("targetStatus.unknown"),
+  };
+  const targetLocalStatusLabels: Record<string, string> = {
+    PENDING: t("targetStatus.pending"),
+    SUCCEEDED: t("targetStatus.localSucceeded"),
+    NOT_REQUIRED: t("targetStatus.notRequired"),
+    FAILED: t("targetStatus.failed"),
+  };
+  const attemptTypeLabels: Record<string, string> = {
+    WRITE: t("attempt.type.write"),
+    VERIFY_READ: t("attempt.type.verifyRead"),
+    LOCAL_FINALIZE: t("attempt.type.localFinalize"),
+  };
+  const attemptStatusLabels: Record<string, string> = {
+    SENDING: t("attempt.status.sending"),
+    SUCCEEDED: t("attempt.status.succeeded"),
+    FAILED: t("attempt.status.failed"),
+    AMBIGUOUS: t("attempt.status.ambiguous"),
+  };
+  const attemptTriggerLabels: Record<string, string> = {
+    USER: t("attempt.trigger.user"),
+    WORKER: t("attempt.trigger.worker"),
+    RECOVERY: t("attempt.trigger.recovery"),
+    SYSTEM: t("attempt.trigger.system"),
+  };
   const requiresReview =
     item.requestStatus === "REVIEW_REQUIRED" ||
     item.requestStatus === "LOCAL_PENDING";
@@ -175,7 +190,7 @@ export function SalesChannelWriteReviewDetail({
     <div>
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background px-4 py-3">
         <ShieldAlert className="size-4 text-red-700" />
-        <h3 className="text-sm font-semibold">요청 #{item.id} 확인</h3>
+        <h3 className="text-sm font-semibold">{t("detail.title", { id: item.id })}</h3>
         {item.sourceMenuKey && onOpenSourceMenu ? (
           <Button
             className="ml-auto"
@@ -185,24 +200,24 @@ export function SalesChannelWriteReviewDetail({
             onClick={() => onOpenSourceMenu(item.sourceMenuKey)}
           >
             <ExternalLink className="size-4" />
-            원래 업무 화면
+            {t("detail.source")}
           </Button>
         ) : null}
       </div>
       <DescriptionList className="px-4 py-2">
         <DetailLine
-          label="채널 / 처리"
-          value={`${item.channel} · ${SALES_CHANNEL_WRITE_REQUEST_LABELS[item.requestType] ?? item.requestType}`}
+          label={t("detail.channelAction")}
+          value={`${item.channel} · ${requestTypeLabels[item.requestType] ?? item.requestType}`}
         />
-        <DetailLine label="주문번호" value={item.externalOrderId || "-"} />
-        <DetailLine label="대상" value={item.targetExternalId || "-"} />
+        <DetailLine label={t("detail.orderNumber")} value={item.externalOrderId || "-"} />
+        <DetailLine label={t("detail.target")} value={item.targetExternalId || "-"} />
         <DetailLine
-          label="상태 전이"
+          label={t("detail.transition")}
           value={`${item.expectedBeforeStatus || "-"} → ${item.requestedAfterStatus || "-"}`}
         />
-        <DetailLine label="실패 단계" value={item.failureStage || "-"} />
+        <DetailLine label={t("detail.failureStage")} value={item.failureStage || "-"} />
         <DetailLine
-          label="오류"
+          label={t("detail.error")}
           value={
             <span className="break-words">
               {[item.errorCode, item.errorMessage].filter(Boolean).join(" · ") ||
@@ -210,9 +225,12 @@ export function SalesChannelWriteReviewDetail({
             </span>
           }
         />
-        <DetailLine label="요청자" value={item.requestedBy || "-"} />
         <DetailLine
-          label="확인 일시"
+          label={t("detail.requester")}
+          value={item.requestedBy || t("detail.system")}
+        />
+        <DetailLine
+          label={t("detail.reviewTime")}
           value={formatSalesChannelSyncCheckDate(item.reviewRequiredAt)}
         />
       </DescriptionList>
@@ -220,10 +238,7 @@ export function SalesChannelWriteReviewDetail({
       <div className="border-y border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
         <div className="flex gap-2">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          <p>
-            이 요청과 관련된 정보와 처리 결과를 반드시 각 채널의 웹사이트에서
-            재확인하세요. 쓰기 API는 자동으로 다시 호출되지 않습니다.
-          </p>
+          <p>{t("detail.warning")}</p>
         </div>
       </div>
 
@@ -235,8 +250,8 @@ export function SalesChannelWriteReviewDetail({
         >
           <RefreshCcw className="size-4 animate-spin" />
           {item.activeReviewOperation === "LOCAL_FINALIZE"
-            ? "QuickHack 내부 확정을 처리하고 있습니다. 완료 후 다시 시도하세요."
-            : "판매 채널 상태를 재점검하고 있습니다. 완료 후 다시 시도하세요."}
+            ? t("detail.localProgress")
+            : t("detail.channelProgress")}
         </div>
       ) : null}
 
@@ -247,12 +262,12 @@ export function SalesChannelWriteReviewDetail({
               className="mb-1 block text-xs font-medium text-muted-foreground"
               htmlFor={noteId}
             >
-              확인 결과와 판단 근거
+              {t("detail.note")}
             </label>
             <textarea
               id={noteId}
               className="min-h-20 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-              placeholder="채널 웹사이트에서 확인한 상태, 확인 시각, 판단 근거를 입력하세요."
+              placeholder={t("detail.notePlaceholder")}
               value={note}
               onChange={(event) => onNoteChange(event.target.value)}
             />
@@ -265,7 +280,7 @@ export function SalesChannelWriteReviewDetail({
                 onClick={() => void onRecheck()}
               >
                 <RefreshCcw className="size-4" />
-                상태 한 번 재조회
+                {t("detail.recheck")}
               </Button>
             ) : null}
             {item.requestStatus === "LOCAL_PENDING" ? (
@@ -275,20 +290,20 @@ export function SalesChannelWriteReviewDetail({
                 onClick={() => void onRetryLocal()}
               >
                 <RotateCcw className="size-4" />
-                내부 확정 재실행
+                {t("detail.retryLocal")}
               </Button>
             ) : null}
           </div>
         </div>
       ) : (
         <div className="border-b border-border px-4 py-3 text-sm text-muted-foreground">
-          이 요청은 이미 확정된 상태이므로 추가 판정 작업을 할 수 없습니다.
+          {t("detail.resolved")}
         </div>
       )}
 
       <div className="border-t border-border p-4">
         <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
-          대상 스냅샷
+          {t("target.snapshot")}
         </h4>
         <div className="space-y-3 text-xs">
           {targetGroups.map((group) => {
@@ -305,7 +320,7 @@ export function SalesChannelWriteReviewDetail({
                     {group.groupKey}
                   </strong>
                   <span className="text-muted-foreground">
-                    {group.targets.length}개 대상
+                    {t("target.count", { count: group.targets.length })}
                   </span>
                 </div>
                 <div className="space-y-1">
@@ -332,7 +347,7 @@ export function SalesChannelWriteReviewDetail({
                                   ? "danger"
                                   : "secondary"
                           }>
-                            채널 {TARGET_EXTERNAL_STATUS_LABELS[target.externalResultStatus] ?? target.externalResultStatus}
+                            {t("target.channel", { status: targetExternalStatusLabels[target.externalResultStatus] ?? target.externalResultStatus })}
                           </Badge>
                           <Badge variant={
                             target.localFinalizationStatus === "SUCCEEDED"
@@ -341,11 +356,11 @@ export function SalesChannelWriteReviewDetail({
                                 ? "danger"
                                 : "secondary"
                           }>
-                            내부 {TARGET_LOCAL_STATUS_LABELS[target.localFinalizationStatus] ?? target.localFinalizationStatus}
+                            {t("target.local", { status: targetLocalStatusLabels[target.localFinalizationStatus] ?? target.localFinalizationStatus })}
                           </Badge>
                           {target.retryRequired !== null ? (
                             <Badge variant="secondary">
-                              채널 재시도 {target.retryRequired ? "권장" : "불필요"}
+                              {t("target.retry", { recommendation: target.retryRequired ? t("target.recommended") : t("target.notRequired") })}
                             </Badge>
                           ) : null}
                         </div>
@@ -359,23 +374,23 @@ export function SalesChannelWriteReviewDetail({
                         {target.inventoryVerificationStateId !== null ? (
                           <div className="mt-1 space-y-0.5 text-muted-foreground">
                             <p>
-                              점검 #{target.inventoryVerificationStateId} · 기준 버전 {" "}
-                              {target.inventoryDesiredVersionSnapshot ?? "-"}
+                              {t("target.verification", {
+                                id: target.inventoryVerificationStateId,
+                                version: String(
+                                  target.inventoryDesiredVersionSnapshot ?? "-"
+                                ),
+                              })}
                             </p>
                             <p>
-                              원장 {target.inventoryLedgerQuantitySnapshot ?? "-"} ·
-                              미반영 {" "}
-                              {target.inventoryPendingOrderQuantitySnapshot ?? "-"} ·
-                              기대 {" "}
-                              {target.inventoryExpectedChannelQuantitySnapshot ?? "-"} ·
-                              당시 실제 {" "}
-                              {target.inventoryObservedChannelQuantitySnapshot ?? "-"}
+                              {t("target.quantities", {
+                                ledger: String(target.inventoryLedgerQuantitySnapshot ?? "-"),
+                                pending: String(target.inventoryPendingOrderQuantitySnapshot ?? "-"),
+                                expected: String(target.inventoryExpectedChannelQuantitySnapshot ?? "-"),
+                                observed: String(target.inventoryObservedChannelQuantitySnapshot ?? "-"),
+                              })}
                             </p>
                             <p>
-                              불일치 시작 {" "}
-                              {formatSalesChannelSyncCheckDate(
-                                target.inventoryMismatchSinceSnapshot
-                              )}
+                              {t("target.mismatchSince", { date: formatSalesChannelSyncCheckDate(target.inventoryMismatchSinceSnapshot) })}
                             </p>
                           </div>
                         ) : null}
@@ -396,7 +411,7 @@ export function SalesChannelWriteReviewDetail({
                       }
                     >
                       <CheckCircle2 className="size-4" />
-                      이 그룹 반영
+                      {t("target.applied")}
                     </Button>
                     <Button
                       size="sm"
@@ -410,7 +425,7 @@ export function SalesChannelWriteReviewDetail({
                       }
                     >
                       <XCircle className="size-4" />
-                      이 그룹 미반영
+                      {t("target.notApplied")}
                     </Button>
                     <Button
                       size="sm"
@@ -423,7 +438,7 @@ export function SalesChannelWriteReviewDetail({
                         )
                       }
                     >
-                      판단 보류
+                      {t("target.undecidable")}
                     </Button>
                   </div>
                 ) : null}
@@ -431,14 +446,14 @@ export function SalesChannelWriteReviewDetail({
             );
           })}
           {item.targets.length === 0 ? (
-            <p className="text-muted-foreground">저장된 대상이 없습니다.</p>
+            <p className="text-muted-foreground">{t("target.empty")}</p>
           ) : null}
         </div>
       </div>
 
       <div className="border-t border-border p-4">
         <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
-          실행 시도
+          {t("attempt.title")}
         </h4>
         <div className="space-y-2">
           {item.attempts.map((attempt) => (
@@ -448,7 +463,9 @@ export function SalesChannelWriteReviewDetail({
             >
               <div className="flex items-center gap-2">
                 <strong>
-                  #{attempt.attemptNo} {attempt.attemptType}
+                  #{attempt.attemptNo}{" "}
+                  {attemptTypeLabels[attempt.attemptType] ??
+                    t("attempt.unknown", { code: attempt.attemptType })}
                 </strong>
                 <Badge
                   variant={
@@ -459,12 +476,14 @@ export function SalesChannelWriteReviewDetail({
                         : "danger"
                   }
                 >
-                  {attempt.attemptStatus}
+                  {attemptStatusLabels[attempt.attemptStatus] ??
+                    t("attempt.unknown", { code: attempt.attemptStatus })}
                 </Badge>
               </div>
               <p className="mt-1 text-muted-foreground">
                 {formatSalesChannelSyncCheckDate(attempt.startedAt)} ·{" "}
-                {attempt.triggerType}
+                {attemptTriggerLabels[attempt.triggerType] ??
+                  t("attempt.unknown", { code: attempt.triggerType })}
               </p>
               {attempt.errorMessage ? (
                 <p className="mt-1 break-words">
@@ -475,7 +494,7 @@ export function SalesChannelWriteReviewDetail({
           ))}
           {item.attempts.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              저장된 실행 시도가 없습니다.
+              {t("attempt.empty")}
             </p>
           ) : null}
         </div>
@@ -490,9 +509,9 @@ export function SalesChannelWriteReviewView({
   onOpenSourceMenu,
   onUnresolvedCountChange,
   requestTypes,
-  title = "판매 채널 쓰기 결과 확인",
-  description = "쓰기 응답과 실제 판매 채널 상태가 불확실한 건을 업무 원본과 대조합니다.",
-  searchPlaceholder = "주문번호, 접수번호, PG, 오류 검색",
+  title,
+  description,
+  searchPlaceholder,
 }: {
   initialRequestId?: number | null;
   initialSearch?: string;
@@ -503,6 +522,40 @@ export function SalesChannelWriteReviewView({
   description?: string;
   searchPlaceholder?: string;
 }) {
+  const t = useTranslations("admin.writeReview");
+  const resolvedTitle = title ?? t("default.title");
+  const resolvedDescription = description ?? t("default.description");
+  const resolvedSearchPlaceholder =
+    searchPlaceholder ?? t("default.searchPlaceholder");
+  const statusOptions = [
+    ["UNRESOLVED", t("statusFilter.unresolved")],
+    ["ALL", t("statusFilter.all")],
+    ["LOCAL_PENDING", t("statusFilter.localPending")],
+    ["COMPLETED", t("statusFilter.completed")],
+    ["PARTIALLY_COMPLETED", t("statusFilter.partiallyCompleted")],
+    ["NOT_APPLIED", t("statusFilter.notApplied")],
+    ["REJECTED", t("statusFilter.rejected")],
+  ] as const;
+  const requestTypeLabels: Record<string, string> = {
+    ORDER_STATUS_INSTRUCT: t("requestType.orderStatusInstruct"),
+    COUPANG_INVOICE_UPLOAD: t("requestType.invoiceUpload"),
+    COUPANG_INVOICE_UPDATE: t("requestType.invoiceUpdate"),
+    RETURN_STOPPED_SHIPMENT: t("requestType.stoppedShipment"),
+    RETURN_RECEIVE_CONFIRMATION: t("requestType.returnReceive"),
+    RETURN_APPROVAL: t("requestType.returnApproval"),
+    COUPANG_INVENTORY_QUANTITY_UPDATE: t("requestType.inventoryUpdate"),
+  };
+  const requestStatusLabels: Record<string, string> = {
+    PENDING: t("requestStatus.pending"),
+    SENDING: t("requestStatus.sending"),
+    VERIFYING: t("requestStatus.verifying"),
+    LOCAL_PENDING: t("requestStatus.localPending"),
+    COMPLETED: t("requestStatus.completed"),
+    PARTIALLY_COMPLETED: t("requestStatus.partiallyCompleted"),
+    REVIEW_REQUIRED: t("requestStatus.reviewRequired"),
+    NOT_APPLIED: t("requestStatus.notApplied"),
+    REJECTED: t("requestStatus.rejected"),
+  };
   const [items, setItems] = React.useState<SalesChannelWriteReviewItemDto[]>([]);
   const [controls, setControls] = React.useState<SalesChannelWriteControlDto[]>([]);
   const [unresolvedCount, setUnresolvedCount] = React.useState(0);
@@ -559,7 +612,7 @@ export function SalesChannelWriteReviewView({
       const payload = (await response.json()) as ApiResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || "판매 채널 쓰기 이력을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.loadFailed")));
       }
 
       const nextItems = payload.items ?? [];
@@ -586,13 +639,14 @@ export function SalesChannelWriteReviewView({
     requestTypes,
     appliedSearch,
     status,
+    t,
   ]);
 
   useUnsavedForm({
     id: selectedReviewFormId,
     label: selected
-      ? `판매 채널 쓰기 요청 #${selected.id} 판단 근거`
-      : "판매 채널 쓰기 판단 근거",
+      ? t("unsaved.formRequest", { id: selected.id })
+      : t("unsaved.form"),
     enabled: Boolean(selected && selectedRequiresReview),
     isDirty: !invoiceActionNoteSnapshotsEqual(
       createInvoiceActionNoteSnapshot(noteBaseline),
@@ -635,13 +689,13 @@ export function SalesChannelWriteReviewView({
       };
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || "처리에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.actionFailed")));
       }
 
-      const resultMessage = payload.message || "처리 결과를 저장했습니다.";
+      const resultMessage = t("message.saved");
       setMessage(
         mutationWakeDeferred(payload.receipt)
-          ? `${resultMessage} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
+          ? t("message.deferred", { result: resultMessage })
           : resultMessage
       );
       onAccepted?.();
@@ -661,7 +715,7 @@ export function SalesChannelWriteReviewView({
     }
 
     if (!note.trim()) {
-      setError("채널에서 확인한 결과와 판단 근거를 입력하세요.");
+      setError(t("message.noteRequired"));
       return;
     }
 
@@ -688,7 +742,7 @@ export function SalesChannelWriteReviewView({
     runGuardedAction({
       intent: "internal-change",
       formIds: selected ? [selectedReviewFormId] : [],
-      targetLabel: "다른 판매 채널 쓰기 요청",
+      targetLabel: t("unsaved.select"),
       action: () => setSelectedId(item.id),
     });
   }
@@ -698,7 +752,7 @@ export function SalesChannelWriteReviewView({
     runGuardedAction({
       intent: "internal-change",
       formIds: selected ? [selectedReviewFormId] : [],
-      targetLabel: "판매 채널 쓰기 상태 필터 변경",
+      targetLabel: t("unsaved.status"),
       action: () => setStatus(nextStatus),
     });
   }
@@ -707,7 +761,7 @@ export function SalesChannelWriteReviewView({
     runGuardedAction({
       intent: "internal-change",
       formIds: selected ? [selectedReviewFormId] : [],
-      targetLabel: "판매 채널 쓰기 목록 조회",
+      targetLabel: t("unsaved.load"),
       action: () => {
         const nextSearch = search.trim();
         if (nextSearch === appliedSearch) {
@@ -724,21 +778,21 @@ export function SalesChannelWriteReviewView({
       <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
         <div className="mr-auto min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold">{title}</h2>
+            <h2 className="text-base font-semibold">{resolvedTitle}</h2>
             <Badge variant={unresolvedCount > 0 ? "danger" : "secondary"}>
-              확인 필요 {unresolvedCount.toLocaleString("ko-KR")}
+              {t("toolbar.unresolved", { count: unresolvedCount })}
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {description}
+            {resolvedDescription}
           </p>
         </div>
         <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
-            aria-label="외부 API 처리 이력 검색"
+            aria-label={t("toolbar.searchLabel")}
             className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            placeholder={searchPlaceholder}
+            placeholder={resolvedSearchPlaceholder}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => {
@@ -750,12 +804,12 @@ export function SalesChannelWriteReviewView({
           />
         </div>
         <select
-          aria-label="처리 상태 필터"
+          aria-label={t("toolbar.statusLabel")}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           value={status}
           onChange={(event) => requestStatusChange(event.target.value)}
         >
-          {STATUS_OPTIONS.map(([value, label]) => (
+          {statusOptions.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
@@ -768,7 +822,7 @@ export function SalesChannelWriteReviewView({
           disabled={loading}
         >
           <RefreshCcw className={cn("size-4", loading && "animate-spin")} />
-          새로고침
+          {t("toolbar.refresh")}
         </Button>
       </div>
 
@@ -802,13 +856,13 @@ export function SalesChannelWriteReviewView({
           <table className="w-full min-w-[980px] table-fixed text-sm">
             <thead className="sticky top-0 z-10 bg-muted text-left text-xs text-muted-foreground">
               <tr>
-                <th className="w-36 px-3 py-2 font-medium">상태</th>
-                <th className="w-40 px-3 py-2 font-medium">처리 종류</th>
-                <th className="w-40 px-3 py-2 font-medium">주문번호</th>
-                <th className="w-40 px-3 py-2 font-medium">채널 대상</th>
-                <th className="w-28 px-3 py-2 font-medium">요청 상태</th>
-                <th className="px-3 py-2 font-medium">오류</th>
-                <th className="w-36 px-3 py-2 font-medium">요청 일시</th>
+                <th className="w-36 px-3 py-2 font-medium">{t("columns.status")}</th>
+                <th className="w-40 px-3 py-2 font-medium">{t("columns.type")}</th>
+                <th className="w-40 px-3 py-2 font-medium">{t("columns.orderNumber")}</th>
+                <th className="w-40 px-3 py-2 font-medium">{t("columns.channelTarget")}</th>
+                <th className="w-28 px-3 py-2 font-medium">{t("columns.requestStatus")}</th>
+                <th className="px-3 py-2 font-medium">{t("columns.error")}</th>
+                <th className="w-36 px-3 py-2 font-medium">{t("columns.requestedAt")}</th>
               </tr>
             </thead>
             <tbody>
@@ -823,11 +877,11 @@ export function SalesChannelWriteReviewView({
                 >
                   <td className="px-3 py-2">
                     <Badge variant={salesChannelWriteStatusVariant(item.requestStatus)}>
-                      {SALES_CHANNEL_WRITE_STATUS_LABELS[item.requestStatus] ?? item.requestStatus}
+                      {requestStatusLabels[item.requestStatus] ?? item.requestStatus}
                     </Badge>
                   </td>
                   <td className="truncate px-3 py-2" title={item.requestType}>
-                    {SALES_CHANNEL_WRITE_REQUEST_LABELS[item.requestType] ?? item.requestType}
+                    {requestTypeLabels[item.requestType] ?? item.requestType}
                   </td>
                   <td className="truncate px-3 py-2 font-mono text-xs">{item.externalOrderId || "-"}</td>
                   <td className="truncate px-3 py-2 font-mono text-xs">{item.targetExternalId || "-"}</td>
@@ -841,7 +895,7 @@ export function SalesChannelWriteReviewView({
               {!loading && items.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="h-40 px-3 text-center text-muted-foreground">
-                    조회된 판매 채널 쓰기 이력이 없습니다.
+                    {t("empty.list")}
                   </td>
                 </tr>
               ) : null}
@@ -876,7 +930,7 @@ export function SalesChannelWriteReviewView({
             />
           ) : (
             <div className="flex h-full min-h-60 items-center justify-center p-6 text-sm text-muted-foreground">
-              왼쪽 표에서 확인할 요청을 선택하세요.
+              {t("empty.select")}
             </div>
           )}
         </aside>

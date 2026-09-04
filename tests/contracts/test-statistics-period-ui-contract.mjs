@@ -26,12 +26,13 @@ const panels = [
   )
 );
 
-assert.match(toolbar, /aria-label="통계 조회 기간"/);
+assert.match(toolbar, /useTranslations\("statistics\.periodToolbar"\)/);
+assert.match(toolbar, /aria-label=\{t\("aria"\)\}/);
 assert.equal((toolbar.match(/type="date"/g) ?? []).length, 2);
 assert.match(toolbar, /max=\{currentDefaultPeriod\.dataCutoffDate\}/);
 assert.match(toolbar, /resolveClosedStatisticsPeriod/);
-assert.match(toolbar, /기간 적용/);
-assert.match(toolbar, /기본 90일로 되돌리기/);
+assert.match(toolbar, /t\("apply"\)/);
+assert.match(toolbar, /t\("reset"\)/);
 assert.match(toolbar, /role="alert"/);
 assert.match(toolbar, /kind: "custom"/);
 assert.match(toolbar, /kind: "default"/);

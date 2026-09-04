@@ -55,7 +55,6 @@ type ManualOrderMatchPostCycleResult =
   | {
       status: "FAILED";
       reasonCode: "ORDER_MATCHING_POST_CYCLE_FAILED";
-      message: "PG 변경은 반영됐지만 판매채널 후속 처리를 완료하지 못했습니다. 주문 매칭 상태를 다시 확인해 주세요.";
     };
 type ManualOrderMatchDependencies = {
   sensitiveActionVerified?: boolean;
@@ -70,7 +69,7 @@ type ManualOrderMatchDependencies = {
 function requiredInteger(value: unknown, label: string) {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw publicBadRequest("MANUAL_ORDER_MATCH_INPUT_INVALID", `${label} 값이 올바르지 않습니다.`);
+    throw publicBadRequest("MANUAL_ORDER_MATCH_INPUT_INVALID", "MANUAL_ORDER_MATCH_INPUT_INVALID");
   }
   return parsed;
 }
@@ -78,7 +77,7 @@ function requiredInteger(value: unknown, label: string) {
 function requiredText(value: unknown, label: string, max = 500) {
   const text = String(value ?? "").trim();
   if (!text || text.length > max) {
-    throw publicBadRequest("MANUAL_ORDER_MATCH_INPUT_INVALID", `${label} 값이 올바르지 않습니다.`);
+    throw publicBadRequest("MANUAL_ORDER_MATCH_INPUT_INVALID", "MANUAL_ORDER_MATCH_INPUT_INVALID");
   }
   return text;
 }
@@ -86,7 +85,7 @@ function requiredText(value: unknown, label: string, max = 500) {
 function requestChannel(value: unknown): RequestChannel {
   const channel = String(value ?? "").trim() as RequestChannel;
   if (!REQUEST_CHANNELS.includes(channel)) {
-    throw publicBadRequest("MANUAL_ORDER_MATCH_REQUEST_CHANNEL_INVALID", "변경 요청 접수 경로가 올바르지 않습니다.");
+    throw publicBadRequest("MANUAL_ORDER_MATCH_REQUEST_CHANNEL_INVALID", "MANUAL_ORDER_MATCH_REQUEST_CHANNEL_INVALID");
   }
   return channel;
 }
@@ -94,7 +93,7 @@ function requestChannel(value: unknown): RequestChannel {
 function operation(value: unknown): Operation {
   const result = String(value ?? "").trim().toUpperCase() as Operation;
   if (!["ASSIGN", "REPLACE", "RELEASE"].includes(result)) {
-    throw publicBadRequest("MANUAL_ORDER_MATCH_OPERATION_INVALID", "PG 변경 작업이 올바르지 않습니다.");
+    throw publicBadRequest("MANUAL_ORDER_MATCH_OPERATION_INVALID", "MANUAL_ORDER_MATCH_OPERATION_INVALID");
   }
   return result;
 }
@@ -128,7 +127,7 @@ export function assertManualOrderMatchReadEnabled() {
   if (!runtimeConfigService.read().policies.manualOrderMatchReadEnabled) {
     throw publicConflict(
       "MANUAL_ORDER_MATCH_READ_DISABLED",
-      "주문 변경 요청 조회 기능이 비활성화되어 있습니다."
+      "MANUAL_ORDER_MATCH_READ_DISABLED"
     );
   }
 }
@@ -137,7 +136,7 @@ export function assertManualOrderMatchMutationEnabled() {
   if (!runtimeConfigService.read().policies.manualOrderMatchMutationEnabled) {
     throw publicConflict(
       "MANUAL_ORDER_MATCH_MUTATION_DISABLED",
-      "주문 PG 변경 기능이 현재 비활성화되어 있습니다."
+      "MANUAL_ORDER_MATCH_MUTATION_DISABLED"
     );
   }
 }
@@ -259,7 +258,7 @@ export async function listManualOrderMatchCandidates(input: {
   if (selectedOperation === "RELEASE") {
     throw publicBadRequest(
       "MANUAL_ORDER_MATCH_OPERATION_INVALID",
-      "PG 해제에는 새 PG 후보가 필요하지 않습니다."
+      "MANUAL_ORDER_MATCH_OPERATION_INVALID"
     );
   }
   const work = await prisma.order_matching_work_queue.findUnique({
@@ -267,7 +266,7 @@ export async function listManualOrderMatchCandidates(input: {
     select: { revision: true, channel: true },
   });
   if (!work || work.channel !== "COUPANG") {
-    throw publicNotFound("CHANNEL_ORDER_REQUIRED", "판매채널 주문을 찾을 수 없습니다.");
+    throw publicNotFound("CHANNEL_ORDER_REQUIRED", "CHANNEL_ORDER_REQUIRED");
   }
   const search = String(input.search ?? "").trim();
   const limit = Math.max(1, Math.min(80, Number(input.limit ?? 40) || 40));
@@ -420,10 +419,10 @@ export async function previewManualOrderMatch(
   const pgNo = selectedOperation === "RELEASE" ? null : normalizePgNo(requiredText(raw.pgNo, "PG", 80));
   const channel = requestChannel(raw.requestChannel);
   const reason = requiredText(raw.reason, "변경 사유", 500);
-  if (reason.length < 2) throw publicBadRequest("MANUAL_ORDER_MATCH_REASON_INVALID", "변경 사유를 두 글자 이상 입력해 주세요.");
+  if (reason.length < 2) throw publicBadRequest("MANUAL_ORDER_MATCH_REASON_INVALID", "MANUAL_ORDER_MATCH_REASON_INVALID");
 
   const item = await tx.order_matching_work_queue.findUnique({ where: { work_item_id: workItemId } });
-  if (!item || item.channel !== "COUPANG") throw publicNotFound("CHANNEL_ORDER_REQUIRED", "판매채널 주문을 찾을 수 없습니다. 독립 출고는 재고 수정에서 보류로 처리해 주세요.");
+  if (!item || item.channel !== "COUPANG") throw publicNotFound("CHANNEL_ORDER_REQUIRED", "CHANNEL_ORDER_REQUIRED");
   const allocations = await allocationsForWorkItem(tx, item);
   const shipmentAllocations = await allocationsForShipment(tx, item);
   const [pendingShipmentWriteTargets, shipmentReturnConflicts, shipmentSafety] = await Promise.all([
@@ -580,8 +579,6 @@ async function runManualOrderMatchPostCycle(input: {
     return {
       status: "FAILED",
       reasonCode: "ORDER_MATCHING_POST_CYCLE_FAILED",
-      message:
-        "PG 변경은 반영됐지만 판매채널 후속 처리를 완료하지 못했습니다. 주문 매칭 상태를 다시 확인해 주세요.",
     };
   }
 }
@@ -604,7 +601,7 @@ async function executeManualOrderMatchWithIntent(
       select: { external_order_id: true, external_shipment_id: true },
     });
     if (!targetWork) {
-      throw publicNotFound("CHANNEL_ORDER_REQUIRED", "판매채널 주문을 찾을 수 없습니다.");
+      throw publicNotFound("CHANNEL_ORDER_REQUIRED", "CHANNEL_ORDER_REQUIRED");
     }
     await tx.$queryRaw`
       SELECT work_item_id
@@ -649,7 +646,7 @@ async function executeManualOrderMatchWithIntent(
       };
     }
     const initial = await previewManualOrderMatch(raw, user, tx);
-    if (initial.manifestToken !== expectedManifest || !initial.eligible) throw publicConflict("MANUAL_ORDER_MATCH_PREVIEW_STALE", "대상 상태가 변경되었습니다. 다시 확인해 주세요.", { refreshRequired: true, reasonCodes: initial.reasonCodes });
+    if (initial.manifestToken !== expectedManifest || !initial.eligible) throw publicConflict("MANUAL_ORDER_MATCH_PREVIEW_STALE", "MANUAL_ORDER_MATCH_PREVIEW_STALE", { refreshRequired: true, reasonCodes: initial.reasonCodes });
 
     const now = databaseNow();
     const selectedOperation = initial.snapshot.operation;
@@ -679,7 +676,7 @@ async function executeManualOrderMatchWithIntent(
     }
     const lockedPreview = await previewManualOrderMatch(raw, user, tx);
     if (lockedPreview.manifestToken !== expectedManifest || !lockedPreview.eligible) {
-      throw publicConflict("MANUAL_ORDER_MATCH_PREVIEW_STALE", "대상 상태가 변경되었습니다. 다시 확인해 주세요.", { refreshRequired: true, reasonCodes: lockedPreview.reasonCodes });
+      throw publicConflict("MANUAL_ORDER_MATCH_PREVIEW_STALE", "MANUAL_ORDER_MATCH_PREVIEW_STALE", { refreshRequired: true, reasonCodes: lockedPreview.reasonCodes });
     }
     const balanceSkuIds = [
       previous?.inventorySkuId,
@@ -755,7 +752,7 @@ async function executeManualOrderMatchWithIntent(
         } });
       } catch (error) {
         if (isExpectedPostgresqlUniqueViolation(error, ["uq_match_worker_allocation_active_pg", "pg_no"])) {
-          throw publicConflict("PG_ALREADY_ALLOCATED", "선택한 PG가 이미 다른 주문에 배정됐습니다.", { refreshRequired: true });
+          throw publicConflict("PG_ALREADY_ALLOCATED", "PG_ALREADY_ALLOCATED", { refreshRequired: true });
         }
         throw error;
       }
@@ -883,10 +880,10 @@ export async function executeManualOrderMatch(
   assertManualOrderMatchReadEnabled();
   assertManualOrderMatchMutationEnabled();
   if (!canAccessRole(user.role, "MANAGER")) {
-    throw publicBadRequest("MANUAL_ORDER_MATCH_FORBIDDEN", "주문 PG 변경 권한이 없습니다.");
+    throw publicBadRequest("MANUAL_ORDER_MATCH_FORBIDDEN", "MANUAL_ORDER_MATCH_FORBIDDEN");
   }
   if (!dependencies.sensitiveActionVerified) {
-    throw publicBadRequest("MANUAL_ORDER_MATCH_OTP_REQUIRED", "주문 PG 변경은 OTP 인증이 필요합니다.");
+    throw publicBadRequest("MANUAL_ORDER_MATCH_OTP_REQUIRED", "MANUAL_ORDER_MATCH_OTP_REQUIRED");
   }
   requiredInteger(raw.workItemId, "workItemId");
   const selectedOperation = operation(raw.operation);
@@ -895,7 +892,7 @@ export async function executeManualOrderMatch(
   if (selectedOperation !== "RELEASE") requireCanonicalPgNo(raw.pgNo);
   const validatedPreview = await previewManualOrderMatch(raw, user);
   if (!validatedPreview.eligible || validatedPreview.manifestToken !== expectedManifest) {
-    throw publicConflict("MANUAL_ORDER_MATCH_PREVIEW_STALE", "대상 상태가 변경되었습니다. 다시 확인해 주세요.", { refreshRequired: true, reasonCodes: validatedPreview.reasonCodes });
+    throw publicConflict("MANUAL_ORDER_MATCH_PREVIEW_STALE", "MANUAL_ORDER_MATCH_PREVIEW_STALE", { refreshRequired: true, reasonCodes: validatedPreview.reasonCodes });
   }
   const lease = await acquireManualOrderMatchIntent(raw, user);
   let leaseLost = false;
@@ -908,7 +905,7 @@ export async function executeManualOrderMatch(
   try {
     await dependencies.afterIntentAcquire?.({ leaseId: lease.lease_id });
     return await executeManualOrderMatchWithIntent(raw, user, lease.lease_id, () => {
-      if (leaseLost) throw publicConflict("MANUAL_INTENT_LOST", "수동 변경 우선권이 만료되었습니다. 다시 확인해 주세요.", { refreshRequired: true });
+      if (leaseLost) throw publicConflict("MANUAL_INTENT_LOST", "MANUAL_INTENT_LOST", { refreshRequired: true });
     }, dependencies);
   } finally {
     clearInterval(renewal);

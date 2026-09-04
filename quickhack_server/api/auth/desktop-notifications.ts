@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     import("@/quickhack_server/notifications/desktop-notification-service"),
   ]);
   const session = await getAuthSessionFromRequest(request);
-  if (!session) return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+  if (!session) return NextResponse.json({ ok: false, code: "AUTH_REQUIRED" }, { status: 401 });
   return NextResponse.json({
     ok: true,
     ...(await service.listDesktopNotifications(prisma, session.users.user_id, {
@@ -33,11 +33,11 @@ export async function PATCH(request: NextRequest) {
     import("@/quickhack_server/notifications/desktop-notification-service"),
   ]);
   const session = await getAuthSessionFromRequest(request);
-  if (!session) return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+  if (!session) return NextResponse.json({ ok: false, code: "AUTH_REQUIRED" }, { status: 401 });
   const value = JSON.parse(bodyText) as { recipientIds?: unknown; action?: unknown };
   const rawIds = Array.isArray(value.recipientIds) ? value.recipientIds : [];
   const recipientIds = rawIds.map(String);
-  if (recipientIds.length === 0 || recipientIds.some((id) => !/^\d+$/.test(id))) return NextResponse.json({ ok: false, message: "알림 ID가 올바르지 않습니다." }, { status: 400 });
+  if (recipientIds.length === 0 || recipientIds.some((id) => !/^\d+$/.test(id))) return NextResponse.json({ ok: false, code: "NOTIFICATION_IDS_INVALID" }, { status: 400 });
   const updated = String(value.action ?? "READ") === "DELIVERED"
     ? await service.markDesktopNotificationsDelivered(prisma, session.users.user_id, recipientIds.map(BigInt))
     : await service.markDesktopNotificationsRead(prisma, session.users.user_id, recipientIds.map(BigInt));

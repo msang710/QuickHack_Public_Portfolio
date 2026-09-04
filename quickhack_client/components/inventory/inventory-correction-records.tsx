@@ -2,14 +2,15 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import {
   DEVICE_WARRANTY_OPTIONS,
   type DetailRecord,
   type DeviceDetailRecords,
   type DeviceListItem,
 } from "@/quickhack_shared/device/types";
-import { INBOUND_STATUS_LABELS } from "@/quickhack_shared/inbound/inbound-status";
-import { INVENTORY_STATUS_LABELS } from "@/quickhack_shared/inventory/inventory-status";
+import { INBOUND_STATUS } from "@/quickhack_shared/inbound/inbound-status";
+import { INVENTORY_STATUS } from "@/quickhack_shared/inventory/inventory-status";
 import {
   getStorageOptionsForProduct,
   type ProductCriteriaPayload,
@@ -31,10 +32,14 @@ import {
   FUNCTION_INSPECTION_EVIDENCE_KEYS,
   FUNCTION_INSPECTION_FIELD_KEYS,
   filterInspectionRecords,
+  detailFieldLabel,
+  inspectionResultLabel,
+  inspectionTypeLabel,
+  statusLabel,
 } from "@/quickhack_client/components/shared/device-detail-sheet";
 import {
-  INSPECTION_RESULT_LABELS,
-  INSPECTION_TYPE_LABELS,
+  INSPECTION_RESULT,
+  INSPECTION_TYPE,
 } from "@/quickhack_shared/inspection/inspection-types";
 
 const DEVICE_SALE_GRADE_OPTIONS = ["A", "A-", "B+", "B"];
@@ -48,18 +53,15 @@ function optionList(values: readonly string[]): InventoryEditOption[] {
     .map((value) => ({ value, label: value }));
 }
 
-function statusOptionList(
-  labels: Record<string, string>
-): InventoryEditOption[] {
-  return Object.entries(labels).map(([value, label]) => ({ value, label }));
-}
-
-const INBOUND_STATUS_EDIT_OPTIONS = statusOptionList(INBOUND_STATUS_LABELS);
-const INVENTORY_STATUS_EDIT_OPTIONS = statusOptionList(INVENTORY_STATUS_LABELS);
 const WARRANTY_EDIT_OPTIONS = optionList(DEVICE_WARRANTY_OPTIONS);
 const SALE_GRADE_EDIT_OPTIONS = optionList(DEVICE_SALE_GRADE_OPTIONS);
-const INSPECTION_TYPE_EDIT_OPTIONS = statusOptionList(INSPECTION_TYPE_LABELS);
-const INSPECTION_RESULT_EDIT_OPTIONS = statusOptionList(INSPECTION_RESULT_LABELS);
+
+type InventoryStatusOptions = {
+  inbound: InventoryEditOption[];
+  inventory: InventoryEditOption[];
+  inspectionType: InventoryEditOption[];
+  inspectionResult: InventoryEditOption[];
+};
 
 function detailFieldValueMapKey(recordId: string, fieldKey: string) {
   return `${recordId}\u0000${fieldKey}`;
@@ -224,11 +226,15 @@ function inventoryEditFieldEditor({
   optionSets,
   record,
   fieldKey,
+  criteriaPlaceholder,
+  statusOptions,
 }: {
   criteria: ProductCriteriaPayload | null;
   optionSets: InventoryCorrectionOptionSets;
   record: DetailRecord;
   fieldKey: string;
+  criteriaPlaceholder: string;
+  statusOptions: InventoryStatusOptions;
 }): Pick<
   InventoryEditFieldProps,
   "mode" | "options" | "allowEmpty" | "placeholder"
@@ -246,25 +252,25 @@ function inventoryEditFieldEditor({
     case "inbound_status":
       return {
         mode: "select",
-        options: INBOUND_STATUS_EDIT_OPTIONS,
+        options: statusOptions.inbound,
         allowEmpty: false,
       };
     case "inventory_status":
       return {
         mode: "select",
-        options: INVENTORY_STATUS_EDIT_OPTIONS,
+        options: statusOptions.inventory,
         allowEmpty: false,
       };
     case "inspection_type":
       return {
         mode: "select",
-        options: INSPECTION_TYPE_EDIT_OPTIONS,
+        options: statusOptions.inspectionType,
         allowEmpty: false,
       };
     case "inspection_result":
       return {
         mode: "select",
-        options: INSPECTION_RESULT_EDIT_OPTIONS,
+        options: statusOptions.inspectionResult,
         allowEmpty: true,
       };
     case "sale_grade":
@@ -284,14 +290,14 @@ function inventoryEditFieldEditor({
         mode: "datalist",
         options: optionSets.models,
         allowEmpty: false,
-        placeholder: "상품 기준값에서 선택",
+        placeholder: criteriaPlaceholder,
       };
     case "model_code":
       return {
         mode: "datalist",
         options: optionSets.modelCodes,
         allowEmpty: true,
-        placeholder: "상품 기준값에서 선택",
+        placeholder: criteriaPlaceholder,
       };
     case "storage": {
       const model = detailRecordModelValue(record);
@@ -304,7 +310,7 @@ function inventoryEditFieldEditor({
         options:
           scopedStorages.length > 0 ? optionList(scopedStorages) : optionSets.storages,
         allowEmpty: true,
-        placeholder: "상품 기준값에서 선택",
+        placeholder: criteriaPlaceholder,
       };
     }
     case "color":
@@ -312,7 +318,7 @@ function inventoryEditFieldEditor({
         mode: "datalist",
         options: optionSets.colors,
         allowEmpty: true,
-        placeholder: "상품 기준값에서 선택",
+        placeholder: criteriaPlaceholder,
       };
     default:
       return {};
@@ -348,6 +354,26 @@ function InventoryEditableRecordFields({
     isChanged: boolean
   ) => void;
 }) {
+  const t = useTranslations("inventory.correctionRecords");
+  const detailT = useTranslations("common.deviceDetail");
+  const statusOptions = React.useMemo<InventoryStatusOptions>(() => ({
+    inbound: Object.values(INBOUND_STATUS).map((value) => ({
+      value,
+      label: statusLabel(value, detailT),
+    })),
+    inventory: Object.values(INVENTORY_STATUS).map((value) => ({
+      value,
+      label: statusLabel(value, detailT),
+    })),
+    inspectionType: Object.values(INSPECTION_TYPE).map((value) => ({
+      value,
+      label: inspectionTypeLabel(value, detailT),
+    })),
+    inspectionResult: Object.values(INSPECTION_RESULT).map((value) => ({
+      value,
+      label: inspectionResultLabel(value, detailT),
+    })),
+  }), [detailT]);
   const handleFieldChange = React.useCallback(
     (value: string, recordId?: string, fieldKey?: string) => {
       if (!recordId || !fieldKey) {
@@ -387,7 +413,7 @@ function InventoryEditableRecordFields({
     return (
       <InventoryEditSection title={title}>
         <InventoryEditField
-          label="상태"
+          label={t("status")}
           value={empty}
           readOnly
           onChange={() => undefined}
@@ -408,7 +434,7 @@ function InventoryEditableRecordFields({
               key={`${record.id}-${field.key}`}
               recordId={record.id}
               fieldKey={field.key}
-              label={field.label}
+              label={detailFieldLabel(field.key, detailT)}
               value={inventoryCorrectionValue(field.value)}
               readOnly={field.readOnly}
               {...inventoryEditFieldEditor({
@@ -416,6 +442,8 @@ function InventoryEditableRecordFields({
                 optionSets,
                 record,
                 fieldKey: field.key,
+                criteriaPlaceholder: t("criteriaPlaceholder"),
+                statusOptions,
               })}
               isChanged={
                 !field.readOnly &&
@@ -469,6 +497,7 @@ export function InventoryRelatedRecordFields({
     isChanged: boolean
   ) => void;
 }) {
+  const t = useTranslations("inventory.correctionRecords");
   const originalDeviceRecords = originalRecords?.devices;
   const originalInboundRecords = originalRecords?.inbounds;
   const originalInventoryRecords = originalRecords?.inventory;
@@ -576,8 +605,8 @@ export function InventoryRelatedRecordFields({
     <>
       <InventoryEditableRecordFields
         group="devices"
-        title="기기 기본 정보"
-        empty="기기 정보가 없습니다."
+        title={t("sections.device")}
+        empty={t("empty.device")}
         records={records.devices}
         originalFieldValues={originalFieldValues.devices}
         changedFieldKeys={changedFieldKeys}
@@ -588,8 +617,8 @@ export function InventoryRelatedRecordFields({
       />
       <InventoryEditableRecordFields
         group="inbounds"
-        title="입고 기록"
-        empty="입고 정보가 없습니다."
+        title={t("sections.inbound")}
+        empty={t("empty.inbound")}
         records={records.inbounds}
         originalFieldValues={originalFieldValues.inbounds}
         changedFieldKeys={changedFieldKeys}
@@ -600,8 +629,8 @@ export function InventoryRelatedRecordFields({
       />
       <InventoryEditableRecordFields
         group="inventory"
-        title="재고 상태"
-        empty="재고 정보가 없습니다."
+        title={t("sections.inventory")}
+        empty={t("empty.inventory")}
         records={records.inventory}
         originalFieldValues={originalFieldValues.inventory}
         changedFieldKeys={changedFieldKeys}
@@ -612,8 +641,8 @@ export function InventoryRelatedRecordFields({
       />
       <InventoryEditableRecordFields
         group="inspections"
-        title="기능검수 기록"
-        empty="기능검수 기록이 없습니다."
+        title={t("sections.functionInspection")}
+        empty={t("empty.functionInspection")}
         records={functionInspectionRecords}
         originalFieldValues={originalFieldValues.functionInspections}
         changedFieldKeys={changedFieldKeys}
@@ -624,8 +653,8 @@ export function InventoryRelatedRecordFields({
       />
       <InventoryEditableRecordFields
         group="inspections"
-        title="외관검수 기록"
-        empty="외관검수 기록이 없습니다."
+        title={t("sections.appearanceInspection")}
+        empty={t("empty.appearanceInspection")}
         records={appearanceInspectionRecords}
         originalFieldValues={originalFieldValues.appearanceInspections}
         changedFieldKeys={changedFieldKeys}
@@ -636,8 +665,8 @@ export function InventoryRelatedRecordFields({
       />
       <InventoryEditableRecordFields
         group={null}
-        title="판매 채널 API 원본"
-        empty="기존 주문 정보가 없습니다."
+        title={t("sections.order")}
+        empty={t("empty.order")}
         records={records.orderItems}
         originalFieldValues={originalFieldValues.orderItems}
         changedFieldKeys={changedFieldKeys}
@@ -648,8 +677,8 @@ export function InventoryRelatedRecordFields({
       />
       <InventoryEditableRecordFields
         group={null}
-        title="주문 매칭 기록"
-        empty="채널 주문 매칭 정보가 없습니다."
+        title={t("sections.channelMatch")}
+        empty={t("empty.channelMatch")}
         records={records.channelOrderMatches}
         originalFieldValues={originalFieldValues.channelOrderMatches}
         changedFieldKeys={changedFieldKeys}

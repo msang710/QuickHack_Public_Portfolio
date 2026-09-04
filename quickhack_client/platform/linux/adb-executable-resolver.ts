@@ -146,7 +146,7 @@ export function createLinuxAdbExecutableResolver(
           platform: "linux",
           dependency: "adb",
           recovery: "Install or repair ADB at an approved QuickHack runtime path.",
-          message: "The configured QuickHack ADB executable is invalid.",
+          message: "DEPENDENCY_INVALID",
         });
       }
       throw dependencyMissing({
@@ -155,7 +155,7 @@ export function createLinuxAdbExecutableResolver(
         platform: "linux",
         dependency: "adb",
         recovery: "Install ADB at /usr/bin/adb or repair the QuickHack client runtime.",
-        message: "QuickHack could not find an approved ADB executable.",
+        message: "DEPENDENCY_MISSING",
       });
     },
   });

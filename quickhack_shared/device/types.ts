@@ -104,7 +104,6 @@ export type TimelineRecord = {
 
 export type DetailField = {
   key: string;
-  label: string;
   value: string | number | null;
   displayValue?: string | number | null;
   readOnly?: boolean;

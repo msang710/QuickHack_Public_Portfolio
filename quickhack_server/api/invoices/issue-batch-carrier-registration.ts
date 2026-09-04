@@ -53,19 +53,19 @@ async function handle(
       const user = await getAuthUserFromRequest(request);
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "Login is required." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
       if (!canAccessRole(user.role, "STAFF")) {
         return NextResponse.json(
-          { ok: false, message: "You do not have permission to register carrier shipments." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
       if (!Number.isSafeInteger(issueBatchId) || issueBatchId <= 0) {
         return NextResponse.json(
-          { ok: false, message: "A valid issue batch ID is required." },
+          { ok: false, code: "INVALID_ISSUE_BATCH_ID" },
           { status: 400 }
         );
       }

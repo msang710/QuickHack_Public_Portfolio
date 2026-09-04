@@ -18,6 +18,9 @@ type BackupAction = "setSchedule" | "runNow";
 
 class BackupConsoleRequestError extends Error {
   readonly statusCode = 400;
+  constructor(readonly messageCode: string) {
+    super(messageCode);
+  }
 }
 
 function parseAction(value: unknown): BackupAction {
@@ -27,14 +30,12 @@ function parseAction(value: unknown): BackupAction {
     return action;
   }
 
-  throw new BackupConsoleRequestError("지원하지 않는 백업 관리 요청입니다.");
+  throw new BackupConsoleRequestError("BACKUP_ACTION_UNSUPPORTED");
 }
 
 function parseWorkerKey(value: unknown) {
   if (!isBackupConsoleWorkerKey(value)) {
-    throw new BackupConsoleRequestError(
-      "서버 콘솔에서 관리할 수 없는 worker입니다."
-    );
+    throw new BackupConsoleRequestError("BACKUP_WORKER_UNSUPPORTED");
   }
 
   return value;
@@ -42,9 +43,7 @@ function parseWorkerKey(value: unknown) {
 
 function parseScheduleEnabled(value: unknown) {
   if (typeof value !== "boolean") {
-    throw new BackupConsoleRequestError(
-      "scheduleEnabled 값은 boolean이어야 합니다."
-    );
+    throw new BackupConsoleRequestError("BACKUP_SCHEDULE_INVALID");
   }
 
   return value;
@@ -61,7 +60,12 @@ function errorResponse(error: unknown) {
         error instanceof BackupConsoleConflictError
           ? "BACKUP_CONSOLE_CONFLICT"
           : "INVALID_BACKUP_CONSOLE_REQUEST",
-      message: error.message,
+      extra: {
+        messageCode:
+          error instanceof BackupConsoleRequestError
+            ? error.messageCode
+            : "BACKUP_CONSOLE_CONFLICT",
+      },
       cause: error,
     });
   }
@@ -103,9 +107,9 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        message: scheduleEnabled
-          ? "자동 실행 일정을 켰습니다."
-          : "자동 실행 일정을 껐습니다.",
+        messageCode: scheduleEnabled
+          ? "BACKUP_SCHEDULE_ENABLED"
+          : "BACKUP_SCHEDULE_DISABLED",
         state: await setBackupWorkerSchedule({
           workerKey,
           scheduleEnabled,
@@ -117,10 +121,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message:
+      messageCode:
         workerKey === "database-auto-backup"
-          ? "DB 백업을 완료했습니다."
-          : "백업 보존·무결성 점검을 완료했습니다.",
+          ? "DATABASE_BACKUP_COMPLETED"
+          : "BACKUP_RETENTION_COMPLETED",
       ...result,
     });
   } catch (error) {

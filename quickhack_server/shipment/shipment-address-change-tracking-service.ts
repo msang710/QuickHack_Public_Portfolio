@@ -388,8 +388,7 @@ async function processOneShipmentAddressChangeEvent(input: {
       sourceId: String(work.shipment_address_change_work_id),
       dedupeKey: `SHIPMENT_ADDRESS_CHANGE:${work.shipment_address_change_work_id}`,
       menuId: "shipment-delivery-changes",
-      title: "배송지 변경 요청",
-      body: "판매채널 배송지 변경 요청이 접수되었습니다.",
+      messageKey: "shipmentAddressChange",
       occurredAt: event.detected_at,
     });
 

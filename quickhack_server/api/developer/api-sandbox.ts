@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
       return NextResponse.json(
-        { ok: false, code: error.code, message: "API 시험 요청 본문이 너무 큽니다." },
+        { ok: false, code: error.code },
         { status: 413 }
       );
     }
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
 
   if (!parsed) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문은 JSON 객체여야 합니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -144,21 +144,21 @@ export async function POST(request: NextRequest) {
 
   if (!SUPPORTED_METHODS.has(method)) {
     return NextResponse.json(
-      { ok: false, message: "지원하지 않는 HTTP method입니다." },
+      { ok: false, code: "HTTP_METHOD_UNSUPPORTED" },
       { status: 400 }
     );
   }
 
   if (!pathname) {
     return NextResponse.json(
-      { ok: false, message: "/api/로 시작하는 내부 API 경로만 입력할 수 있습니다." },
+      { ok: false, code: "API_PATH_INVALID" },
       { status: 400 }
     );
   }
 
   if (isBlockedPath(new URL(pathname, "http://quickhack.internal").pathname)) {
     return NextResponse.json(
-      { ok: false, message: "샌드박스에서 호출할 수 없는 보호 API입니다." },
+      { ok: false, code: "API_PATH_PROTECTED" },
       { status: 400 }
     );
   }
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        message: "쓰기 API는 '쓰기 요청 허용'을 체크해야 실행됩니다.",
+        code: "API_WRITE_CONFIRMATION_REQUIRED",
       },
       { status: 400 }
     );

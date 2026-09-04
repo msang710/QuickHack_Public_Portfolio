@@ -14,13 +14,6 @@ export const ROLE_RANK: Record<Role, number> = {
   LEADER: 3,
 };
 
-export const ROLE_LABELS: Record<Role, string> = {
-  VIEWER: "조회전용",
-  STAFF: "사원급",
-  MANAGER: "중간관리자급",
-  LEADER: "리더급",
-};
-
 export type AuthUser = {
   userId: number;
   username: string;

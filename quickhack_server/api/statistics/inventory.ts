@@ -16,7 +16,7 @@ import {
 } from "@/quickhack_server/observability/operation-trace";
 import {
   resolveStatisticsPeriodRequest,
-  statisticsPeriodErrorMessage,
+  statisticsPeriodErrorCode,
   statisticsSearchUnsupportedMessage,
 } from "@/quickhack_server/statistics/statistics-period-request";
 
@@ -58,26 +58,26 @@ export async function GET(request: NextRequest) {
 
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "로그인이 필요합니다." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
 
       if (!canAccessRole(user.role, "LEADER")) {
         return NextResponse.json(
-          { ok: false, message: "재고 통계 조회 권한이 없습니다." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
 
       setOperationTraceUserId(user.userId);
 
-      const unsupportedSearchMessage =
+      const unsupportedSearchCode =
         statisticsSearchUnsupportedMessage(requestUrl.searchParams);
 
-      if (unsupportedSearchMessage) {
+      if (unsupportedSearchCode) {
         return NextResponse.json(
-          { ok: false, message: unsupportedSearchMessage },
+          { ok: false, code: unsupportedSearchCode },
           { status: 400 }
         );
       }
@@ -91,8 +91,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           {
             ok: false,
-            message:
-              "재고 통계 기간 프리셋과 직접 지정 기간은 함께 사용할 수 없습니다.",
+            code: "STATISTICS_PERIOD_CONFLICT",
           },
           { status: 400 }
         );
@@ -125,7 +124,6 @@ export async function GET(request: NextRequest) {
             return apiFailureResponse({
               status: 400,
               code: "INVALID_INVENTORY_STATISTICS_PERIOD",
-              message: error.message,
               cause: error,
             });
           }
@@ -140,11 +138,11 @@ export async function GET(request: NextRequest) {
             }),
           };
         } catch (error) {
-          const message = statisticsPeriodErrorMessage(error);
+          const code = statisticsPeriodErrorCode(error);
 
-          if (message) {
+          if (code) {
             return NextResponse.json(
-              { ok: false, message },
+              { ok: false, code },
               { status: 400 }
             );
           }

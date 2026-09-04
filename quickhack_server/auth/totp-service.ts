@@ -217,7 +217,7 @@ async function requireCurrentSession(
     user.is_active !== 1 ||
     user.must_change_password === 1
   ) {
-    throw publicConflict("ACCOUNT_SECURITY_CHANGED", "계정 보안 상태가 변경되었습니다. 다시 로그인하세요.");
+    throw publicConflict("ACCOUNT_SECURITY_CHANGED", "ACCOUNT_SECURITY_CHANGED");
   }
   return { session, user };
 }
@@ -230,7 +230,7 @@ async function createPendingEnrollment(
 ) {
   const existing = await tx.user_totp_credentials.findUnique({ where: { user_id: userId } });
   if (existing?.enabled === 1) {
-    throw publicConflict("TOTP_ALREADY_CONFIGURED", "이미 OTP가 설정된 계정입니다.");
+    throw publicConflict("TOTP_ALREADY_CONFIGURED", "TOTP_ALREADY_CONFIGURED");
   }
   if (existing) {
     return enrollmentResponse(existing, username, await decryptSecret(existing, keyAccess));
@@ -303,14 +303,14 @@ export async function createTotpEnrollmentForSession(input: {
 }, keyAccess: TotpServiceKeyAccess = serverTotpKeyAccess) {
   await keyAccess.requireReady();
   if (!(await verifyPassword(input.password, input.passwordHash))) {
-    throw publicConflict("CURRENT_PASSWORD_INVALID", "현재 비밀번호가 올바르지 않습니다.");
+    throw publicConflict("CURRENT_PASSWORD_INVALID", "CURRENT_PASSWORD_INVALID");
   }
   return prisma.$transaction(async (tx) => {
     const state = await lockServerSecurityState(tx);
     await lockUser(tx, input.userId);
     const { user } = await requireCurrentSession(tx, input, state.instance_epoch);
     if (user.password_hash !== input.passwordHash) {
-      throw publicConflict("ACCOUNT_SECURITY_CHANGED", "계정 보안 상태가 변경되었습니다. 다시 로그인하세요.");
+      throw publicConflict("ACCOUNT_SECURITY_CHANGED", "ACCOUNT_SECURITY_CHANGED");
     }
     return createPendingEnrollment(tx, user.user_id, user.username, keyAccess);
   });
@@ -339,10 +339,10 @@ async function confirmEnrollment(
   const credential = await tx.user_totp_credentials.findUnique({ where: { user_id: input.userId } });
   if (!credential) return { confirmed: false as const };
   if (credential.enabled === 1) {
-    throw publicConflict("TOTP_ENROLLMENT_ALREADY_CONFIRMED", "이 OTP 등록은 이미 완료되었습니다.");
+    throw publicConflict("TOTP_ENROLLMENT_ALREADY_CONFIRMED", "TOTP_ENROLLMENT_ALREADY_CONFIRMED");
   }
   if (!input.enrollmentToken || enrollmentToken(credential) !== input.enrollmentToken) {
-    throw publicConflict("TOTP_ENROLLMENT_CHANGED", "OTP 등록 정보가 변경되었습니다. 등록을 다시 시작하세요.");
+    throw publicConflict("TOTP_ENROLLMENT_CHANGED", "TOTP_ENROLLMENT_CHANGED");
   }
   const matchedStep = matchingTotpStep(await decryptSecret(credential, keyAccess), input.code);
   if (matchedStep === null) return { confirmed: false as const };
@@ -527,7 +527,7 @@ export async function verifySensitiveSession(input: {
       where: { session_token_hash: hashSessionToken(input.sessionToken) },
       select: { session_id: true, user_id: true },
     });
-    if (!observed) throw publicConflict("ACCOUNT_SECURITY_CHANGED", "다시 로그인하세요.");
+    if (!observed) throw publicConflict("ACCOUNT_SECURITY_CHANGED", "ACCOUNT_SECURITY_CHANGED");
     await lockUser(tx, observed.user_id);
     const { session, user } = await requireCurrentSession(
       tx,
@@ -535,7 +535,7 @@ export async function verifySensitiveSession(input: {
       state.instance_epoch
     );
     if (!isRole(user.role) || !canUseSensitiveAction(user.role, input.sensitiveAction)) {
-      throw publicForbidden("SENSITIVE_ACTION_FORBIDDEN", "민감 작업을 인증할 권한이 없습니다.");
+      throw publicForbidden("SENSITIVE_ACTION_FORBIDDEN", "SENSITIVE_ACTION_FORBIDDEN");
     }
     const verification = await verifyUserTotpCodeInTransaction(
       tx,
@@ -583,14 +583,14 @@ export async function manageUserTotpForSession(input: {
 }, keyAccess: TotpServiceKeyAccess = serverTotpKeyAccess) {
   await keyAccess.requireReady();
   if (!(await verifyPassword(input.password, input.passwordHash))) {
-    throw publicConflict("CURRENT_PASSWORD_INVALID", "현재 비밀번호가 올바르지 않습니다.");
+    throw publicConflict("CURRENT_PASSWORD_INVALID", "CURRENT_PASSWORD_INVALID");
   }
   return prisma.$transaction(async (tx) => {
     const state = await lockServerSecurityState(tx);
     await lockUser(tx, input.userId);
     const { user } = await requireCurrentSession(tx, input, state.instance_epoch);
     if (user.password_hash !== input.passwordHash) {
-      throw publicConflict("ACCOUNT_SECURITY_CHANGED", "계정 보안 상태가 변경되었습니다. 다시 로그인하세요.");
+      throw publicConflict("ACCOUNT_SECURITY_CHANGED", "ACCOUNT_SECURITY_CHANGED");
     }
     const verification = await verifyUserTotpCodeInTransaction(tx, input.userId, input.code, {}, keyAccess);
     if (!verification.verified) return { verification, token: null, recoveryCodes: [] as string[] };

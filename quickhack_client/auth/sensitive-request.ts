@@ -3,6 +3,7 @@ import {
   isSensitiveAuthRequiredResponse,
   type SensitiveAuthRequiredResponse,
 } from "@/quickhack_shared/auth/sensitive-auth";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 
 type JsonBody = Record<string, unknown> | unknown[] | string | null;
 
@@ -12,11 +13,19 @@ export type SensitiveJsonRequest = {
   body?: JsonBody;
   headers?: Record<string, string>;
   cache?: RequestCache;
+  fallbacks: SensitiveRequestFallbacks;
+};
+
+export type SensitiveRequestFallbacks = {
+  authRequired: string;
+  requestFailed: string;
+  verifyFailed: string;
 };
 
 type PreparedSensitiveJsonRequest = {
   url: string;
   init: RequestInit;
+  fallbacks: SensitiveRequestFallbacks;
 };
 
 type SensitiveVerifyResponse = {
@@ -49,7 +58,7 @@ export class SensitiveAuthRequiredError extends Error {
     response: Response,
     payload: SensitiveAuthRequiredResponse
   ) {
-    super(payload.message || "OTP 인증이 필요합니다.");
+    super(request.fallbacks.authRequired);
     this.name = "SensitiveAuthRequiredError";
     this.request = request;
     this.response = response;
@@ -69,6 +78,7 @@ function prepareRequest(request: SensitiveJsonRequest): PreparedSensitiveJsonReq
 
   return {
     url: request.url,
+    fallbacks: request.fallbacks,
     init: {
       method: request.method ?? (hasBody ? "POST" : "GET"),
       headers,
@@ -86,19 +96,6 @@ async function readJsonPayload(response: Response) {
   return (await response.json().catch(() => null)) as unknown;
 }
 
-function errorMessage(payload: unknown, fallback: string) {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "message" in payload &&
-    typeof (payload as { message?: unknown }).message === "string"
-  ) {
-    return (payload as { message: string }).message;
-  }
-
-  return fallback;
-}
-
 async function runPreparedSensitiveJson<T>(
   request: PreparedSensitiveJsonRequest
 ) {
@@ -111,7 +108,7 @@ async function runPreparedSensitiveJson<T>(
 
   if (!response.ok) {
     throw new ApiRequestError(
-      errorMessage(payload, "요청 처리에 실패했습니다."),
+      legacyApiMessage(payload, request.fallbacks.requestFailed),
       response,
       payload
     );
@@ -124,7 +121,11 @@ export async function sensitiveJsonFetch<T>(request: SensitiveJsonRequest) {
   return runPreparedSensitiveJson<T>(prepareRequest(request));
 }
 
-export async function verifySensitiveOtpCode(otpCode: string, sensitiveAction: string) {
+export async function verifySensitiveOtpCode(
+  otpCode: string,
+  sensitiveAction: string,
+  fallbackMessage: string
+) {
   const response = await fetch("/api/auth/sensitive-verify", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -136,7 +137,7 @@ export async function verifySensitiveOtpCode(otpCode: string, sensitiveAction: s
 
   if (!response.ok || !payload?.ok || !payload.sensitiveAuthenticated) {
     throw new ApiRequestError(
-      payload?.message || "OTP 인증에 실패했습니다.",
+      legacyApiMessage(payload, fallbackMessage),
       response,
       payload
     );
@@ -149,6 +150,10 @@ export async function retrySensitiveJsonFetch<T>(
   error: SensitiveAuthRequiredError,
   otpCode: string
 ) {
-  await verifySensitiveOtpCode(otpCode, error.payload.sensitiveAction || "");
+  await verifySensitiveOtpCode(
+    otpCode,
+    error.payload.sensitiveAction || "",
+    error.request.fallbacks.verifyFailed
+  );
   return runPreparedSensitiveJson<T>(error.request);
 }

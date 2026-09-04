@@ -23,6 +23,10 @@ import type {
   SalesStatisticsData,
 } from "@/quickhack_shared/statistics/statistics";
 import {
+  SALES_STATISTICS_PRICE_BANDS,
+  SALES_STATISTICS_UNKNOWN,
+} from "@/quickhack_shared/statistics/statistics";
+import {
   resolveClosedStatisticsPeriod,
   statisticsDateTimeBounds,
   type StatisticsPeriodContext,
@@ -32,45 +36,24 @@ import { liveStatisticsCalculationMetadata } from "@/quickhack_server/statistics
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ELIGIBLE_SALE_STATUSES = new Set(["SOLD", "RETURNED"]);
-const UNKNOWN_SKU = "미기록 SKU";
-const UNKNOWN_MODEL = "미기록 기종";
-const UNKNOWN_STORAGE = "미기록 용량";
-const UNKNOWN_COLOR = "미기록 색상";
-const UNKNOWN_GRADE = "미기록 등급";
-const UNKNOWN_WARRANTY = "미기록 보증";
-const UNKNOWN_CHANNEL = "미기록 채널";
-const PRICE_BANDS = [
-  "10만원 미만",
-  "10-20만원",
-  "20-30만원",
-  "30-40만원",
-  "40-50만원",
-  "50-60만원",
-  "60만원 이상",
-  "가격 미확인",
-] as const;
 const LEAD_TIME_BUCKETS = [
   {
     key: "DAYS_0_29",
-    label: "0-29일",
     fromDays: 0,
     toDays: 30,
   },
   {
     key: "DAYS_30_59",
-    label: "30-59일",
     fromDays: 30,
     toDays: 60,
   },
   {
     key: "DAYS_60_89",
-    label: "60-89일",
     fromDays: 60,
     toDays: 90,
   },
   {
     key: "DAYS_90_PLUS",
-    label: "90일 이상",
     fromDays: 90,
     toDays: null,
   },
@@ -182,14 +165,14 @@ function percentage(numerator: number, denominator: number) {
 function rateMetric(
   numerator: number,
   denominator: number,
-  unavailableReason = "집계 가능한 분모가 없습니다."
+  unavailableReasonCode: SalesRateMetric["unavailableReasonCode"] = "NO_DENOMINATOR"
 ): SalesRateMetric {
   if (denominator === 0) {
     return {
       value: null,
       numerator,
       denominator,
-      unavailableReason,
+      unavailableReasonCode,
     };
   }
 
@@ -300,7 +283,6 @@ function leadTimeMetric(rows: PreparedSale[]): SalesLeadTimeMetric {
 
   const buckets: SalesLeadTimeBucket[] = LEAD_TIME_BUCKETS.map((bucket) => ({
     key: bucket.key,
-    label: bucket.label,
     count: values.filter(
       (value) =>
         value >= bucket.fromDays &&
@@ -333,15 +315,15 @@ function monthKey(date: Date) {
 
 function priceBandOf(price: number | null) {
   if (!validMoney(price)) {
-    return "가격 미확인";
+    return "PRICE_UNKNOWN";
   }
-  if (price < 100_000) return "10만원 미만";
-  if (price < 200_000) return "10-20만원";
-  if (price < 300_000) return "20-30만원";
-  if (price < 400_000) return "30-40만원";
-  if (price < 500_000) return "40-50만원";
-  if (price < 600_000) return "50-60만원";
-  return "60만원 이상";
+  if (price < 100_000) return "PRICE_LT_100K";
+  if (price < 200_000) return "PRICE_100K_199K";
+  if (price < 300_000) return "PRICE_200K_299K";
+  if (price < 400_000) return "PRICE_300K_399K";
+  if (price < 500_000) return "PRICE_400K_499K";
+  if (price < 600_000) return "PRICE_500K_599K";
+  return "PRICE_600K_PLUS";
 }
 
 function groupBy<T>(rows: T[], key: (row: T) => string) {
@@ -371,14 +353,14 @@ function performanceMetrics(rows: PreparedSale[]) {
 function prepareSales(input: SalesStatisticsAggregateInput) {
   return input.sales
     .map<PreparedSale>((sale) => {
-      const skuCodeKey = nullableText(sale.skuCode) ?? UNKNOWN_SKU;
-      const channelKey = nullableText(sale.channel) ?? UNKNOWN_CHANNEL;
-      const modelKey = nullableText(sale.model) ?? UNKNOWN_MODEL;
-      const storageKey = nullableText(sale.storage) ?? UNKNOWN_STORAGE;
-      const colorKey = nullableText(sale.color) ?? UNKNOWN_COLOR;
-      const saleGradeKey = nullableText(sale.saleGrade) ?? UNKNOWN_GRADE;
+      const skuCodeKey = nullableText(sale.skuCode) ?? SALES_STATISTICS_UNKNOWN.sku;
+      const channelKey = nullableText(sale.channel) ?? SALES_STATISTICS_UNKNOWN.channel;
+      const modelKey = nullableText(sale.model) ?? SALES_STATISTICS_UNKNOWN.model;
+      const storageKey = nullableText(sale.storage) ?? SALES_STATISTICS_UNKNOWN.storage;
+      const colorKey = nullableText(sale.color) ?? SALES_STATISTICS_UNKNOWN.color;
+      const saleGradeKey = nullableText(sale.saleGrade) ?? SALES_STATISTICS_UNKNOWN.grade;
       const warrantyGroupKey =
-        nullableText(sale.warrantyGroup) ?? UNKNOWN_WARRANTY;
+        nullableText(sale.warrantyGroup) ?? SALES_STATISTICS_UNKNOWN.warranty;
 
       return {
         ...sale,
@@ -479,7 +461,7 @@ function priceGradeMatrix(rows: PreparedSale[]) {
       gradeOrder(left) - gradeOrder(right) ||
       left.localeCompare(right, "ko-KR")
   );
-  const priceGradeRows: SalesPriceGradeRow[] = PRICE_BANDS.map((priceBand) => {
+  const priceGradeRows: SalesPriceGradeRow[] = SALES_STATISTICS_PRICE_BANDS.map((priceBand) => {
     const bandRows = rows.filter(
       (row) => priceBandOf(row.salesPrice) === priceBand
     );

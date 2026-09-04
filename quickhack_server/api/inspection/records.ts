@@ -43,14 +43,14 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "검수 내역 저장 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
 
   if (!isObject(body) || !Array.isArray(body.records)) {
     return NextResponse.json(
-      { ok: false, message: "저장할 검수 내역이 없습니다." },
+      { ok: false, code: "INSPECTION_RECORDS_REQUIRED" },
       { status: 400 }
     );
   }
@@ -83,34 +83,46 @@ export async function POST(request: NextRequest) {
   const results = await traceOperationSpan("SERVICE_WRITE", async () => {
     const savedResults = [];
 
-    for (const record of records) {
-      if (!isObject(record)) {
+    for (const item of records) {
+      if (!isObject(item)) {
         savedResults.push({
           ok: false,
           label: "-",
-          error: "검수 내역 형식이 올바르지 않습니다.",
+          errorCode: "INSPECTION_RECORD_INVALID",
         });
         continue;
       }
 
+      const envelope = isObject(item.record) ? item : null;
+      const record = envelope ? item.record : item;
+      if (!isObject(record)) {
+        savedResults.push({ ok: false, label: "-", errorCode: "INSPECTION_RECORD_INVALID" });
+        continue;
+      }
+      const clientRecordId = envelope ? String(envelope.clientRecordId ?? "").trim() : null;
+      const inspectionKind = envelope ? String(envelope.inspectionKind ?? "").trim() : null;
       const label = String(record.PG || record.IMEI || "-");
 
       try {
         const result = await saveInspectionRecord(
           prisma,
           record as Partial<InspectionRecord> & Record<string, unknown>,
-          user.userId
+          user.userId,
+          clientRecordId && (inspectionKind === "appearance" || inspectionKind === "function")
+            ? { clientRecordId, inspectionKind }
+            : undefined
         );
-        savedResults.push({ ok: true, label, result });
+        savedResults.push({ ok: true, clientRecordId, label: result.pg_no, result });
       } catch (error) {
         markOperationTraceFailed(error, "INSPECTION_RECORD_SAVE_FAILED");
         savedResults.push({
           ok: false,
+          clientRecordId,
           label,
-          error:
+          errorCode:
             error instanceof PublicError
-              ? error.message
-              : "검수 기록을 저장하지 못했습니다.",
+              ? error.code
+              : "INSPECTION_RECORD_SAVE_FAILED",
         });
       }
     }

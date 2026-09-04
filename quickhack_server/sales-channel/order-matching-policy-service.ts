@@ -109,7 +109,7 @@ function enumValue<T extends readonly string[]>(
   if (!allowed.includes(text)) {
     throw publicBadRequest(
       "INVALID_ORDER_MATCHING_POLICY_VALUE",
-      `${fieldName} 값이 올바르지 않습니다: ${text}`
+      "INVALID_ORDER_MATCHING_POLICY_VALUE"
     );
   }
 
@@ -174,7 +174,7 @@ function normalizeSaleGradeValues(value: unknown, index: number) {
   if (values.length === 0) {
     throw publicBadRequest(
       "ORDER_MATCHING_SALE_GRADE_REQUIRED",
-      `${index + 1}순위 판매등급 값이 필요합니다.`
+      "ORDER_MATCHING_SALE_GRADE_REQUIRED"
     );
   }
 
@@ -185,7 +185,7 @@ function normalizeSaleGradeValues(value: unknown, index: number) {
   if (invalidValue) {
     throw publicBadRequest(
       "INVALID_ORDER_MATCHING_SALE_GRADE",
-      `${index + 1}순위 판매등급은 A, A-, B+, B 중에서 선택해야 합니다.`
+      "INVALID_ORDER_MATCHING_SALE_GRADE"
     );
   }
 
@@ -272,7 +272,7 @@ function normalizeSalesOfferPolicyInput(input: SalesOfferPolicyInput) {
   if (!Number.isInteger(salesOfferId) || salesOfferId <= 0) {
     throw publicBadRequest(
       "SALES_OFFER_ID_REQUIRED",
-      "salesOfferId 값이 필요합니다."
+      "SALES_OFFER_ID_REQUIRED"
     );
   }
   const rawTiers = Array.isArray(input.tiers) ? input.tiers : [];
@@ -281,7 +281,7 @@ function normalizeSalesOfferPolicyInput(input: SalesOfferPolicyInput) {
   if (tiers.length === 0) {
     throw publicBadRequest(
       "ORDER_MATCHING_PRIORITY_REQUIRED",
-      "최소 1개 이상의 우선순위 단계가 필요합니다."
+      "ORDER_MATCHING_PRIORITY_REQUIRED"
     );
   }
 
@@ -330,7 +330,7 @@ function normalizeExpectedPolicyState(
   ) {
     throw publicBadRequest(
       "INVALID_ORDER_MATCHING_POLICY_EXPECTED_STATE",
-      "주문 매칭 정책의 조회 기준 정보가 올바르지 않습니다. 새로고침 후 다시 시도하세요."
+      "INVALID_ORDER_MATCHING_POLICY_EXPECTED_STATE"
     );
   }
 
@@ -364,7 +364,7 @@ function stalePolicyError(input: {
 
   return publicConflict(
     "ORDER_MATCHING_POLICY_STALE_STATE",
-    "다른 작업에서 주문 매칭 정책이 먼저 변경되었습니다. 새로고침 후 다시 시도하세요.",
+    "ORDER_MATCHING_POLICY_STALE_STATE",
     details
   );
 }
@@ -621,7 +621,7 @@ export async function saveSalesOfferOrderMatchingPolicy(
     if (!offer) {
       throw publicNotFound(
         "SALES_OFFER_NOT_FOUND",
-        "QuickHack 판매 오퍼를 찾을 수 없습니다."
+        "SALES_OFFER_NOT_FOUND"
       );
     }
 
@@ -658,7 +658,7 @@ export async function saveSalesOfferOrderMatchingPolicy(
     if (missingSaleGrade) {
       throw publicBadRequest(
         "ORDER_MATCHING_SALE_GRADE_NOT_FOUND",
-        `판매등급 기준값을 찾을 수 없습니다: ${missingSaleGrade}`
+        "ORDER_MATCHING_SALE_GRADE_NOT_FOUND"
       );
     }
 
@@ -768,7 +768,7 @@ export async function resetSalesOfferOrderMatchingPolicy(
   if (!Number.isInteger(salesOfferId) || salesOfferId <= 0) {
     throw publicBadRequest(
       "SALES_OFFER_ID_REQUIRED",
-      "salesOfferId 값이 필요합니다."
+      "SALES_OFFER_ID_REQUIRED"
     );
   }
   const expected = normalizeExpectedPolicyState(input, {

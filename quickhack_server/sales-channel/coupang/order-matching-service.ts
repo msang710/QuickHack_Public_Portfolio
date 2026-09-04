@@ -5,6 +5,10 @@ import { prisma } from "@/quickhack_server/core/prisma";
 import { isPostgresqlUniqueViolation } from "@/quickhack_server/core/database/postgres-errors";
 import { databaseNow } from "@/quickhack_server/core/database/time-boundary";
 import { findInventoryCandidatesForSalesOffer } from "@/quickhack_server/catalog/sales-offer-candidate-service";
+import {
+  serializeInventoryCandidateWarning,
+  type InventoryCandidateWarning,
+} from "@/quickhack_shared/catalog/inventory-candidate-warning";
 import { getCoupangRuntimeConfig } from "@/quickhack_server/sales-channel/coupang/config";
 import {
   failCoupangMatchingCycleInventoryVerification,
@@ -1680,7 +1684,7 @@ async function matchSingleOrderItem(
     activeMatchCount: existingMatchCount,
     inventoryMatchStatus: INVENTORY_MATCH_STATUSES.unmatched as InventoryMatchStatus,
     failureReason: null as string | null,
-    warnings: [] as string[],
+    warnings: [] as InventoryCandidateWarning[],
     matchedDevices: [] as {
       pgNo: string;
       model: string;
@@ -1902,7 +1906,9 @@ async function matchSingleOrderItem(
               failure_reason: null,
               allocation_note:
                 candidatesResult.warnings.length > 0
-                  ? candidatesResult.warnings.join(" | ")
+                  ? candidatesResult.warnings
+                      .map(serializeInventoryCandidateWarning)
+                      .join(" | ")
                   : null,
               allocated_at: timestamp,
               created_at: timestamp,

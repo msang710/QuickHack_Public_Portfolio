@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { Input } from "@/quickhack_client/components/ui/input";
 
 export type EditableAccountInformation = {
@@ -41,22 +42,23 @@ export function AccountInformationFields({
   disabled = false,
   onChange,
 }: AccountInformationFieldsProps) {
+  const t = useTranslations("common.accountFields");
   return (
     <>
-      <AccountFieldLabel label="로그인 아이디">
+      <AccountFieldLabel label={t("username")}>
         <Input
           value={value.username}
-          placeholder="예: hong"
+          placeholder={t("usernamePlaceholder")}
           autoComplete="username"
           disabled={disabled}
           onChange={(event) => onChange("username", event.target.value)}
         />
       </AccountFieldLabel>
 
-      <AccountFieldLabel label="직원 표시 이름">
+      <AccountFieldLabel label={t("displayName")}>
         <Input
           value={value.displayName}
-          placeholder="예: 홍길동"
+          placeholder={t("displayNamePlaceholder")}
           autoComplete="name"
           disabled={disabled}
           onChange={(event) => onChange("displayName", event.target.value)}
@@ -64,10 +66,10 @@ export function AccountInformationFields({
       </AccountFieldLabel>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <AccountFieldLabel label="전화번호">
+        <AccountFieldLabel label={t("phone")}>
           <Input
             value={value.phone}
-            placeholder="예: 010-0000-0000"
+            placeholder={t("phonePlaceholder")}
             inputMode="tel"
             autoComplete="tel"
             disabled={disabled}
@@ -75,11 +77,11 @@ export function AccountInformationFields({
           />
         </AccountFieldLabel>
 
-        <AccountFieldLabel label="이메일">
+        <AccountFieldLabel label={t("email")}>
           <Input
             type="email"
             value={value.email}
-            placeholder="예: user@company.com"
+            placeholder={t("emailPlaceholder")}
             autoComplete="email"
             disabled={disabled}
             onChange={(event) => onChange("email", event.target.value)}
@@ -88,7 +90,7 @@ export function AccountInformationFields({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <AccountFieldLabel label="생일">
+        <AccountFieldLabel label={t("birthDate")}>
           <Input
             type="date"
             value={value.birthDate}
@@ -98,7 +100,7 @@ export function AccountInformationFields({
           />
         </AccountFieldLabel>
 
-        <AccountFieldLabel label="입사일">
+        <AccountFieldLabel label={t("hireDate")}>
           <Input
             type="date"
             value={value.hireDate}
