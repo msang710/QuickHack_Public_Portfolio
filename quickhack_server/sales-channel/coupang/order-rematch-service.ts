@@ -52,7 +52,7 @@ function requiredManifestToken(value: unknown) {
   if (!/^[a-f0-9]{64}$/.test(token)) {
     throw publicBadRequest(
       "COUPANG_ORDER_REMATCH_MANIFEST_INVALID",
-      "재매칭 대상 확인 정보가 올바르지 않습니다. 대상을 다시 조회해 주세요."
+      "COUPANG_ORDER_REMATCH_MANIFEST_INVALID"
     );
   }
 
@@ -188,7 +188,7 @@ async function resetEligibleOrders(input: {
       if (initialPreview.manifestToken !== input.manifestToken) {
         throw publicConflict(
           "COUPANG_ORDER_REMATCH_PREVIEW_STALE",
-          "재매칭 대상 상태가 변경되었습니다. 목록을 다시 확인해 주세요.",
+          "COUPANG_ORDER_REMATCH_PREVIEW_STALE",
           { refreshRequired: true }
         );
       }
@@ -205,7 +205,7 @@ async function resetEligibleOrders(input: {
       if (initialEligibleShipments.length === 0) {
         throw publicConflict(
           "COUPANG_ORDER_REMATCH_TARGET_EMPTY",
-          "현재 재매칭할 수 있는 미포장 주문이 없습니다.",
+          "COUPANG_ORDER_REMATCH_TARGET_EMPTY",
           { refreshRequired: true }
         );
       }
@@ -220,7 +220,7 @@ async function resetEligibleOrders(input: {
       if (lockedPreview.manifestToken !== input.manifestToken) {
         throw publicConflict(
           "COUPANG_ORDER_REMATCH_PREVIEW_STALE",
-          "재매칭 대상 상태가 변경되었습니다. 목록을 다시 확인해 주세요.",
+          "COUPANG_ORDER_REMATCH_PREVIEW_STALE",
           { refreshRequired: true }
         );
       }
@@ -243,7 +243,7 @@ async function resetEligibleOrders(input: {
           if (!item.currentDefaultOffer) {
             throw publicConflict(
               "COUPANG_ORDER_REMATCH_MAPPING_CHANGED",
-              "재매칭 대상의 현재 상품 매핑이 변경되었습니다. 목록을 다시 확인해 주세요.",
+              "COUPANG_ORDER_REMATCH_MAPPING_CHANGED",
               { refreshRequired: true }
             );
           }
@@ -282,7 +282,7 @@ async function resetEligibleOrders(input: {
             if (canceled.count !== 1) {
               throw publicConflict(
                 "COUPANG_ORDER_REMATCH_ALLOCATION_CHANGED",
-                "재매칭 대상 PG 배정 상태가 변경되었습니다. 목록을 다시 확인해 주세요.",
+                "COUPANG_ORDER_REMATCH_ALLOCATION_CHANGED",
                 { refreshRequired: true }
               );
             }
@@ -317,7 +317,7 @@ async function resetEligibleOrders(input: {
           if (resetWorkItem.count !== 1) {
             throw publicConflict(
               "COUPANG_ORDER_REMATCH_WORK_ITEM_CHANGED",
-              "재매칭 대상 주문 상태가 변경되었습니다. 목록을 다시 확인해 주세요.",
+              "COUPANG_ORDER_REMATCH_WORK_ITEM_CHANGED",
               { refreshRequired: true }
             );
           }
@@ -482,7 +482,7 @@ export async function resetAndRematchCoupangOrders(
     if (isTransactionConflict(error)) {
       throw publicConflict(
         "COUPANG_ORDER_REMATCH_CONCURRENT_CHANGE",
-        "재매칭 대상이 동시에 변경되었습니다. 목록을 다시 확인해 주세요.",
+        "COUPANG_ORDER_REMATCH_CONCURRENT_CHANGE",
         { refreshRequired: true }
       );
     }
@@ -523,8 +523,7 @@ export async function resetAndRematchCoupangOrders(
       reset,
       rematch: {
         status: "FAILED" as const,
-        message:
-          "기존 배정은 안전하게 해제되었지만 즉시 재매칭을 완료하지 못했습니다. 주문 매칭 상태를 다시 확인해 주세요.",
+        reasonCode: "ORDER_REMATCH_AFTER_RESET_FAILED" as const,
       },
     };
   }
@@ -578,7 +577,7 @@ export async function runManagedCoupangOrderRematch(
   if (workerResult.skipped) {
     throw publicConflict(
       "COUPANG_ORDER_REMATCH_MATCHING_BUSY",
-      "주문 매칭이 진행 중입니다. 완료된 뒤 재매칭 대상을 다시 확인해 주세요.",
+      "COUPANG_ORDER_REMATCH_MATCHING_BUSY",
       { refreshRequired: true }
     );
   }

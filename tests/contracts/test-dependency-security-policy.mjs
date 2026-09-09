@@ -99,9 +99,15 @@ assert.deepEqual(packageJson.overrides, {
   "@prisma/config": {
     "deepmerge-ts": "8.0.0",
   },
-}, "Prisma config의 GHSA-ggr8-5vv4-36mx 보정 외 dependency override를 허용하지 않습니다.");
+  browserslist: "4.28.8",
+  "fast-uri": "4.1.4",
+  mysql2: "3.24.3",
+}, "검토된 dependency 보안 보정 외 override를 허용하지 않습니다.");
 const packageLock = JSON.parse(await readProjectFile("package-lock.json"));
 assert.equal(packageLock.packages["node_modules/deepmerge-ts"]?.version, "8.0.0");
+assert.equal(packageLock.packages["node_modules/browserslist"]?.version, "4.28.8");
+assert.equal(packageLock.packages["node_modules/fast-uri"]?.version, "4.1.4");
+assert.equal(packageLock.packages["node_modules/mysql2"]?.version, "3.24.3");
 assert.equal(packageJson.scripts["audit:dependencies"], "npm audit --package-lock-only --audit-level=low");
 assert.equal(
   packageJson.scripts["test:dependency-security-policy"],
@@ -148,7 +154,7 @@ const releaseWorkflows = await Promise.all([
   readProjectFile(".github/workflows/linux-release.yml"),
 ]);
 assert.equal(
-  [...finalIntegrationWorkflow.matchAll(/- run: npm run audit:dependencies/g)].length,
+  [...finalIntegrationWorkflow.matchAll(/npm run audit:dependencies/g)].length,
   1,
   "최종 통합 워크플로에서 의존성 감사를 정확히 한 번 실행해야 합니다.",
 );
@@ -161,7 +167,7 @@ assert.match(finalIntegrationWorkflow, /^on:\r?\n  workflow_dispatch:/m);
 assert.doesNotMatch(finalIntegrationWorkflow, /^\s*pull_request:/m);
 
 const installIndex = finalIntegrationWorkflow.indexOf("- run: npm ci");
-const auditIndex = finalIntegrationWorkflow.indexOf("- run: npm run audit:dependencies");
+const auditIndex = finalIntegrationWorkflow.indexOf("npm run audit:dependencies");
 const lintIndex = finalIntegrationWorkflow.indexOf("- run: npm run lint");
 assert.ok(installIndex >= 0 && installIndex < auditIndex && auditIndex < lintIndex);
 

@@ -77,7 +77,7 @@ async function assertExecutable(
         platform: "linux",
         dependency: "cups-client",
         recovery: "Repair the Linux CUPS client tools.",
-        message: "A required CUPS client executable is invalid.",
+        message: "DEPENDENCY_INVALID",
       });
     }
     await checkAccess(executable, constants.X_OK);
@@ -92,7 +92,7 @@ async function assertExecutable(
         platform: "linux",
         dependency: "cups-client",
         recovery: "Install the CUPS client tools before using label printing.",
-        message: "A required CUPS client executable is missing.",
+        message: "DEPENDENCY_MISSING",
       });
     }
     throw dependencyInvalid({
@@ -101,7 +101,7 @@ async function assertExecutable(
       platform: "linux",
       dependency: "cups-client",
       recovery: "Repair the Linux CUPS client tools and permissions.",
-      message: "A required CUPS client executable is not usable.",
+      message: "DEPENDENCY_INVALID",
     });
   }
 }
@@ -201,7 +201,7 @@ export function createLinuxPrinterBackend(
             platform: "linux",
             dependency: "cups-client",
             recovery: "Install the CUPS client tools before using label printing.",
-            message: "The CUPS queue utility is missing.",
+            message: "DEPENDENCY_MISSING",
           });
         }
         const listError = new Error("The Linux printer queue list could not be read.");

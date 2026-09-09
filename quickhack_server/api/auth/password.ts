@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
   const body = parseJsonObject(bodyText);
   if (!body) {
-    return NextResponse.json({ ok: false, message: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json({ ok: false, code: "INVALID_BODY" }, { status: 400 });
   }
 
   const [authService, { prisma }, passwordService] = await Promise.all([
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   ]);
   const session = await authService.getPasswordChangeSessionFromToken(token);
   if (!session) {
-    return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ ok: false, code: "AUTH_REQUIRED" }, { status: 401 });
   }
 
   try {
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     });
     const response = NextResponse.json({
       ok: true,
-      message: "비밀번호를 변경했습니다.",
+      resultCode: "PASSWORD_CHANGED",
       mustChangePassword: false,
       revision: result.revision,
       user: authService.toAuthUser({ ...session.users, must_change_password: 0 }),
@@ -63,8 +63,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof passwordService.PasswordChangeError) {
       return apiFailureResponse({
         status: error.status,
-        code: "PASSWORD_CHANGE_FAILED",
-        message: error.message,
+        code: error.code,
         cause: error,
       });
     }

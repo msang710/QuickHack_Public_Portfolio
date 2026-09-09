@@ -2,27 +2,47 @@
 ﻿"use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { Database, Loader2, LogIn } from "lucide-react";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { Input } from "@/quickhack_client/components/ui/input";
 import { normalizeAccountUsername } from "@/quickhack_shared/auth/account-username";
+import { writeLocaleCookie } from "@/quickhack_client/i18n/locale-client";
+import { isQuickHackLocale } from "@/quickhack_shared/i18n/locales";
 
 type LoginScreenProps = {
   initialError?: string;
+  initialErrorCode?:
+    | "INVALID_SERVER_RESPONSE"
+    | "SERVER_PROXY_UNAVAILABLE"
+    | "SERVER_PROXY_TIMEOUT"
+    | "SERVER_PROXY_INVALID_RESPONSE"
+    | "SERVER_PROXY_UPSTREAM_ERROR";
   showTestCredentials?: boolean;
 };
 
 export function LoginScreen({
   initialError = "",
+  initialErrorCode,
   showTestCredentials = false,
 }: LoginScreenProps) {
+  const t = useTranslations("auth.login");
   const [username, setUsername] = React.useState(
     showTestCredentials ? "leader" : ""
   );
   const [password, setPassword] = React.useState(
     showTestCredentials ? "QuickHack!234" : ""
   );
-  const [error, setError] = React.useState(initialError);
+  const [error, setError] = React.useState(
+    initialErrorCode === "INVALID_SERVER_RESPONSE" || initialErrorCode === "SERVER_PROXY_INVALID_RESPONSE"
+      ? t("errors.invalidServerResponse")
+      : initialErrorCode === "SERVER_PROXY_TIMEOUT"
+        ? t("errors.timeout")
+        : initialErrorCode
+          ? t("errors.unavailable")
+          : initialError
+  );
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -41,16 +61,38 @@ export function LoginScreen({
           password,
         }),
       });
-      const payload = await response.json().catch(() => null);
+      const payload = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        code?: string;
+        message?: string;
+        details?: { remainingSeconds?: number };
+        locale?: unknown;
+      } | null;
 
       if (!response.ok || !payload?.ok) {
-        setError(payload?.message || "로그인에 실패했습니다.");
+        const errorKey = {
+          LOGIN_INVALID_CREDENTIALS: "invalidCredentials",
+          REQUEST_BODY_TOO_LARGE: "bodyTooLarge",
+          LOGIN_CREDENTIALS_REQUIRED: "credentialsRequired",
+          LOGIN_REQUEST_INVALID: "invalidRequest",
+        }[payload?.code ?? ""];
+        setError(
+          payload?.code === "LOGIN_RATE_LIMITED"
+            ? t("errors.rateLimited", {
+                seconds: payload.details?.remainingSeconds ?? 0,
+              })
+            : errorKey
+              ? t(`errors.${errorKey}` as "errors.invalidCredentials")
+              : legacyApiMessage(payload, t("errors.failed"))
+        );
         return;
       }
 
+      if (isQuickHackLocale(payload.locale)) writeLocaleCookie(payload.locale);
+
       window.location.reload();
     } catch {
-      setError("서버에 연결할 수 없습니다.");
+      setError(t("errors.unavailable"));
     } finally {
       setIsSubmitting(false);
     }
@@ -67,16 +109,15 @@ export function LoginScreen({
               </div>
               <div>
                 <h1 className="text-lg font-semibold">QuickHack</h1>
-                <p className="text-sm text-muted-foreground">내부 ERP/WMS</p>
+                <p className="text-sm text-muted-foreground">{t("brandSubtitle")}</p>
               </div>
             </div>
             <div className="max-w-md">
               <h2 className="text-2xl font-semibold tracking-normal">
-                직원 로그인
+                {t("heroTitle")}
               </h2>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                기기, 입고, 검수, 재고, 주문, 출고, 반품 데이터를 직원 계정
-                기준으로 관리합니다.
+                {t("heroDescription")}
               </p>
             </div>
           </div>
@@ -84,11 +125,11 @@ export function LoginScreen({
           {showTestCredentials ? (
             <div className="grid gap-2 text-xs text-muted-foreground">
               <div className="grid grid-cols-[88px_1fr]">
-                <span>테스트 계정</span>
+                <span>{t("testAccount")}</span>
                 <span>leader / manager / staff / viewer</span>
               </div>
               <div className="grid grid-cols-[88px_1fr]">
-                <span>비밀번호</span>
+                <span>{t("password")}</span>
                 <span>QuickHack!234</span>
               </div>
             </div>
@@ -97,15 +138,15 @@ export function LoginScreen({
 
         <form className="flex flex-col justify-center gap-5 p-8" onSubmit={handleSubmit}>
           <div>
-            <h2 className="text-base font-semibold">로그인</h2>
+            <h2 className="text-base font-semibold">{t("title")}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              발급된 직원 계정으로 접속하세요.
+              {t("description")}
             </p>
           </div>
 
           <div className="grid gap-3">
             <label className="grid gap-1.5 text-sm font-medium">
-              아이디
+              {t("username")}
               <Input
                 autoComplete="username"
                 autoFocus
@@ -116,7 +157,7 @@ export function LoginScreen({
               />
             </label>
             <label className="grid gap-1.5 text-sm font-medium">
-              비밀번호
+              {t("password")}
               <Input
                 autoComplete="current-password"
                 type="password"
@@ -138,7 +179,7 @@ export function LoginScreen({
             ) : (
               <LogIn className="size-4" />
             )}
-            로그인
+            {isSubmitting ? t("pending") : t("submit")}
           </Button>
         </form>
       </section>

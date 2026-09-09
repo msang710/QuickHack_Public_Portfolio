@@ -1,20 +1,24 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
+import type { LogenLabelBlockerCode, LogenLabelPrintStatus } from "@/quickhack_shared/shipment/logen-label";
 
-type OutputPreview = { issueBatchId: number; revision: number; count: number; blockers: string[]; label: string; status: string };
+type OutputPreview = { issueBatchId: number; revision: number; count: number; blockers: LogenLabelBlockerCode[]; label: string; status: LogenLabelPrintStatus };
 export function DesktopOutputWindow() {
+  const t = useTranslations("desktop.outputWindow");
   const [preview, setPreview] = React.useState<OutputPreview | null>(null);
   const [message, setMessage] = React.useState("");
   const load = React.useCallback(async (issueBatchId: number) => {
-    setMessage("출력 상태를 확인하는 중입니다.");
+    setMessage(t("loading"));
     const response = await fetch(`/api/invoices/issue-batches/${issueBatchId}/label-print`, { cache: "no-store" });
-    const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; labelPrint?: { issueBatchId: number; batchRevision: number; shipmentListPrintBatchLabel?: string; labelPrintStatus: string; targetIssueItemIds?: number[]; blockers?: Array<{ message?: string; code?: string }> } } | null;
-    if (!response.ok || !payload?.ok || !payload.labelPrint) { setPreview(null); setMessage(payload?.message ?? "출력 상태를 불러오지 못했습니다."); return; }
+    const payload = await response.json().catch(() => null) as { ok?: boolean; code?: string; message?: string; labelPrint?: { issueBatchId: number; batchRevision: number; shipmentListPrintBatchLabel?: string; labelPrintStatus: LogenLabelPrintStatus; targetIssueItemIds?: number[]; blockers?: Array<{ code: LogenLabelBlockerCode }> } } | null;
+    if (!response.ok || !payload?.ok || !payload.labelPrint) { setPreview(null); setMessage(legacyApiMessage(payload, t("loadFailed"))); return; }
     const view = payload.labelPrint;
-    setPreview({ issueBatchId: view.issueBatchId, revision: view.batchRevision, count: view.targetIssueItemIds?.length ?? 0, blockers: (view.blockers ?? []).map((item) => item.message ?? item.code ?? "차단 사유"), label: view.shipmentListPrintBatchLabel ?? `#${view.issueBatchId}`, status: view.labelPrintStatus });
+    setPreview({ issueBatchId: view.issueBatchId, revision: view.batchRevision, count: view.targetIssueItemIds?.length ?? 0, blockers: (view.blockers ?? []).map((item) => item.code), label: view.shipmentListPrintBatchLabel ?? `#${view.issueBatchId}`, status: view.labelPrintStatus });
     setMessage("");
-  }, []);
+  }, [t]);
   React.useEffect(() => {
     const channel = new BroadcastChannel("quickhack-output-preview-v1");
     channel.onmessage = (event) => {
@@ -25,5 +29,5 @@ export function DesktopOutputWindow() {
     channel.postMessage({ type: "REQUEST_CURRENT_PREVIEW" });
     return () => channel.close();
   }, [load]);
-  return <main className="min-h-screen bg-background p-6 text-foreground"><div className="mx-auto max-w-5xl space-y-4"><div><h1 className="text-xl font-semibold">출력 미리보기</h1><p className="text-sm text-muted-foreground">읽기 전용 창입니다. 출력 확정과 재고·송장 변경은 메인 창에서만 수행합니다.</p></div>{message ? <p className="rounded border p-4 text-sm text-muted-foreground">{message}</p> : null}{preview ? <section className="space-y-3 rounded border p-5"><div className="flex gap-6 text-sm"><span>{preview.label}</span><span>revision {preview.revision}</span><span>{preview.count}건</span><span>{preview.status}</span></div>{preview.blockers.length ? <ul className="list-disc pl-5 text-sm text-red-600">{preview.blockers.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-emerald-700">현재 배치를 서버에서 다시 검증했습니다.</p>}</section> : !message ? <p className="rounded border p-6 text-sm text-muted-foreground">메인 창의 송장 출력 화면에서 미리보기 배치를 선택하세요.</p> : null}</div></main>;
+  return <main className="min-h-screen bg-background p-6 text-foreground"><div className="mx-auto max-w-5xl space-y-4"><div><h1 className="text-xl font-semibold">{t("title")}</h1><p className="text-sm text-muted-foreground">{t("description")}</p></div>{message ? <p className="rounded border p-4 text-sm text-muted-foreground">{message}</p> : null}{preview ? <section className="space-y-3 rounded border p-5"><div className="flex gap-6 text-sm"><span>{preview.label}</span><span>{t("revision", { revision: preview.revision })}</span><span>{t("count", { count: preview.count })}</span><span>{t(`status.${preview.status}`)}</span></div>{preview.blockers.length ? <ul className="list-disc pl-5 text-sm text-red-600">{preview.blockers.map((item) => <li key={item}>{t(`blockerCode.${item}`)}</li>)}</ul> : <p className="text-sm text-emerald-700">{t("verified")}</p>}</section> : !message ? <p className="rounded border p-6 text-sm text-muted-foreground">{t("select")}</p> : null}</div></main>;
 }

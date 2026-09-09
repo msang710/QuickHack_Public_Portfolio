@@ -34,14 +34,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "VIEWER")) {
     return NextResponse.json(
-      { ok: false, message: "재고 후보 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
   if (!externalVendorItemId) {
     return NextResponse.json(
-      { ok: false, message: "externalVendorItemId가 필요합니다." },
+      { ok: false, code: "EXTERNAL_VENDOR_ITEM_ID_REQUIRED" },
       { status: 400 }
     );
   }

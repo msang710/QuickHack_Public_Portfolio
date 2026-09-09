@@ -1,156 +1,60 @@
-export type StatisticsMetricPresentation = {
-  value: string;
-  detail: string;
-};
+"use client";
 
-export type StatisticsRateMetricLike = {
-  value: number | null;
-  numerator: number;
-  denominator: number;
-  unavailableReason?: string;
-};
+import { useLocale, useTranslations } from "next-intl";
+import type { StatisticsUnavailableReason } from "@/quickhack_shared/statistics/statistics";
 
-export type StatisticsAmountMetricLike = {
-  amount: number | null;
-  pricedCount: number;
-  totalCount: number;
-  coveragePercent: number;
-};
+export type StatisticsMetricPresentation = { value: string; detail: string };
+export type StatisticsRateMetricLike = StatisticsUnavailableReason & { value: number | null; numerator: number; denominator: number };
+export type StatisticsAmountMetricLike = { amount: number | null; pricedCount: number; totalCount: number; coveragePercent: number };
+export type StatisticsDurationMetricLike = { sampleCount: number; medianHours: number | null; p90Hours: number | null; excludedAnomalyCount: number };
 
-export type StatisticsDurationMetricLike = {
-  sampleCount: number;
-  medianHours: number | null;
-  p90Hours: number | null;
-  excludedAnomalyCount: number;
-};
-
-const percentFormatter = new Intl.NumberFormat("ko-KR", {
-  maximumFractionDigits: 1,
-});
-
-const numberFormatter = new Intl.NumberFormat("ko-KR", {
-  maximumFractionDigits: 0,
-});
-
-const currencyFormatter = new Intl.NumberFormat("ko-KR", {
-  currency: "KRW",
-  maximumFractionDigits: 0,
-  style: "currency",
-});
-
-const kstDateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZone: "Asia/Seoul",
-});
-
-export function formatStatisticsCount(value: number) {
-  return numberFormatter.format(value);
-}
-
-export function formatStatisticsPercent(value: number) {
-  return percentFormatter.format(value);
-}
-
-export function formatStatisticsCurrency(value: number) {
-  return currencyFormatter.format(value);
-}
-
-export function formatStatisticsRate(
-  metric: StatisticsRateMetricLike,
-  options: { unavailableValue?: string } = {}
-): StatisticsMetricPresentation {
-  if (metric.value === null) {
-    return {
-      value: options.unavailableValue ?? "-",
-      detail:
-        metric.unavailableReason ??
-        `표본 ${formatStatisticsCount(metric.denominator)}건`,
-    };
-  }
-
-  return {
-    value: `${formatStatisticsPercent(metric.value)}%`,
-    detail: `${formatStatisticsCount(
-      metric.numerator
-    )} / ${formatStatisticsCount(metric.denominator)}건`,
+export function useStatisticsMetricPresentation() {
+  const locale = useLocale();
+  const t = useTranslations("statistics.metric");
+  const intlLocale = locale;
+  const percent = new Intl.NumberFormat(intlLocale, { maximumFractionDigits: 1 });
+  const number = new Intl.NumberFormat(intlLocale, { maximumFractionDigits: 0 });
+  const currency = new Intl.NumberFormat(intlLocale, { currency: "KRW", maximumFractionDigits: 0, style: "currency" });
+  const dateTime = new Intl.DateTimeFormat(intlLocale, { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Seoul" });
+  const formatCount = (value: number) => number.format(value);
+  const formatPercent = (value: number) => percent.format(value);
+  const formatCurrency = (value: number) => currency.format(value);
+  const formatUnavailableReason = (metric: StatisticsUnavailableReason, fallback: string) => {
+    if (metric.unavailableReasonCode) {
+      const translateReason = t as unknown as (
+        key: string,
+        values?: Record<string, number>
+      ) => string;
+      return translateReason(`unavailableReason.${metric.unavailableReasonCode}`, {
+        days: metric.unavailableReasonDays ?? 0,
+      });
+    }
+    return metric.unavailableReason ?? fallback;
   };
-}
-
-export function formatStatisticsAmount(
-  metric: StatisticsAmountMetricLike
-): StatisticsMetricPresentation {
-  if (metric.amount === null || metric.pricedCount === 0) {
-    return {
-      value: "-",
-      detail: `가격 확인 ${formatStatisticsCount(
-        metric.pricedCount
-      )} / ${formatStatisticsCount(metric.totalCount)}건`,
-    };
-  }
-
-  return {
-    value: formatStatisticsCurrency(metric.amount),
-    detail: `가격 확인 ${formatStatisticsCount(
-      metric.pricedCount
-    )} / ${formatStatisticsCount(
-      metric.totalCount
-    )}건 · ${formatStatisticsPercent(metric.coveragePercent)}%`,
+  const formatRate = (metric: StatisticsRateMetricLike, options: { unavailableValue?: string } = {}): StatisticsMetricPresentation =>
+    metric.value === null
+      ? { value: options.unavailableValue ?? "-", detail: formatUnavailableReason(metric, t("sample", { count: metric.denominator })) }
+      : { value: `${formatPercent(metric.value)}%`, detail: t("ratio", { numerator: metric.numerator, denominator: metric.denominator }) };
+  const formatAmount = (metric: StatisticsAmountMetricLike): StatisticsMetricPresentation =>
+    metric.amount === null || metric.pricedCount === 0
+      ? { value: "-", detail: t("priceCoverage", { priced: metric.pricedCount, total: metric.totalCount }) }
+      : { value: formatCurrency(metric.amount), detail: t("priceCoveragePercent", { priced: metric.pricedCount, total: metric.totalCount, coverage: metric.coveragePercent }) };
+  const formatDuration = (metric: StatisticsDurationMetricLike): StatisticsMetricPresentation => {
+    if (metric.sampleCount === 0 || metric.medianHours === null) {
+      return { value: "-", detail: metric.excludedAnomalyCount > 0 ? t("noSampleAnomaly", { count: metric.excludedAnomalyCount }) : t("noSample") };
+    }
+    const p90 = metric.p90Hours === null ? t("p90Unavailable") : t("p90", { hours: metric.p90Hours });
+    const anomaly = metric.excludedAnomalyCount > 0 ? t("anomaly", { count: metric.excludedAnomalyCount }) : "";
+    return { value: t("hours", { hours: metric.medianHours }), detail: `${p90} · ${t("sample", { count: metric.sampleCount })}${anomaly}` };
   };
-}
-
-export function formatStatisticsDuration(
-  metric: StatisticsDurationMetricLike
-): StatisticsMetricPresentation {
-  if (metric.sampleCount === 0 || metric.medianHours === null) {
-    return {
-      value: "-",
-      detail:
-        metric.excludedAnomalyCount > 0
-          ? `표본 없음 · 이상치 ${formatStatisticsCount(
-              metric.excludedAnomalyCount
-            )}건 제외`
-          : "표본 없음",
-    };
-  }
-
-  const p90 =
-    metric.p90Hours === null
-      ? "P90 -"
-      : `P90 ${formatStatisticsPercent(metric.p90Hours)}시간`;
-  const anomaly =
-    metric.excludedAnomalyCount > 0
-      ? ` · 이상치 ${formatStatisticsCount(
-          metric.excludedAnomalyCount
-        )}건 제외`
-      : "";
-
-  return {
-    value: `${formatStatisticsPercent(metric.medianHours)}시간`,
-    detail: `${p90} · 표본 ${formatStatisticsCount(
-      metric.sampleCount
-    )}건${anomaly}`,
+  const formatDate = (value: string | null) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "-" : dateTime.format(date);
   };
-}
-
-export function formatStatisticsDate(value: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return kstDateTimeFormatter.format(date);
-}
-
-export function formatStatisticsMonth(value: string) {
-  const match = /^(\d{4})-(\d{2})$/.exec(value);
-  if (!match) {
-    return value;
-  }
-
-  return `${match[1]}년 ${Number(match[2])}월`;
+  const formatMonth = (value: string) => {
+    const match = /^(\d{4})-(\d{2})$/.exec(value);
+    return match ? t("month", { year: Number(match[1]), month: Number(match[2]) }) : value;
+  };
+  return { formatAmount, formatCount, formatCurrency, formatDate, formatDuration, formatMonth, formatPercent, formatRate, formatUnavailableReason };
 }

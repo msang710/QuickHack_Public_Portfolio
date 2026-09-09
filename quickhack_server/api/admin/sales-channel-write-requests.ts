@@ -26,7 +26,7 @@ function positiveId(value: unknown, label: string) {
   if (!Number.isSafeInteger(id) || id <= 0) {
     throw publicBadRequest(
       "INVALID_SALES_CHANNEL_WRITE_REQUEST",
-      `${label}이 올바르지 않습니다.`
+      "INVALID_SALES_CHANNEL_WRITE_REQUEST"
     );
   }
 
@@ -38,7 +38,7 @@ function nonnegativeRevision(value: unknown) {
   if (!Number.isSafeInteger(revision) || revision < 0) {
     throw publicBadRequest(
       "INVALID_SALES_CHANNEL_WRITE_CONTROL_REVISION",
-      "쓰기 차단 상태 revision이 올바르지 않습니다."
+      "INVALID_SALES_CHANNEL_WRITE_CONTROL_REVISION"
     );
   }
   return revision;
@@ -74,14 +74,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "판매 채널 동기화 점검 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -139,14 +139,14 @@ export async function PATCH(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "판매 채널 동기화 점검 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -165,7 +165,7 @@ export async function PATCH(request: NextRequest) {
     if (action === "resumeControl") {
       if (!canAccessRole(user.role, "MANAGER")) {
         return NextResponse.json(
-          { ok: false, message: "쓰기 일시 정지는 관리자만 해제할 수 있습니다." },
+          { ok: false, code: "LEADER_REQUIRED" },
           { status: 403 }
         );
       }
@@ -191,7 +191,7 @@ export async function PATCH(request: NextRequest) {
       });
       return NextResponse.json({
         ok: true,
-        message: "외부 쓰기를 다시 열었습니다.",
+        resultCode: "WRITE_GATE_REOPENED",
         result: authoritativeResult,
         receipt,
       });
@@ -248,7 +248,7 @@ export async function PATCH(request: NextRequest) {
       );
       return NextResponse.json({
         ok: true,
-        message: "QuickHack 내부 확정을 완료했습니다.",
+        resultCode: "WRITE_REQUEST_FINALIZED",
         result: authoritativeResult,
         receipt: settledReceipt,
       });
@@ -261,7 +261,7 @@ export async function PATCH(request: NextRequest) {
       if (!allowed.includes(decision as (typeof allowed)[number])) {
         throw publicBadRequest(
           "INVALID_SALES_CHANNEL_REVIEW_DECISION",
-          "직접 확인 결과가 올바르지 않습니다."
+          "INVALID_SALES_CHANNEL_REVIEW_DECISION"
         );
       }
 
@@ -293,14 +293,14 @@ export async function PATCH(request: NextRequest) {
           : receipt;
       return NextResponse.json({
         ok: true,
-        message: "직접 확인 결과를 저장했습니다.",
+        resultCode: "WRITE_REVIEW_SAVED",
         result: authoritativeResult,
         receipt: settledReceipt,
       });
     }
 
     return NextResponse.json(
-      { ok: false, message: "지원하지 않는 처리입니다." },
+      { ok: false, code: "ACTION_UNSUPPORTED" },
       { status: 400 }
     );
   } catch (error) {

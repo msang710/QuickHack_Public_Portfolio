@@ -2,7 +2,9 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import { RefreshCcw, Save, Truck } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { verifySensitiveOtpCode } from "@/quickhack_client/auth/sensitive-request";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { Input } from "@/quickhack_client/components/ui/input";
@@ -45,29 +47,31 @@ const EMPTY_FORM: CarrierDispatchSettingsForm = {
 };
 
 const FORM_FIELDS = [
-  { key: "name", label: "보내는 분 이름" },
-  { key: "tel", label: "전화번호" },
-  { key: "cell", label: "휴대전화(선택)" },
-  { key: "zipCode", label: "우편번호(선택)" },
-  { key: "address1", label: "주소" },
-  { key: "address2", label: "상세주소" },
-  { key: "defaultBoxTypeCode", label: "기본 박스 유형 코드" },
+  { key: "name", labelKey: "name" },
+  { key: "tel", labelKey: "tel" },
+  { key: "cell", labelKey: "cell" },
+  { key: "zipCode", labelKey: "zipCode" },
+  { key: "address1", labelKey: "address1" },
+  { key: "address2", labelKey: "address2" },
+  { key: "defaultBoxTypeCode", labelKey: "defaultBoxTypeCode" },
 ] as const satisfies ReadonlyArray<{
   key: keyof CarrierDispatchSettingsForm;
-  label: string;
+  labelKey: keyof CarrierDispatchSettingsForm;
 }>;
 
 export function CarrierDispatchSettingsView() {
+  const t = useTranslations("shipment.carrierDispatch");
+  const sensitiveT = useTranslations("common.sensitiveRequest");
   const [revision, setRevision] = React.useState(0);
   const [form, setForm] = React.useState(EMPTY_FORM);
   const [otpCode, setOtpCode] = React.useState("");
   const [message, setMessage] = React.useState(
-    "택배사 발송 설정을 불러오는 중입니다."
+    () => t("message.loading")
   );
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
-  function applySettings(item: CarrierDispatchSettings) {
+  const applySettings = React.useCallback((item: CarrierDispatchSettings) => {
     setRevision(item.revision);
     setForm({
       name: item.sender?.name ?? "",
@@ -80,12 +84,12 @@ export function CarrierDispatchSettingsView() {
     });
     setMessage(
       item.configured
-        ? `저장된 택배사 발송 설정입니다. 리비전 ${item.revision}`
-        : "아직 택배사 발송 설정이 없습니다. 로젠 송장 등록 전에 최초 설정을 저장하세요."
+        ? t("message.loaded", { revision: item.revision })
+        : t("message.unconfigured")
     );
-  }
+  }, [t]);
 
-  async function loadSettings() {
+  const loadSettings = React.useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch("/api/admin/carrier-integration-settings", {
@@ -97,7 +101,7 @@ export function CarrierDispatchSettingsView() {
         item?: CarrierDispatchSettings;
       };
       if (!response.ok || !payload.ok || !payload.item) {
-        throw new Error(payload.message || "택배사 발송 설정을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.loadFailed")));
       }
       applySettings(payload.item);
     } catch (error) {
@@ -105,7 +109,7 @@ export function CarrierDispatchSettingsView() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [applySettings, t]);
 
   async function saveSettings() {
     setSaving(true);
@@ -113,7 +117,8 @@ export function CarrierDispatchSettingsView() {
       if (otpCode.trim()) {
         await verifySensitiveOtpCode(
           otpCode.trim(),
-          SENSITIVE_ACTIONS.carrierIntegrationSettings
+          SENSITIVE_ACTIONS.carrierIntegrationSettings,
+          sensitiveT("verifyFailed")
         );
       }
       const response = await fetch("/api/admin/carrier-integration-settings", {
@@ -140,15 +145,15 @@ export function CarrierDispatchSettingsView() {
       };
       if (!response.ok || !payload.ok || !payload.item) {
         const suffix = payload.sensitiveAuthRequired
-          ? " OTP 코드를 입력하고 다시 저장하세요."
+          ? t("message.otpRequired")
           : "";
         throw new Error(
-          (payload.message || "택배사 발송 설정을 저장하지 못했습니다.") + suffix
+          legacyApiMessage(payload, t("message.saveFailed")) + suffix
         );
       }
       applySettings(payload.item);
       setOtpCode("");
-      setMessage(`택배사 발송 설정을 저장했습니다. 리비전 ${payload.item.revision}`);
+      setMessage(t("message.saved", { revision: payload.item.revision }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -161,7 +166,7 @@ export function CarrierDispatchSettingsView() {
       void loadSettings();
     }, 0);
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [loadSettings]);
 
   const busy = loading || saving;
 
@@ -172,10 +177,10 @@ export function CarrierDispatchSettingsView() {
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <Truck className="size-4 text-primary" />
-              택배사 발송 설정
+              {t("title")}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              로젠 송장 등록에 사용할 보내는 분 정보와 기본 박스 유형을 관리합니다.
+              {t("description")}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">{message}</p>
           </div>
@@ -186,15 +191,15 @@ export function CarrierDispatchSettingsView() {
             onClick={() => void loadSettings()}
           >
             <RefreshCcw className="size-4" />
-            최신 설정 다시 불러오기
+            {t("refresh")}
           </Button>
         </div>
 
         <div className="grid gap-4 p-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {FORM_FIELDS.map(({ key, label }) => (
+            {FORM_FIELDS.map(({ key, labelKey }) => (
               <label key={key} className="grid gap-1 text-xs text-muted-foreground">
-                {label}
+                {t(`fields.${labelKey}`)}
                 <Input
                   value={form[key]}
                   disabled={busy}
@@ -211,7 +216,7 @@ export function CarrierDispatchSettingsView() {
 
           <div className="flex flex-wrap items-end gap-3 border-t pt-4">
             <label className="grid w-48 gap-1 text-xs text-muted-foreground">
-              OTP 코드
+              {t("otp")}
               <Input
                 value={otpCode}
                 inputMode="numeric"
@@ -226,7 +231,7 @@ export function CarrierDispatchSettingsView() {
               onClick={() => void saveSettings()}
             >
               <Save className="size-4" />
-              {saving ? "저장 중" : "택배사 발송 설정 저장"}
+              {saving ? t("saving") : t("save")}
             </Button>
           </div>
         </div>

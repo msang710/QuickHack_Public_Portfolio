@@ -4,16 +4,27 @@ import { replaceUserSessionsInTransaction } from "@/quickhack_server/auth/auth-s
 import { lockServerSecurityState } from "@/quickhack_server/auth/security-state";
 import { hashPassword, verifyPassword } from "@/quickhack_server/core/password";
 import { databaseNow } from "@/quickhack_server/core/database/time-boundary";
-import { passwordChangeValidationError } from "@/quickhack_shared/auth/password-policy";
+import {
+  passwordChangeValidationIssue,
+  type PasswordChangeValidationIssue,
+} from "@/quickhack_shared/auth/password-policy";
 
 type PrismaServiceClient = typeof PrismaService;
 
 export class PasswordChangeError extends Error {
   readonly status: 400 | 403 | 409;
+  readonly code:
+    | PasswordChangeValidationIssue
+    | "CURRENT_PASSWORD_INVALID"
+    | "ACCOUNT_SECURITY_CHANGED";
 
-  constructor(message: string, status: 400 | 403 | 409) {
-    super(message);
+  constructor(
+    code: PasswordChangeError["code"],
+    status: 400 | 403 | 409
+  ) {
+    super(code);
     this.name = "PasswordChangeError";
+    this.code = code;
     this.status = status;
   }
 }
@@ -30,11 +41,11 @@ export async function changeUserPassword(
     newPasswordConfirm: string;
   }
 ) {
-  const validationError = passwordChangeValidationError(input);
-  if (validationError) throw new PasswordChangeError(validationError, 400);
+  const validationIssue = passwordChangeValidationIssue(input);
+  if (validationIssue) throw new PasswordChangeError(validationIssue, 400);
 
   if (!(await verifyPassword(input.currentPassword, input.currentPasswordHash))) {
-    throw new PasswordChangeError("현재 비밀번호가 올바르지 않습니다.", 403);
+    throw new PasswordChangeError("CURRENT_PASSWORD_INVALID", 403);
   }
 
   const nextPasswordHash = await hashPassword(input.newPassword);
@@ -63,10 +74,7 @@ export async function changeUserPassword(
       lockedUser.password_hash !== input.currentPasswordHash ||
       lockedUser.credential_revision !== input.expectedCredentialRevision
     ) {
-      throw new PasswordChangeError(
-        "다른 요청에서 계정 보안 정보가 먼저 변경되었습니다. 다시 로그인한 뒤 시도하세요.",
-        409
-      );
+      throw new PasswordChangeError("ACCOUNT_SECURITY_CHANGED", 409);
     }
 
     const nextCredentialRevision = lockedUser.credential_revision + 1;

@@ -5,6 +5,7 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "..", "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 const consoleSource = read("tools/server-console-core.mjs");
+const consoleMessagesSource = read("tools/server-console-i18n.mjs");
 const operatorSource = read("tools/operator-direct-one-shot.mjs");
 const serviceSource = read("tools/platform/windows/postgresql-service-install.mjs");
 const serviceCoreSource = read("tools/postgresql-service-core.mjs");
@@ -34,7 +35,8 @@ const startServiceSource = serviceSource.slice(
 
 assert.doesNotMatch(consoleSource, /POSTGRESQL_OPERATIONS_NOT_READY/);
 assert.doesNotMatch(consoleSource, /postgresql-restore\.mjs|deploy-postgresql-migrations\.mjs/);
-assert.match(consoleSource, /migration, restore, 최초 책임자/);
+assert.match(consoleSource, /serverConsoleMessages/);
+assert.match(consoleMessagesSource, /migration, restore, 최초 책임자/);
 assert.match(consoleSource, /RESTORE_RECOVERY_REQUIRED/);
 assert.match(consoleSource, /completeRestoreBarrier\(restoreBarrier\)/);
 assert.ok(

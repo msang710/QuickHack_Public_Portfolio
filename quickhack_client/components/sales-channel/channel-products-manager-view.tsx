@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import {
   CheckCheck,
   ListChecks,
@@ -95,12 +97,12 @@ type ChannelProductsApiResponse = {
   };
 };
 
-function statusBadge(status: string) {
+function statusBadge(status: string, mapped: string, unmapped: string) {
   if (status === "MAPPED") {
-    return <Badge variant="success">매핑됨</Badge>;
+    return <Badge variant="success">{mapped}</Badge>;
   }
 
-  return <Badge variant="warning">미매핑</Badge>;
+  return <Badge variant="warning">{unmapped}</Badge>;
 }
 
 function productSearchText(product: ChannelProductDto) {
@@ -142,6 +144,7 @@ function optionName(option: ChannelProductOptionDto) {
 }
 
 export function ChannelProductsManagerView() {
+  const t = useTranslations("salesChannel.channelProducts");
   const [products, setProducts] = React.useState<ChannelProductDto[]>([]);
   const [selectedProductKey, setSelectedProductKey] = React.useState("");
   const [query, setQuery] = React.useState("");
@@ -201,9 +204,9 @@ export function ChannelProductsManagerView() {
     () => [
       {
         key: "productName",
-        label: "상품",
+        label: t("columns.product"),
         width: "minmax(300px,1fr)",
-        placeholder: "상품명",
+        placeholder: t("columns.productName"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (product) => (
           <>
@@ -217,16 +220,16 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "externalProductId",
-        label: "상품 ID",
+        label: t("columns.productId"),
         width: "150px",
-        placeholder: "상품 ID",
+        placeholder: t("columns.productId"),
         cellClassName: "flex items-center px-3 font-mono text-xs",
         render: (product) => product.externalProductId || "-",
         text: (product) => product.externalProductId || "",
       },
       {
         key: "optionCount",
-        label: "옵션",
+        label: t("columns.option"),
         width: "80px",
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
@@ -236,7 +239,7 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "mappedOptionCount",
-        label: "매핑",
+        label: t("columns.mapping"),
         width: "110px",
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
@@ -247,7 +250,7 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "orderItemCount",
-        label: "주문",
+        label: t("columns.orders"),
         width: "90px",
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
@@ -257,7 +260,7 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "availableQuantity",
-        label: "가용수량",
+        label: t("columns.available"),
         width: "100px",
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
@@ -267,15 +270,15 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "updatedAt",
-        label: "갱신",
+        label: t("columns.updated"),
         width: "140px",
-        placeholder: "갱신일",
+        placeholder: t("columns.updatedAt"),
         cellClassName: "flex items-center px-3 text-xs",
         render: (product) => formatDate(product.updatedAt),
         text: (product) => product.updatedAt || "",
       },
     ],
-    []
+    [t]
   );
 
   const optionColumns = React.useMemo<
@@ -302,9 +305,9 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "optionName",
-        label: "옵션",
+        label: t("columns.option"),
         width: "minmax(220px,1fr)",
-        placeholder: "옵션명",
+        placeholder: t("columns.optionName"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (option) => (
           <>
@@ -325,18 +328,22 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "mappingStatus",
-        label: "상태",
+        label: t("columns.status"),
         width: "90px",
-        placeholder: "상태",
+        placeholder: t("columns.status"),
         cellClassName: "flex items-center px-3",
-        render: (option) => statusBadge(option.mappingStatus),
+        render: (option) => statusBadge(
+          option.mappingStatus,
+          t("common.mapped"),
+          t("common.unmapped")
+        ),
         text: (option) => option.mappingStatus,
       },
       {
         key: "salesOfferCode",
-        label: "판매 오퍼",
+        label: t("columns.offer"),
         width: "200px",
-        placeholder: "오퍼",
+        placeholder: t("columns.offerShort"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (option) => (
           <>
@@ -355,25 +362,25 @@ export function ChannelProductsManagerView() {
       },
       {
         key: "requiredStorage",
-        label: "용량",
+        label: t("columns.storage"),
         width: "90px",
-        placeholder: "용량",
+        placeholder: t("columns.storage"),
         cellClassName: "flex items-center px-3",
         render: (option) => option.requiredStorage || "-",
         text: (option) => option.requiredStorage || "",
       },
       {
         key: "requiredColor",
-        label: "색상",
+        label: t("columns.color"),
         width: "110px",
-        placeholder: "색상",
+        placeholder: t("columns.color"),
         cellClassName: "flex items-center px-3",
         render: (option) => option.requiredColor || "-",
         text: (option) => option.requiredColor || "",
       },
       {
         key: "orderItemCount",
-        label: "주문",
+        label: t("columns.orders"),
         width: "80px",
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
@@ -382,7 +389,7 @@ export function ChannelProductsManagerView() {
         sortValue: (option) => option.orderItemCount,
       },
     ],
-    []
+    [t]
   );
 
   const loadData = React.useCallback(async () => {
@@ -401,12 +408,12 @@ export function ChannelProductsManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "채널 상품 목록을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.loadFailed")));
       }
 
       if (!payload.completeness?.complete) {
         throw new Error(
-          "쿠팡 상품 목록 전체를 확인하지 못해 기존 목록을 유지합니다."
+          t("message.incomplete")
         );
       }
 
@@ -434,7 +441,7 @@ export function ChannelProductsManagerView() {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -456,16 +463,16 @@ export function ChannelProductsManagerView() {
     >
       <div className="flex min-h-0 flex-col gap-4">
         <SummaryStrip className="grid-cols-4">
-          <SummaryCell icon={Store} label="상품" value={products.length} />
-          <SummaryCell icon={PackageSearch} label="옵션" value={totalOptionCount} />
-          <SummaryCell icon={CheckCheck} label="매핑됨" value={mappedOptionCount} />
-          <SummaryCell icon={ListChecks} label="미매핑" value={unmappedOptionCount} />
+          <SummaryCell icon={Store} label={t("summary.products")} value={products.length} />
+          <SummaryCell icon={PackageSearch} label={t("summary.options")} value={totalOptionCount} />
+          <SummaryCell icon={CheckCheck} label={t("summary.mapped")} value={mappedOptionCount} />
+          <SummaryCell icon={ListChecks} label={t("summary.unmapped")} value={unmappedOptionCount} />
         </SummaryStrip>
 
         <WorkspacePanel className="flex-1">
           <PanelToolbar className="xl:grid-cols-[340px_160px_auto]">
             <SearchInput
-              placeholder="상품명, 상품 ID, vendorItemId, 옵션명 검색"
+              placeholder={t("toolbar.search")}
               value={query}
               onValueChange={setQuery}
             />
@@ -480,15 +487,15 @@ export function ChannelProductsManagerView() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">전체</SelectItem>
-                <SelectItem value="MAPPED">전체 매핑됨</SelectItem>
-                <SelectItem value="UNMAPPED">미매핑 포함</SelectItem>
+                <SelectItem value="ALL">{t("toolbar.all")}</SelectItem>
+                <SelectItem value="MAPPED">{t("toolbar.fullyMapped")}</SelectItem>
+                <SelectItem value="UNMAPPED">{t("toolbar.includesUnmapped")}</SelectItem>
               </SelectContent>
             </Select>
 
             <Button variant="outline" onClick={() => void loadData()}>
               <RefreshCcw className={cn("size-4", isLoading && "animate-spin")} />
-              새로고침
+              {t("toolbar.refresh")}
             </Button>
           </PanelToolbar>
 
@@ -507,8 +514,8 @@ export function ChannelProductsManagerView() {
             rowKey={(product) => product.productKey}
             emptyMessage={
               isLoading
-                ? "채널 상품 목록을 불러오는 중입니다."
-                : "표시할 채널 상품이 없습니다."
+                ? t("toolbar.loading")
+                : t("toolbar.empty")
             }
             selectedRowKey={selectedProductKey}
             onRowClick={selectProduct}
@@ -523,14 +530,14 @@ export function ChannelProductsManagerView() {
         <div className="flex items-start justify-between gap-3 border-b p-4">
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold">
-              {selectedProduct?.productName ?? "상품 선택"}
+              {selectedProduct?.productName ?? t("detail.selectTitle")}
             </h2>
             <p className="mt-1 truncate text-xs text-muted-foreground">
               {selectedProduct?.externalProductId ?? "-"}
             </p>
           </div>
           <Badge variant="neutral" className="shrink-0">
-            읽기 전용
+            {t("detail.readOnly")}
           </Badge>
         </div>
 
@@ -538,33 +545,33 @@ export function ChannelProductsManagerView() {
           <>
             <div className="grid gap-3 border-b p-4">
               <div className="rounded-md border bg-background px-3 py-2">
-                <DetailRow label="채널" value={selectedProduct.channel} />
+                <DetailRow label={t("detail.channel")} value={selectedProduct.channel} />
                 <DetailRow
-                  label="상품 ID"
+                  label={t("detail.productId")}
                   value={selectedProduct.externalProductId}
                 />
                 <DetailRow
-                  label="옵션"
-                  value={`${selectedProduct.optionCount}개`}
+                  label={t("detail.options")}
+                  value={t("detail.optionCount", { count: selectedProduct.optionCount })}
                 />
                 <DetailRow
-                  label="매핑"
+                  label={t("detail.mapping")}
                   value={`${selectedProduct.mappedOptionCount}/${selectedProduct.optionCount}`}
                 />
                 <DetailRow
-                  label="주문 아이템"
-                  value={`${selectedProduct.orderItemCount}건`}
+                  label={t("detail.orderItems")}
+                  value={t("detail.orderCount", { count: selectedProduct.orderItemCount })}
                 />
                 <DetailRow
-                  label="가용 수량"
+                  label={t("detail.available")}
                   value={String(selectedProduct.availableQuantity)}
                 />
                 <DetailRow
-                  label="마지막 주문"
+                  label={t("detail.lastOrder")}
                   value={formatDate(selectedProduct.lastOrderedAt)}
                 />
                 <DetailRow
-                  label="최근 갱신"
+                  label={t("detail.updated")}
                   value={formatDate(selectedProduct.updatedAt)}
                 />
               </div>
@@ -575,7 +582,7 @@ export function ChannelProductsManagerView() {
                 rows={selectedProduct.options}
                 columns={optionColumns}
                 rowKey={(option) => option.externalVendorItemId}
-                emptyMessage="표시할 옵션이 없습니다."
+                emptyMessage={t("detail.emptyOptions")}
                 className="rounded-none border-0"
                 minWidth="960px"
                 rowHeight={58}
@@ -584,7 +591,7 @@ export function ChannelProductsManagerView() {
           </>
         ) : (
           <div className="grid min-h-80 place-items-center p-4 text-sm text-muted-foreground">
-            상품을 선택하세요.
+            {t("detail.select")}
           </div>
         )}
       </aside>

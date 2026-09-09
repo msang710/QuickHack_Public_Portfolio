@@ -53,17 +53,17 @@ function normalizeAuditBaseDate(value: unknown, timestamp: string) {
   const rawDate = text(value) || timestamp.slice(0, 10);
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-    throw inventoryAuditInputError("실사 기준일은 YYYY-MM-DD 형식으로 입력해야 합니다.");
+    throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
   }
 
   const date = new Date(`${rawDate}T00:00:00.000Z`);
 
   if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== rawDate) {
-    throw inventoryAuditInputError("실사 기준일이 올바른 날짜가 아닙니다.");
+    throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
   }
 
   if (rawDate > timestamp.slice(0, 10)) {
-    throw inventoryAuditInputError("실사 기준일은 오늘 이후로 지정할 수 없습니다.");
+    throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
   }
 
   return rawDate;
@@ -88,7 +88,7 @@ function normalizeLocation(value: unknown) {
 
   if (!INVENTORY_AUDIT_LOCATIONS.has(location)) {
     throw inventoryAuditInputError(
-      "재고 실사 위치는 포장 완료, 포장 대기, 상품화 대기 중 하나만 저장할 수 있습니다."
+      "INVENTORY_AUDIT_INPUT_INVALID"
     );
   }
 
@@ -109,14 +109,14 @@ function normalizeAuditItems(input: InventoryAuditInput) {
   const rawItems = input.items;
 
   if (!Array.isArray(rawItems)) {
-    throw inventoryAuditInputError("저장할 재고 실사 항목이 없습니다.");
+    throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
   }
 
   const itemByPgNo = new Map<string, NormalizedInventoryAuditItem>();
 
   for (const rawItem of rawItems) {
     if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
-      throw inventoryAuditInputError("재고 실사 항목 형식이 올바르지 않습니다.");
+      throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
     }
 
     const item = rawItem as Record<string, unknown>;
@@ -125,19 +125,19 @@ function normalizeAuditItems(input: InventoryAuditInput) {
     const expectedRevision = Number(item.expectedRevision);
 
     if (!pgNo) {
-      throw inventoryAuditInputError("PG가 없는 재고 실사 항목이 있습니다.");
+      throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
     }
     if (!Number.isSafeInteger(inventoryId) || inventoryId <= 0) {
-      throw inventoryAuditInputError(`${pgNo} 재고 ID가 올바르지 않습니다.`);
+      throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
     }
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
-      throw inventoryAuditInputError(`${pgNo} 재고 revision이 올바르지 않습니다.`);
+      throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
     }
     if (!("expectedLocation" in item)) {
-      throw inventoryAuditInputError(`${pgNo}의 조회 당시 위치가 필요합니다.`);
+      throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
     }
     if (itemByPgNo.has(pgNo)) {
-      throw inventoryAuditInputError(`${pgNo} 재고 실사 항목이 중복되었습니다.`);
+      throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
     }
 
     itemByPgNo.set(pgNo, {
@@ -198,7 +198,7 @@ export async function saveInventoryAuditLocations(
   const items = normalizeAuditItems(input);
 
   if (items.length === 0) {
-    throw inventoryAuditInputError("저장할 재고 실사 변경사항이 없습니다.");
+    throw inventoryAuditInputError("INVENTORY_AUDIT_INPUT_INVALID");
   }
 
   const timestamp = nowKstSqlDateTime();
@@ -239,14 +239,14 @@ export async function saveInventoryAuditLocations(
       if (!row) {
         throw publicConflict(
           "INVENTORY_AUDIT_TARGET_CHANGED",
-          `${item.pgNo} 재고 정보를 찾을 수 없습니다.`
+          "INVENTORY_AUDIT_TARGET_CHANGED"
         );
       }
 
       if (row.inventory_status !== INVENTORY_STATUS.sellable) {
         throw publicConflict(
           "INVENTORY_AUDIT_TARGET_CHANGED",
-          `${item.pgNo}는 판매가능 재고가 아닙니다.`
+          "INVENTORY_AUDIT_TARGET_CHANGED"
         );
       }
 
@@ -257,7 +257,7 @@ export async function saveInventoryAuditLocations(
       ) {
         throw publicConflict(
           "INVENTORY_AUDIT_TARGET_CHANGED",
-          `${item.pgNo} 재고가 조회 후 변경되었습니다. 목록을 새로 고쳐 주세요.`
+          "INVENTORY_AUDIT_TARGET_CHANGED"
         );
       }
 
@@ -281,7 +281,7 @@ export async function saveInventoryAuditLocations(
       if (updated.count !== 1) {
         throw publicConflict(
           "INVENTORY_AUDIT_TARGET_CHANGED",
-          `${item.pgNo} 재고가 저장 중 변경되었습니다. 목록을 새로 고쳐 주세요.`
+          "INVENTORY_AUDIT_TARGET_CHANGED"
         );
       }
       beforeValue.push({

@@ -165,7 +165,7 @@ function requiredText(
   if (!value) {
     throw publicBadRequest(
       "PRODUCT_CRITERIA_VALUE_REQUIRED",
-      `${label} 값이 필요합니다.`
+      "PRODUCT_CRITERIA_VALUE_REQUIRED"
     );
   }
 
@@ -186,7 +186,7 @@ function intValue(
   if (!/^-?\d+$/.test(value)) {
     throw publicBadRequest(
       "INVALID_PRODUCT_CRITERIA_SORT_ORDER",
-      "정렬 순서는 숫자로 입력해야 합니다."
+      "INVALID_PRODUCT_CRITERIA_SORT_ORDER"
     );
   }
 
@@ -1036,7 +1036,7 @@ export async function upsertProductCriteriaOption(
   ) {
     throw publicBadRequest(
       "PRODUCT_CRITERIA_OPTION_ID_INVALID",
-      "수정할 상품 기준값 ID가 올바르지 않습니다."
+      "PRODUCT_CRITERIA_OPTION_ID_INVALID"
     );
   }
 
@@ -1051,7 +1051,7 @@ export async function upsertProductCriteriaOption(
   ) {
     throw publicBadRequest(
       "PRODUCT_CRITERIA_REVISION_REQUIRED",
-      "상품 기준값을 수정하려면 현재 revision이 필요합니다."
+      "PRODUCT_CRITERIA_REVISION_REQUIRED"
     );
   }
 
@@ -1060,7 +1060,7 @@ export async function upsertProductCriteriaOption(
   if (!isProductCriteriaCategory(category)) {
     throw publicBadRequest(
       "INVALID_PRODUCT_CRITERIA_CATEGORY",
-      "알 수 없는 기준값 분류입니다."
+      "INVALID_PRODUCT_CRITERIA_CATEGORY"
     );
   }
 
@@ -1072,7 +1072,7 @@ export async function upsertProductCriteriaOption(
   if (rawParentKey && !canUseProductCriteriaParentKey(category)) {
     throw publicBadRequest(
       "PRODUCT_CRITERIA_PARENT_NOT_ALLOWED",
-      `${PRODUCT_CRITERIA_CATEGORY_LABELS[category]} 분류에는 상위값을 입력할 수 없습니다.`
+      "PRODUCT_CRITERIA_PARENT_NOT_ALLOWED"
     );
   }
   const sortOrder = intValue(input, "sortOrder", 0);
@@ -1096,14 +1096,14 @@ export async function upsertProductCriteriaOption(
       if (!before) {
         throw publicNotFound(
           "PRODUCT_CRITERIA_OPTION_NOT_FOUND",
-          "수정할 상품 기준값을 찾을 수 없습니다."
+          "PRODUCT_CRITERIA_OPTION_NOT_FOUND"
         );
       }
 
       if (before.revision !== expectedRevision) {
         throw publicConflict(
           "PRODUCT_CRITERIA_OPTION_CONFLICT",
-          "상품 기준값이 다른 작업에서 변경되었습니다. 목록을 새로 고친 뒤 다시 시도해 주세요.",
+          "PRODUCT_CRITERIA_OPTION_CONFLICT",
           { currentRevision: before.revision }
         );
       }
@@ -1115,7 +1115,7 @@ export async function upsertProductCriteriaOption(
       ) {
         throw publicConflict(
           "PRODUCT_CRITERIA_IDENTITY_IMMUTABLE",
-          "분류, 기준 키, 상위 키는 생성 후 변경할 수 없습니다. 새 기준값으로 등록해 주세요."
+          "PRODUCT_CRITERIA_IDENTITY_IMMUTABLE"
         );
       }
     } else {
@@ -1141,7 +1141,7 @@ export async function upsertProductCriteriaOption(
       if (duplicate) {
         throw publicConflict(
           "PRODUCT_CRITERIA_IDENTITY_EXISTS",
-          "같은 분류, 기준 키, 상위 키를 가진 상품 기준값이 이미 존재합니다."
+          "PRODUCT_CRITERIA_IDENTITY_EXISTS"
         );
       }
     }
@@ -1296,7 +1296,7 @@ async function validateRelationChildren(
   if (rows.length !== optionIds.length) {
     throw publicBadRequest(
       "PRODUCT_CRITERIA_LINK_NOT_FOUND",
-      `${label} 연결값 중 존재하지 않는 기준값이 있습니다.`
+      "PRODUCT_CRITERIA_LINK_NOT_FOUND"
     );
   }
 
@@ -1373,7 +1373,7 @@ export async function saveProductCriteriaRelations(
   if (!Number.isInteger(modelOptionId) || modelOptionId <= 0) {
     throw publicBadRequest(
       "PRODUCT_MODEL_REQUIRED",
-      "연결할 기종을 선택해야 합니다."
+      "PRODUCT_MODEL_REQUIRED"
     );
   }
 
@@ -1388,7 +1388,7 @@ export async function saveProductCriteriaRelations(
   ) {
     throw publicBadRequest(
       "PRODUCT_CRITERIA_RELATION_REVISION_REQUIRED",
-      "연결 기준값을 저장하려면 현재 relation revision이 필요합니다."
+      "PRODUCT_CRITERIA_RELATION_REVISION_REQUIRED"
     );
   }
 
@@ -1414,21 +1414,21 @@ export async function saveProductCriteriaRelations(
     if (!model) {
       throw publicNotFound(
         "PRODUCT_MODEL_NOT_FOUND",
-        "연결할 기종 기준값을 찾을 수 없습니다."
+        "PRODUCT_MODEL_NOT_FOUND"
       );
     }
 
     if (model.is_active !== 1) {
       throw publicConflict(
         "PRODUCT_CRITERIA_RELATION_MODEL_INACTIVE",
-        "비활성 모델에는 연결 기준값을 저장할 수 없습니다."
+        "PRODUCT_CRITERIA_RELATION_MODEL_INACTIVE"
       );
     }
 
     if (model.relation_revision !== expectedRelationRevision) {
       throw publicConflict(
         "PRODUCT_CRITERIA_RELATION_CONFLICT",
-        "상품 연결 기준값이 다른 작업에서 변경되었습니다. 목록을 새로 고친 뒤 다시 시도해 주세요.",
+        "PRODUCT_CRITERIA_RELATION_CONFLICT",
         { currentRelationRevision: model.relation_revision }
       );
     }
@@ -1552,7 +1552,7 @@ export async function saveProductCriteriaRelations(
       if (!rule.cameraLensOptionId || !rule.focusRuleOptionId) {
         throw publicBadRequest(
           "CAMERA_CRITERIA_PAIR_REQUIRED",
-          "카메라 렌즈 배율과 초점 기준을 모두 선택해야 합니다."
+          "CAMERA_CRITERIA_PAIR_REQUIRED"
         );
       }
 
@@ -1562,7 +1562,7 @@ export async function saveProductCriteriaRelations(
       if (!cameraLens || !focusRule) {
         throw publicBadRequest(
           "CAMERA_CRITERIA_NOT_FOUND",
-          "카메라 점검 기준 중 존재하지 않는 기준값이 있습니다."
+          "CAMERA_CRITERIA_NOT_FOUND"
         );
       }
 

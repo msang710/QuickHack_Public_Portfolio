@@ -36,13 +36,13 @@ export async function GET(
   const user = await getAuthUserFromRequest(request);
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
   if (!canAccessRole(user.role, "MANAGER")) {
     return NextResponse.json(
-      { ok: false, message: "송장 교체 작업 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -79,13 +79,13 @@ export async function PATCH(
   const user = await getAuthUserFromRequest(request);
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
   if (!canAccessRole(user.role, "MANAGER")) {
     return NextResponse.json(
-      { ok: false, message: "송장 교체 작업 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -113,7 +113,7 @@ export async function PATCH(
             : null;
     if (!replacement) {
       return NextResponse.json(
-        { ok: false, message: "지원하지 않는 송장 교체 작업입니다." },
+        { ok: false, code: "ACTION_UNSUPPORTED" },
         { status: 400 }
       );
     }
@@ -124,7 +124,6 @@ export async function PATCH(
       return apiFailureResponse({
         status,
         code: error.code,
-        message: error.message,
         cause: error,
       });
     }

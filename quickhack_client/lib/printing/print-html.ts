@@ -11,15 +11,17 @@ export function escapePrintHtml(value: unknown) {
 
 export function buildPrintHtmlDocument({
   title,
+  locale,
   styles,
   body,
 }: {
   title: string;
+  locale: string;
   styles: string;
   body: string;
 }) {
   return `<!doctype html>
-<html lang="ko">
+<html lang="${escapePrintHtml(locale)}">
   <head>
     <meta charset="utf-8" />
     <title>${escapePrintHtml(title)}</title>
@@ -32,14 +34,16 @@ export function buildPrintHtmlDocument({
 export async function printHtmlDocument({
   title,
   html,
+  messages,
   cleanupDelayMs = 3000,
 }: {
   title: string;
   html: string;
+  messages: { browserOnly: string; documentUnavailable: string };
   cleanupDelayMs?: number;
 }) {
   if (typeof window === "undefined" || typeof document === "undefined") {
-    throw new Error("브라우저에서만 출력할 수 있습니다.");
+    throw new Error(messages.browserOnly);
   }
 
   const iframe = document.createElement("iframe");
@@ -60,7 +64,7 @@ export async function printHtmlDocument({
 
   if (!printWindow || !printDocument) {
     iframe.remove();
-    throw new Error("출력 문서를 만들지 못했습니다.");
+    throw new Error(messages.documentUnavailable);
   }
 
   const targetWindow = printWindow;

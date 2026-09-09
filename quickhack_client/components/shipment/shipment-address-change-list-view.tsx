@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { AlertTriangle, RefreshCcw, X } from "lucide-react";
 import { useUnsavedChanges } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { Badge } from "@/quickhack_client/components/ui/badge";
@@ -14,12 +16,14 @@ import {
   type DataGridColumn,
   VirtualizedDataGrid,
 } from "@/quickhack_client/components/ui/virtualized-data-grid";
-import { statusBadge } from "@/quickhack_client/components/shared/device-detail-sheet";
+import { statusBadge, statusLabel } from "@/quickhack_client/components/shared/device-detail-sheet";
 import {
   createOwnedRequestTargetSnapshot,
   useOwnedRequest,
 } from "@/quickhack_client/hooks/use-owned-request";
 import { InvoiceReplacementProgress } from "@/quickhack_client/components/invoice/invoice-replacement-progress";
+import { useInvoiceReplacementPresentation } from "@/quickhack_client/components/invoice/invoice-replacement-presentation";
+import { packageGroupStatusLabel } from "@/quickhack_client/components/shipment/package-group-status-presentation";
 import { invoiceReplacementFormIds } from "@/quickhack_client/components/invoice/invoice-operation-draft-state";
 import { recoverCarrierRegistration } from "@/quickhack_client/components/invoice/invoice-replacement-recovery";
 import type { InvoiceReplacement } from "@/quickhack_client/components/invoice/invoice-operation-types";
@@ -30,7 +34,6 @@ import {
 
 type ShipmentAddressChangeField = {
   fieldName: string;
-  fieldLabel: string;
   beforeValue: string | null;
   afterValue: string | null;
 };
@@ -38,9 +41,7 @@ type ShipmentAddressChangeField = {
 type ShipmentAddressChangeRow = {
   id: number;
   changeStatus: string;
-  changeStatusLabel: string;
   shipmentStage: string;
-  shipmentStageLabel: string;
   allocationStatus: string | null;
   externalOrderId: string;
   externalShipmentId: string | null;
@@ -54,13 +55,11 @@ type ShipmentAddressChangeRow = {
   color: string | null;
   saleGrade: string | null;
   inventoryStatus: string | null;
-  inventoryStatusLabel: string;
   shipmentBatchText: string;
   receiverName: string;
   receiverSafeNumber: string;
   receiverAddress: string;
   shippingMemo: string;
-  changedFieldsText: string;
   fields: ShipmentAddressChangeField[];
   packageGroupId: number | null;
   packageGroupStatus: string | null;
@@ -106,8 +105,6 @@ type ColumnKey =
   | "shippingMemo"
   | "changeValues"
   | "detectedAt";
-
-const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 function textOrDash(value: string | number | null | undefined) {
   const text = String(value ?? "").trim();
@@ -175,13 +172,13 @@ function deviceOptionText(row: ShipmentAddressChangeRow) {
     .join(" ");
 }
 
-function changedValueText(row: ShipmentAddressChangeRow) {
+function changedValueText(row: ShipmentAddressChangeRow, fieldLabel: (value: string) => string) {
   return row.fields
     .map((field) => {
       const before = textOrDash(field.beforeValue);
       const after = textOrDash(field.afterValue);
 
-      return `${field.fieldLabel}: ${before} -> ${after}`;
+      return `${fieldLabel(field.fieldName)}: ${before} -> ${after}`;
     })
     .join("\n");
 }
@@ -194,7 +191,7 @@ function MultiLineText({ value }: { value: string | null | undefined }) {
   );
 }
 
-function ChangeValueList({ row }: { row: ShipmentAddressChangeRow }) {
+function ChangeValueList({ row, fieldLabel }: { row: ShipmentAddressChangeRow; fieldLabel: (value: string) => string }) {
   if (row.fields.length === 0) {
     return <span>-</span>;
   }
@@ -207,7 +204,7 @@ function ChangeValueList({ row }: { row: ShipmentAddressChangeRow }) {
           className="grid min-w-0 grid-cols-[68px_minmax(0,1fr)] gap-2 text-[11px] leading-4"
         >
           <span className="font-medium text-muted-foreground">
-            {field.fieldLabel}
+            {fieldLabel(field.fieldName)}
           </span>
           <span className="min-w-0 break-words">
             {textOrDash(field.beforeValue)} -&gt; {textOrDash(field.afterValue)}
@@ -227,6 +224,33 @@ export function ShipmentAddressChangeListView({
   onOpenSourceMenu?: (menuId: string, search?: string) => void;
   onOpenShipmentOutput?: (focus: ShipmentOutputFocus) => void;
 }) {
+  const t = useTranslations("shipment.addressChange");
+  const packageStatusT = useTranslations("shipment.packageGroupStatus");
+  const replacementPresentation = useInvoiceReplacementPresentation();
+  const changeStatusLabel = React.useCallback((value: string) => {
+    if (value === "PENDING") return t("presentation.changeStatus.pending");
+    if (value === "CONFIRMED") return t("presentation.changeStatus.confirmed");
+    if (value === "IGNORED") return t("presentation.changeStatus.ignored");
+    if (value === "FAILED") return t("presentation.changeStatus.failed");
+    return value || "-";
+  }, [t]);
+  const shipmentStageLabel = React.useCallback((value: string) => {
+    if (value === "AFTER_PRINT") return t("presentation.stage.afterPrint");
+    if (value === "BEFORE_PRINT") return t("presentation.stage.beforePrint");
+    if (value === "UNMATCHED") return t("presentation.stage.unmatched");
+    if (value === "AFTER_SHIPMENT") return t("presentation.stage.afterShipment");
+    return t("presentation.stage.unknown");
+  }, [t]);
+  const fieldLabel = React.useCallback((value: string) => {
+    if (value === "receiver_name") return t("presentation.field.receiverName");
+    if (value === "receiver_safe_number") return t("presentation.field.receiverPhone");
+    if (value === "receiver_address_1") return t("presentation.field.address1");
+    if (value === "receiver_address_2") return t("presentation.field.address2");
+    if (value === "receiver_post_code") return t("presentation.field.postCode");
+    if (value === "shipping_memo") return t("presentation.field.shippingMemo");
+    return value;
+  }, [t]);
+  const detailT = useTranslations("common.deviceDetail");
   const [rows, setRows] = React.useState<ShipmentAddressChangeRow[]>([]);
   const [summary, setSummary] =
     React.useState<ShipmentAddressChangeApiResponse["summary"]>();
@@ -258,7 +282,10 @@ export function ShipmentAddressChangeListView({
   const selectedOutputFocus = replacement
     ? shipmentOutputFocusForReplacement(
         replacement,
-        "shipment-delivery-changes"
+        "shipment-delivery-changes",
+        t("outputBatchLabel", {
+          id: replacement.shipmentListPrintBatchId ?? 0,
+        })
       )
     : null;
 
@@ -282,7 +309,7 @@ export function ShipmentAddressChangeListView({
 
       if (!response.ok || !payload?.ok) {
         throw new Error(
-          payload?.message || "배송 정보 변경 건을 불러오지 못했습니다."
+          legacyApiMessage(payload, t("message.loadFailed"))
         );
       }
 
@@ -310,7 +337,7 @@ export function ShipmentAddressChangeListView({
       if (append) setIsLoadingMore(false);
       else setIsLoading(false);
     }
-  }, [listScope]);
+  }, [listScope, t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -334,11 +361,11 @@ export function ShipmentAddressChangeListView({
           }
         | null;
       if (!response.ok || !payload?.ok || !payload.replacement) {
-        throw new Error(payload?.message || "송장 재발급 상태를 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.replacementLoadFailed")));
       }
       return payload.replacement;
     },
-    []
+    [t]
   );
 
   const loadOwnedReplacement = React.useCallback(
@@ -357,7 +384,7 @@ export function ShipmentAddressChangeListView({
         loaded.packageGroupId !== row.packageGroupId ||
         loaded.shipmentAddressChangeWorkId !== row.id
       ) {
-        throw new Error("선택한 배송지 변경 건과 송장 교체 작업이 일치하지 않습니다.");
+        throw new Error(t("message.replacementMismatch"));
       }
       request.commit(() =>
         setReplacementBinding({
@@ -368,7 +395,7 @@ export function ShipmentAddressChangeListView({
       );
       return loaded;
     },
-    [loadReplacement, replacementRequests]
+    [loadReplacement, replacementRequests, t]
   );
 
   React.useEffect(() => {
@@ -426,23 +453,21 @@ export function ShipmentAddressChangeListView({
           }
         | null;
       if (!response.ok || !payload?.ok || !payload.replacement) {
-        throw new Error(payload?.message || "송장 재발급을 시작하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.replacementStartFailed")));
       }
       if (
         selectedIdRef.current !== selected.id ||
         payload.replacement.packageGroupId !== selected.packageGroupId ||
         payload.replacement.shipmentAddressChangeWorkId !== selected.id
       ) {
-        throw new Error("선택한 배송지 변경 건과 생성된 송장 교체 작업이 일치하지 않습니다.");
+        throw new Error(t("message.replacementCreatedMismatch"));
       }
       setReplacementBinding({
         addressChangeWorkId: selected.id,
         packageGroupId: selected.packageGroupId,
         replacement: payload.replacement,
       });
-      setMessage(
-        "송장 재발급을 시작했습니다. 오른쪽 진행 단계에서 현재 상태와 다음 할 일을 확인하세요."
-      );
+      setMessage(t("message.replacementStarted"));
       await loadRows();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -472,7 +497,7 @@ export function ShipmentAddressChangeListView({
           }
         | null;
       if (!response.ok || !payload?.ok || !payload.replacement) {
-        throw new Error(payload?.message || "송장 재발급을 진행하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.replacementActionFailed")));
       }
       if (
         selectedIdRef.current !== selected?.id ||
@@ -481,7 +506,7 @@ export function ShipmentAddressChangeListView({
         payload.replacement.shipmentAddressChangeWorkId !== selected.id ||
         payload.replacement.replacementWorkId !== replacement.replacementWorkId
       ) {
-        throw new Error("선택한 배송지 변경 건과 처리 결과가 일치하지 않습니다.");
+        throw new Error(t("message.replacementResultMismatch"));
       }
       setReplacementBinding({
         addressChangeWorkId: selected.id,
@@ -490,8 +515,8 @@ export function ShipmentAddressChangeListView({
       });
       setMessage(
         action === "cancel"
-          ? "송장 재발급을 취소하고 기존 송장을 유지했습니다."
-          : "처리 결과를 저장하고 다음 단계를 이어서 확인했습니다."
+          ? t("message.replacementCanceled")
+          : t("message.replacementActionSaved")
       );
       await loadRows();
       return true;
@@ -510,7 +535,9 @@ export function ShipmentAddressChangeListView({
       formIds: invoiceReplacementFormIds(
         replacement?.replacementWorkId ?? selected?.replacementWorkId
       ),
-      targetLabel: nextId ? "다른 배송정보 변경 건" : "배송정보 변경 상세 닫기",
+      targetLabel: nextId
+        ? t("unsaved.anotherChange")
+        : t("unsaved.closeDetail"),
       action: () => {
         selectedIdRef.current = nextId;
         setSelectedId(nextId);
@@ -524,7 +551,7 @@ export function ShipmentAddressChangeListView({
       formIds: invoiceReplacementFormIds(
         replacement?.replacementWorkId ?? selected?.replacementWorkId
       ),
-      targetLabel: "배송정보 변경 목록 새로고침",
+      targetLabel: t("unsaved.refreshList"),
       action: () => void loadRows(),
     });
   }
@@ -536,7 +563,7 @@ export function ShipmentAddressChangeListView({
       formIds: invoiceReplacementFormIds(
         replacement?.replacementWorkId ?? selected?.replacementWorkId
       ),
-      targetLabel: "배송정보 변경 목록 범위 변경",
+      targetLabel: t("unsaved.changeScope"),
       action: () => {
         replacementRequests.dispose();
         setReplacementBinding(null);
@@ -554,7 +581,11 @@ export function ShipmentAddressChangeListView({
     setIsWorking(true);
     setMessage("");
     try {
-      setMessage(await recoverCarrierRegistration(replacement));
+      setMessage(
+        await recoverCarrierRegistration(replacement, (key) =>
+          t(`recovery.${key}`)
+        )
+      );
       if (selected) {
         await loadOwnedReplacement(selected, replacement.replacementWorkId);
       }
@@ -571,51 +602,51 @@ export function ShipmentAddressChangeListView({
     () => [
       {
         key: "changeStatus",
-        label: "처리상태",
+        label: t("columns.changeStatus"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3",
-        text: (row) => row.changeStatusLabel,
+        text: (row) => changeStatusLabel(row.changeStatus),
         render: (row) => (
           <Badge variant={statusVariant(row.changeStatus)}>
-            {row.changeStatusLabel}
+            {changeStatusLabel(row.changeStatus)}
           </Badge>
         ),
       },
       {
         key: "changedFields",
-        label: "변경항목",
+        label: t("columns.changedFields"),
         width: "160px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
-        text: (row) => row.changedFieldsText,
+        text: (row) => row.fields.map((field) => fieldLabel(field.fieldName)).join(", "),
         render: (row) => (
           <span className="line-clamp-2 break-words">
-            {textOrDash(row.changedFieldsText)}
+            {textOrDash(row.fields.map((field) => fieldLabel(field.fieldName)).join(", "))}
           </span>
         ),
       },
       {
         key: "shipmentStage",
-        label: "감지단계",
+        label: t("columns.shipmentStage"),
         width: "130px",
         cellClassName: "flex min-w-0 items-center px-3",
-        text: (row) => row.shipmentStageLabel,
+        text: (row) => shipmentStageLabel(row.shipmentStage),
         render: (row) => (
           <Badge variant={stageVariant(row.shipmentStage)}>
-            {row.shipmentStageLabel}
+            {shipmentStageLabel(row.shipmentStage)}
           </Badge>
         ),
       },
       {
         key: "channelStatus",
-        label: "주문상태",
+        label: t("columns.channelStatus"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3",
         text: (row) => row.channelStatus,
-        render: (row) => statusBadge(row.channelStatus ?? ""),
+        render: (row) => statusBadge(row.channelStatus ?? "", detailT),
       },
       {
         key: "shipmentBatch",
-        label: "출고차수",
+        label: t("columns.shipmentBatch"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.shipmentBatchText,
@@ -640,17 +671,17 @@ export function ShipmentAddressChangeListView({
       },
       {
         key: "inventoryStatus",
-        label: "재고상태",
+        label: t("columns.inventoryStatus"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3",
-        text: (row) => row.inventoryStatusLabel,
+        text: (row) => statusLabel(row.inventoryStatus ?? "", detailT),
         render: (row) => (
-          <Badge variant="secondary">{textOrDash(row.inventoryStatusLabel)}</Badge>
+          <Badge variant="secondary">{textOrDash(statusLabel(row.inventoryStatus ?? "", detailT))}</Badge>
         ),
       },
       {
         key: "externalOrderId",
-        label: "주문번호",
+        label: t("columns.orderId"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.externalOrderId,
@@ -660,7 +691,7 @@ export function ShipmentAddressChangeListView({
       },
       {
         key: "receiver",
-        label: "수취인",
+        label: t("columns.receiver"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: receiverText,
@@ -670,7 +701,7 @@ export function ShipmentAddressChangeListView({
       },
       {
         key: "address",
-        label: "현재 주소",
+        label: t("columns.address"),
         width: "minmax(300px,1.2fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverAddress,
@@ -682,7 +713,7 @@ export function ShipmentAddressChangeListView({
       },
       {
         key: "shippingMemo",
-        label: "배송메모",
+        label: t("columns.shippingMemo"),
         width: "220px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.shippingMemo,
@@ -694,15 +725,15 @@ export function ShipmentAddressChangeListView({
       },
       {
         key: "changeValues",
-        label: "변경 전후",
+        label: t("columns.changeValues"),
         width: "minmax(360px,1.4fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
-        text: changedValueText,
-        render: (row) => <ChangeValueList row={row} />,
+        text: (row) => changedValueText(row, fieldLabel),
+        render: (row) => <ChangeValueList row={row} fieldLabel={fieldLabel} />,
       },
       {
         key: "detectedAt",
-        label: "감지일시",
+        label: t("columns.detectedAt"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => formatDateTime(row.detectedAt),
@@ -711,20 +742,22 @@ export function ShipmentAddressChangeListView({
         ),
       },
     ],
-    []
+    [changeStatusLabel, detailT, fieldLabel, shipmentStageLabel, t]
   );
 
   return (
     <WorkspacePageFrame className="p-5">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">배송 정보 변경 건 조회</h2>
+          <h2 className="text-sm font-semibold">{t("title")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            전체 {numberFormatter.format(summary?.totalCount ?? 0)}건 / 처리 필요{" "}
-            {numberFormatter.format(
-              (summary?.pendingCount ?? 0) + (summary?.failedCount ?? 0)
-            )}건 / 현재 범위 {numberFormatter.format(summary?.filteredCount ?? 0)}건 / 표시{" "}
-            {numberFormatter.format(rows.length)}건
+            {t("summary", {
+              filtered: summary?.filteredCount ?? 0,
+              required:
+                (summary?.pendingCount ?? 0) + (summary?.failedCount ?? 0),
+              total: summary?.totalCount ?? 0,
+              visible: rows.length,
+            })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -732,13 +765,13 @@ export function ShipmentAddressChangeListView({
             variant={listScope === "ACTION_REQUIRED" ? "default" : "outline"}
             onClick={() => requestScopeChange("ACTION_REQUIRED")}
           >
-            처리 필요
+            {t("actions.actionRequired")}
           </Button>
           <Button
             variant={listScope === "ALL" ? "default" : "outline"}
             onClick={() => requestScopeChange("ALL")}
           >
-            전체 이력
+            {t("actions.allHistory")}
           </Button>
           {nextCursor ? (
             <Button
@@ -746,7 +779,7 @@ export function ShipmentAddressChangeListView({
               onClick={() => void loadRows(nextCursor, true)}
               disabled={isLoadingMore}
             >
-              {isLoadingMore ? "불러오는 중" : "더 보기"}
+              {isLoadingMore ? t("actions.loading") : t("actions.loadMore")}
             </Button>
           ) : null}
           <Button
@@ -755,7 +788,7 @@ export function ShipmentAddressChangeListView({
             disabled={isLoading}
           >
             <RefreshCcw className="size-4" />
-            목록 새로고침
+            {t("actions.refresh")}
           </Button>
         </div>
       </div>
@@ -781,8 +814,8 @@ export function ShipmentAddressChangeListView({
           onRowClick={(row) => requestSelectRow(row.id)}
           emptyMessage={
             isLoading
-              ? "배송 정보 변경 건을 불러오는 중입니다."
-              : "배송 정보 변경 건이 없습니다."
+              ? t("loading")
+              : t("empty")
           }
           minWidth="2260px"
           rowHeight={74}
@@ -793,18 +826,23 @@ export function ShipmentAddressChangeListView({
             <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background px-4 py-3">
               <div>
                 <h3 className="text-sm font-semibold">
-                  배송정보 변경 #{selected.id}
+                  {t("detail.title", { id: selected.id })}
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  주문 {selected.externalOrderId} · 그룹 #
-                  {selected.packageGroupId ?? "-"}
+                  {t("detail.orderSummary", {
+                    group:
+                      selected.packageGroupId === null
+                        ? "-"
+                        : String(selected.packageGroupId),
+                    orderId: selected.externalOrderId,
+                  })}
                 </p>
               </div>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => requestSelectRow(null)}
-                aria-label="상세 닫기"
+                aria-label={t("actions.close")}
               >
                 <X className="size-4" />
               </Button>
@@ -813,12 +851,12 @@ export function ShipmentAddressChangeListView({
             <div className="space-y-4 p-4">
               <div className="rounded-md border p-3 text-xs">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="font-semibold">변경 내용</span>
+                  <span className="font-semibold">{t("detail.change")}</span>
                   <Badge variant={stageVariant(selected.shipmentStage)}>
-                    {selected.shipmentStageLabel}
+                    {shipmentStageLabel(selected.shipmentStage)}
                   </Badge>
                 </div>
-                <ChangeValueList row={selected} />
+                <ChangeValueList row={selected} fieldLabel={fieldLabel} />
               </div>
 
               {replacement ? (
@@ -857,14 +895,15 @@ export function ShipmentAddressChangeListView({
                 />
               ) : selected.replacementWorkId && !canManage ? (
                 <div className="rounded-md border bg-muted/30 p-4 text-xs">
-                  <div className="font-semibold">송장 재발급 진행 중</div>
+                  <div className="font-semibold">{t("detail.replacementInProgress")}</div>
                   <p className="mt-1 text-muted-foreground">
-                    {selected.replacementStatus ?? "PROCESSING"} ·{" "}
-                    {selected.replacementStage ?? "상태 확인 중"}
+                    {replacementPresentation.status(selected.replacementStatus ?? "PROCESSING")} ·{" "}
+                    {selected.replacementStage
+                      ? replacementPresentation.stage(selected.replacementStage)
+                      : t("detail.statusChecking")}
                   </p>
                   <p className="mt-2 leading-5 text-muted-foreground">
-                    상세 진행 확인과 관리자 판정은 송장 관리 권한이 있는
-                    사용자만 수행할 수 있습니다.
+                    {t("detail.permissionDetail")}
                   </p>
                 </div>
               ) : selected.canStartReplacement && canManage ? (
@@ -873,12 +912,10 @@ export function ShipmentAddressChangeListView({
                     <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-800" />
                     <div>
                       <div className="text-sm font-semibold text-amber-900">
-                        기존 송장에 이전 배송지가 남아 있습니다
+                        {t("detail.oldAddressWarning")}
                       </div>
                       <p className="mt-1 text-xs leading-5 text-amber-800">
-                        최신 쿠팡 주문을 다시 확인하고 합포장 구성원 전체가 같은
-                        배송지일 때만 새 송장을 후보로 채번합니다. 쿠팡 반영 전에는
-                        현재 송장을 바꾸지 않습니다.
+                        {t("detail.oldAddressWarningDetail")}
                       </p>
                     </div>
                   </div>
@@ -887,37 +924,36 @@ export function ShipmentAddressChangeListView({
                     disabled={isWorking}
                     onClick={() => void startReplacement()}
                   >
-                    안전한 송장 재발급 시작
+                    {t("detail.startReplacement")}
                   </Button>
                 </div>
               ) : selected.canStartReplacement ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
-                  배송정보 변경으로 송장 재발급이 필요합니다. 송장 관리 권한이
-                  있는 관리자에게 처리를 요청하세요.
+                  {t("detail.managerRequired")}
                 </div>
               ) : (
                 <div className="rounded-md border bg-muted/30 p-4 text-xs text-muted-foreground">
                   <div className="font-semibold text-foreground">
-                    자동 재발급을 시작할 수 없습니다
+                    {t("detail.blocked")}
                   </div>
                   <p className="mt-1 leading-5">
                     {selected.replacementBlockedReason ??
-                      "현재 출고 상태와 송장 정보를 확인하세요."}
+                      t("detail.checkShipmentStatus")}
                   </p>
                 </div>
               )}
 
               <div className="rounded-md border p-3 text-xs">
-                <div className="mb-2 font-semibold">현재 송장</div>
+                <div className="mb-2 font-semibold">{t("detail.currentInvoice")}</div>
                 <div className="grid grid-cols-[80px_1fr] gap-x-2 gap-y-1">
-                  <span className="text-muted-foreground">송장번호</span>
+                  <span className="text-muted-foreground">{t("detail.invoiceNumber")}</span>
                   <span className="font-mono">
                     {selected.currentTrackingNumber ?? "-"}
                   </span>
-                  <span className="text-muted-foreground">택배 상태</span>
+                  <span className="text-muted-foreground">{t("detail.shipmentStatus")}</span>
                   <span>{selected.currentShipmentStatus ?? "-"}</span>
-                  <span className="text-muted-foreground">그룹 상태</span>
-                  <span>{selected.packageGroupStatus ?? "-"}</span>
+                  <span className="text-muted-foreground">{t("detail.groupStatus")}</span>
+                  <span>{packageGroupStatusLabel(selected.packageGroupStatus, packageStatusT)}</span>
                 </div>
               </div>
             </div>

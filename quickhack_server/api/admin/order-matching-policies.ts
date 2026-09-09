@@ -31,7 +31,7 @@ async function auth(request: NextRequest, minRole: "VIEWER" | "MANAGER") {
   if (!user) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -40,7 +40,7 @@ async function auth(request: NextRequest, minRole: "VIEWER" | "MANAGER") {
   if (!canAccessRole(user.role, minRole)) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "주문 매칭 정책 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        message: "주문 매칭 정책 저장은 OTP 인증이 필요합니다.",
+        code: "SENSITIVE_AUTH_REQUIRED",
         sensitiveAuthRequired: true,
         sensitiveAction: SENSITIVE_ACTIONS.channelOrderMatching,
       },
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
 
     throw publicBadRequest(
       "INVALID_ORDER_MATCHING_POLICY_ACTION",
-      "주문 매칭 정책 작업 종류가 올바르지 않습니다."
+      "INVALID_ORDER_MATCHING_POLICY_ACTION"
     );
   } catch (error) {
     return apiErrorResponse(error);

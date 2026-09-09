@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   AlertTriangle,
   BadgeDollarSign,
@@ -11,13 +13,7 @@ import {
   TimerReset,
 } from "lucide-react";
 import {
-  formatSalesAmount,
-  formatSalesAveragePrice,
-  formatSalesGrossProfit,
-  formatSalesLeadTime,
-  formatSalesRate,
-  formatSalesStatisticsDate,
-  formatSalesStatisticsMonth,
+  useSalesStatisticsPresentation,
   type SalesMetricPresentation,
 } from "@/quickhack_client/components/statistics/sales-statistics-presentation";
 import {
@@ -48,18 +44,13 @@ import type {
   StatisticsGroup,
 } from "@/quickhack_shared/statistics/statistics";
 import {
+  SALES_STATISTICS_PRICE_BANDS,
+  SALES_STATISTICS_UNKNOWN,
+} from "@/quickhack_shared/statistics/statistics";
+import {
   buildStatisticsPeriodRequestQuery,
   type StatisticsPeriodSelection,
 } from "@/quickhack_shared/statistics/statistics-period";
-
-const dimensionLabels: Record<SalesDimensionKey, string> = {
-  MODEL: "기종",
-  STORAGE: "용량",
-  COLOR: "색상",
-  SALE_GRADE: "판매 등급",
-  WARRANTY_GROUP: "보증 그룹",
-  CHANNEL: "판매 채널",
-};
 
 function PresentationValue({
   metric,
@@ -77,129 +68,82 @@ function PresentationValue({
 }
 
 function SalesSourceCoverage({ data }: { data: SalesStatisticsData }) {
+  const t = useTranslations("statistics.sales");
+  const { formatDate } = useSalesStatisticsPresentation();
   const warnings = [
     data.source.excludedStatusCount > 0
-      ? `판매 종결 상태가 아닌 원장 ${formatNumber(
-          data.source.excludedStatusCount
-        )}건 제외`
+      ? t("coverage.excludedStatus", { count: data.source.excludedStatusCount })
       : null,
     data.source.invalidSoldAtCount > 0
-      ? `판매 시각을 해석할 수 없는 원장 ${formatNumber(
-          data.source.invalidSoldAtCount
-        )}건 제외`
+      ? t("coverage.invalidSoldAt", { count: data.source.invalidSoldAtCount })
       : null,
     data.source.futureSoldAtCount > 0
-      ? `미래 판매 시각 원장 ${formatNumber(
-          data.source.futureSoldAtCount
-        )}건 제외`
+      ? t("coverage.futureSoldAt", { count: data.source.futureSoldAtCount })
       : null,
     data.source.eligibleSaleRecordCount -
         data.source.pricedSaleCount >
       0
-      ? `판매가 미기록 ${formatNumber(
-          data.source.eligibleSaleRecordCount -
-            data.source.pricedSaleCount
-        )}건`
+      ? t("coverage.missingSalesPrice", { count: data.source.eligibleSaleRecordCount - data.source.pricedSaleCount })
       : null,
     data.source.eligibleSaleRecordCount -
         data.source.purchasePricedSaleCount >
       0
-      ? `매입가 미기록 ${formatNumber(
-          data.source.eligibleSaleRecordCount -
-            data.source.purchasePricedSaleCount
-        )}건`
+      ? t("coverage.missingPurchasePrice", { count: data.source.eligibleSaleRecordCount - data.source.purchasePricedSaleCount })
       : null,
     data.source.missingPurchaseAgreedAtCount > 0
-      ? `매입 확정 시각 미기록 ${formatNumber(
-          data.source.missingPurchaseAgreedAtCount
-        )}건`
+      ? t("coverage.missingPurchaseAt", { count: data.source.missingPurchaseAgreedAtCount })
       : null,
     data.source.invalidLeadTimeCount > 0
-      ? `판매 소요기간 이상 ${formatNumber(
-          data.source.invalidLeadTimeCount
-        )}건 제외`
+      ? t("coverage.invalidLead", { count: data.source.invalidLeadTimeCount })
       : null,
   ].filter((warning): warning is string => warning !== null);
 
   return (
     <Section
-      title="집계 원천과 신뢰도"
-      description="판매 통계를 해석하기 전에 원장 상태와 가격·원가·소요기간의 확인 범위를 확인하세요."
+      title={t("coverage.title")}
+      description={t("coverage.subtitle")}
     >
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <StatisticsCalculationScope calculation={data.calculation} />
         <StatisticsCoverageItem
-          label="조회 원장"
-          value={`${formatNumber(
-            data.source.eligibleSaleRecordCount
-          )}건`}
-          description={`전체 원장 ${formatNumber(
-            data.source.loadedSaleRecordCount
-          )}건`}
+          label={t("coverage.ledger")}
+          value={t("count", { count: data.source.eligibleSaleRecordCount })}
+          description={t("coverage.ledgerDescription", { count: data.source.loadedSaleRecordCount })}
         />
         <StatisticsCoverageItem
-          label="판매 상태"
-          value={`판매 유지 ${formatNumber(
-            data.source.soldSaleRecordCount
-          )}건`}
-          description={`반품 후 원판매 ${formatNumber(
-            data.source.returnedSaleRecordCount
-          )}건 포함`}
+          label={t("coverage.status")}
+          value={t("coverage.statusValue", { count: data.source.soldSaleRecordCount })}
+          description={t("coverage.statusDescription", { count: data.source.returnedSaleRecordCount })}
         />
         <StatisticsCoverageItem
-          label="판매가 확인 범위"
+          label={t("coverage.salesPrice")}
           value={`${data.source.salesPriceCoveragePercent}%`}
-          description={`${formatNumber(
-            data.source.pricedSaleCount
-          )} / ${formatNumber(
-            data.source.eligibleSaleRecordCount
-          )}건`}
+          description={t("coverage.ratio", { available: data.source.pricedSaleCount, total: data.source.eligibleSaleRecordCount })}
         />
         <StatisticsCoverageItem
-          label="매입가 확인 범위"
+          label={t("coverage.purchasePrice")}
           value={`${data.source.purchasePriceCoveragePercent}%`}
-          description={`${formatNumber(
-            data.source.purchasePricedSaleCount
-          )} / ${formatNumber(
-            data.source.eligibleSaleRecordCount
-          )}건`}
+          description={t("coverage.ratio", { available: data.source.purchasePricedSaleCount, total: data.source.eligibleSaleRecordCount })}
         />
         <StatisticsCoverageItem
-          label="매출총이익 비교 범위"
+          label={t("coverage.profit")}
           value={`${data.source.profitCoveragePercent}%`}
-          description={`${formatNumber(
-            data.source.comparableProfitCount
-          )} / ${formatNumber(
-            data.source.eligibleSaleRecordCount
-          )}건`}
+          description={t("coverage.ratio", { available: data.source.comparableProfitCount, total: data.source.eligibleSaleRecordCount })}
         />
         <StatisticsCoverageItem
-          label="판매 소요기간 표본"
-          value={`${formatNumber(
-            data.source.leadTimeSampleCount
-          )}건`}
-          description={`미기록 ${formatNumber(
-            data.source.missingPurchaseAgreedAtCount
-          )} · 이상 ${formatNumber(
-            data.source.invalidLeadTimeCount
-          )}건`}
+          label={t("coverage.leadSample")}
+          value={t("count", { count: data.source.leadTimeSampleCount })}
+          description={t("coverage.leadDescription", { missing: data.source.missingPurchaseAgreedAtCount, invalid: data.source.invalidLeadTimeCount })}
         />
         <StatisticsCoverageItem
-          label="판매 시각 제외"
-          value={`${formatNumber(
-            data.source.invalidSoldAtCount +
-              data.source.futureSoldAtCount
-          )}건`}
-          description={`형식 오류 ${formatNumber(
-            data.source.invalidSoldAtCount
-          )} · 미래 ${formatNumber(
-            data.source.futureSoldAtCount
-          )}건`}
+          label={t("coverage.soldAtExcluded")}
+          value={t("count", { count: data.source.invalidSoldAtCount + data.source.futureSoldAtCount })}
+          description={t("coverage.soldAtDescription", { invalid: data.source.invalidSoldAtCount, future: data.source.futureSoldAtCount })}
         />
         <StatisticsCoverageItem
-          label="생성 시각"
-          value={formatSalesStatisticsDate(data.generatedAt)}
-          description="선택 기간 전체"
+          label={t("coverage.generatedAt")}
+          value={formatDate(data.generatedAt)}
+          description={t("coverage.periodAll")}
         />
       </div>
 
@@ -209,7 +153,7 @@ function SalesSourceCoverage({ data }: { data: SalesStatisticsData }) {
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <div>
               <div className="font-semibold">
-                통계에서 확인이 필요한 데이터가 있습니다.
+                {t("coverage.warning")}
               </div>
               <div className="mt-1">{warnings.join(" · ")}</div>
             </div>
@@ -217,7 +161,7 @@ function SalesSourceCoverage({ data }: { data: SalesStatisticsData }) {
         </FeedbackBanner>
       ) : (
         <FeedbackBanner tone="success" size="xs">
-          조회 범위에서 별도로 확인할 누락·시간 이상이 없습니다.
+          {t("coverage.success")}
         </FeedbackBanner>
       )}
     </Section>
@@ -225,6 +169,14 @@ function SalesSourceCoverage({ data }: { data: SalesStatisticsData }) {
 }
 
 function SalesCoreSummary({ data }: { data: SalesStatisticsData }) {
+  const t = useTranslations("statistics.sales");
+  const locale = useLocale();
+  const {
+    formatAmount: formatSalesAmount,
+    formatAveragePrice: formatSalesAveragePrice,
+    formatGrossProfit: formatSalesGrossProfit,
+    formatLeadTime: formatSalesLeadTime,
+  } = useSalesStatisticsPresentation();
   const salesAmount = formatSalesAmount(data.summary.salesAmount);
   const averagePrice = formatSalesAveragePrice(
     data.summary.averageSalesPrice,
@@ -239,42 +191,42 @@ function SalesCoreSummary({ data }: { data: SalesStatisticsData }) {
     <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
       <SummaryTile
         icon={Store}
-        label="확정 판매"
-        value={formatNumber(data.summary.saleCount)}
-        description="판매 원장 PG 기준"
+        label={t("summary.sales")}
+        value={formatNumber(data.summary.saleCount, locale)}
+        description={t("summary.salesDescription")}
         tone="success"
       />
       <SummaryTile
         icon={BadgeDollarSign}
-        label="판매금액"
+        label={t("summary.amount")}
         value={salesAmount.value}
         description={salesAmount.detail}
         tone="warning"
       />
       <SummaryTile
         icon={CircleDollarSign}
-        label="평균 판매가"
+        label={t("summary.averagePrice")}
         value={averagePrice.value}
         description={averagePrice.detail}
         tone="sky"
       />
       <SummaryTile
         icon={BadgeDollarSign}
-        label="매입 원가"
+        label={t("summary.purchaseCost")}
         value={purchaseCost.value}
         description={purchaseCost.detail}
         tone="purple"
       />
       <SummaryTile
         icon={Percent}
-        label="상품 매출총이익"
+        label={t("summary.grossProfit")}
         value={grossProfit.value}
         description={grossProfit.detail}
         tone="primary"
       />
       <SummaryTile
         icon={TimerReset}
-        label="평균 판매 소요"
+        label={t("summary.leadTime")}
         value={leadTime.value}
         description={leadTime.detail}
         tone="sky"
@@ -284,9 +236,16 @@ function SalesCoreSummary({ data }: { data: SalesStatisticsData }) {
 }
 
 function SalesMonthlyTrend({ data }: { data: SalesStatisticsData }) {
+  const t = useTranslations("statistics.sales");
+  const {
+    formatAmount: formatSalesAmount,
+    formatAveragePrice: formatSalesAveragePrice,
+    formatGrossProfit: formatSalesGrossProfit,
+    formatMonth: formatSalesStatisticsMonth,
+  } = useSalesStatisticsPresentation();
   const rows = data.monthlyTrend.map((row) => [
     formatSalesStatisticsMonth(row.month),
-    `${formatNumber(row.saleCount)}건`,
+    t("count", { count: row.saleCount }),
     <PresentationValue
       key={`${row.month}-sales`}
       metric={formatSalesAmount(row.salesAmount)}
@@ -308,7 +267,7 @@ function SalesMonthlyTrend({ data }: { data: SalesStatisticsData }) {
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
       <LineTrendChart
-        title="월별 확정 판매량"
+        title={t("monthly.chart")}
         points={data.monthlyTrend.map((row) => ({
           label: row.month,
           value: row.saleCount,
@@ -316,16 +275,16 @@ function SalesMonthlyTrend({ data }: { data: SalesStatisticsData }) {
         maxAxisLabels={8}
       />
       <Section
-        title="월별 판매 성과"
-        description="판매 원장의 원 판매일을 한국 표준시 월로 묶었습니다."
+        title={t("monthly.title")}
+        description={t("monthly.subtitle")}
       >
         <CompactTable
           columns={[
-            "월",
-            { label: "판매", align: "right" },
-            { label: "판매금액", align: "right" },
-            { label: "평균 판매가", align: "right" },
-            { label: "상품 매출총이익", align: "right" },
+            t("monthly.month"),
+            { label: t("monthly.sales"), align: "right" },
+            { label: t("monthly.amount"), align: "right" },
+            { label: t("monthly.average"), align: "right" },
+            { label: t("monthly.grossProfit"), align: "right" },
           ]}
           rows={rows}
           gridTemplateColumns="120px 90px minmax(180px,1fr) minmax(170px,1fr) minmax(210px,1.2fr)"
@@ -338,14 +297,23 @@ function SalesMonthlyTrend({ data }: { data: SalesStatisticsData }) {
 }
 
 function SalesProductPerformance({ data }: { data: SalesStatisticsData }) {
+  const t = useTranslations("statistics.sales");
+  const {
+    formatAmount: formatSalesAmount,
+    formatGrossProfit: formatSalesGrossProfit,
+    formatLeadTime: formatSalesLeadTime,
+    formatRate: formatSalesRate,
+  } = useSalesStatisticsPresentation();
   const rows = data.productRows.map((row) => [
-    row.skuCode,
-    row.model,
-    row.storage,
-    row.color,
-    <SaleGradeBadge key={`${row.key}-grade`} value={row.saleGrade} />,
-    row.warrantyGroup,
-    `${formatNumber(row.saleCount)}건`,
+    salesDimensionValueLabel(row.skuCode, t),
+    salesDimensionValueLabel(row.model, t),
+    salesDimensionValueLabel(row.storage, t),
+    salesDimensionValueLabel(row.color, t),
+    row.saleGrade === SALES_STATISTICS_UNKNOWN.grade
+      ? salesDimensionValueLabel(row.saleGrade, t)
+      : <SaleGradeBadge key={`${row.key}-grade`} value={row.saleGrade} />,
+    salesDimensionValueLabel(row.warrantyGroup, t),
+    t("count", { count: row.saleCount }),
     <PresentationValue
       key={`${row.key}-share`}
       metric={formatSalesRate(row.saleShare)}
@@ -362,28 +330,24 @@ function SalesProductPerformance({ data }: { data: SalesStatisticsData }) {
       key={`${row.key}-lead`}
       metric={formatSalesLeadTime(row.leadTime)}
     />,
-    `${formatNumber(row.longTermSaleCount)}건`,
+    t("count", { count: row.longTermSaleCount }),
   ]);
 
   return (
     <Section
-      title="상품별 판매 성과"
-      description="배송 완료 시점에 고정된 판매 원장 상품 속성별 비교입니다."
+      title={t("product.title")}
+      description={t("product.subtitle")}
     >
       <CompactTable
         columns={[
           "SKU",
-          "기종",
-          "용량",
-          "색상",
-          "등급",
-          "보증",
-          { label: "판매", align: "right" },
-          { label: "비중", align: "right" },
-          { label: "판매금액", align: "right" },
-          { label: "상품 매출총이익", align: "right" },
-          { label: "판매 소요", align: "right" },
-          { label: "90일+", align: "right" },
+          t("product.model"), t("product.storage"), t("product.color"), t("product.grade"), t("product.warranty"),
+          { label: t("product.sales"), align: "right" },
+          { label: t("product.share"), align: "right" },
+          { label: t("product.amount"), align: "right" },
+          { label: t("product.grossProfit"), align: "right" },
+          { label: t("product.lead"), align: "right" },
+          { label: t("product.days90"), align: "right" },
         ]}
         rows={rows}
         gridTemplateColumns="150px 130px 90px 110px 80px 110px 80px 130px minmax(180px,1fr) minmax(210px,1.2fr) minmax(180px,1fr) 80px"
@@ -395,20 +359,31 @@ function SalesProductPerformance({ data }: { data: SalesStatisticsData }) {
 }
 
 function SalesComposition({ data }: { data: SalesStatisticsData }) {
+  const t = useTranslations("statistics.sales");
+  const {
+    formatAmount: formatSalesAmount,
+    formatGrossProfit: formatSalesGrossProfit,
+    formatRate: formatSalesRate,
+  } = useSalesStatisticsPresentation();
+  const dimensionLabels: Record<SalesDimensionKey, string> = {
+    MODEL: t("dimension.model"), STORAGE: t("dimension.storage"),
+    COLOR: t("dimension.color"), SALE_GRADE: t("dimension.grade"),
+    WARRANTY_GROUP: t("dimension.warranty"), CHANNEL: t("dimension.channel"),
+  };
   const [dimension, setDimension] =
     React.useState<SalesDimensionKey>("MODEL");
   const rows = data.dimensionRows.filter(
     (row) => row.dimension === dimension
   );
   const groups: StatisticsGroup[] = rows.map((row) => ({
-    label: row.label,
+    label: salesDimensionValueLabel(row.label, t),
     count: row.saleCount,
   }));
 
   return (
     <Section
-      title="판매 구성"
-      description="한 번에 하나의 상품 속성을 선택해 구성 비중과 금액을 비교합니다."
+      title={t("composition.title")}
+      description={t("composition.subtitle")}
       action={
         <Select
           value={dimension}
@@ -434,14 +409,14 @@ function SalesComposition({ data }: { data: SalesStatisticsData }) {
         <CompactTable
           columns={[
             dimensionLabels[dimension],
-            { label: "판매", align: "right" },
-            { label: "비중", align: "right" },
-            { label: "판매금액", align: "right" },
-            { label: "상품 매출총이익", align: "right" },
+            { label: t("composition.sales"), align: "right" },
+            { label: t("composition.share"), align: "right" },
+            { label: t("composition.amount"), align: "right" },
+            { label: t("composition.grossProfit"), align: "right" },
           ]}
           rows={rows.map((row) => [
-            row.label,
-            `${formatNumber(row.saleCount)}건`,
+            salesDimensionValueLabel(row.label, t),
+            t("count", { count: row.saleCount }),
             <PresentationValue
               key={`${row.dimension}-${row.label}-share`}
               metric={formatSalesRate(row.saleShare)}
@@ -465,26 +440,28 @@ function SalesComposition({ data }: { data: SalesStatisticsData }) {
 }
 
 function SalesPriceGradeMatrix({ data }: { data: SalesStatisticsData }) {
+  const t = useTranslations("statistics.sales");
+  const locale = useLocale();
   return (
     <Section
-      title="가격대와 판매 등급"
-      description="판매가 미기록 건은 가격 미확인 행에 남겨 커버리지 손실을 숨기지 않습니다."
+      title={t("priceGrade.title")}
+      description={t("priceGrade.subtitle")}
     >
       <CompactTable
         columns={[
-          "가격대",
+          t("priceGrade.priceBand"),
           ...data.priceGradeColumns.map((grade) => ({
-            label: grade,
+            label: salesDimensionValueLabel(grade, t),
             align: "right" as const,
           })),
-          { label: "합계", align: "right" },
+          { label: t("priceGrade.total"), align: "right" },
         ]}
         rows={data.priceGradeRows.map((row) => [
-          row.priceBand,
+          salesPriceBandLabel(row.priceBand, t),
           ...data.priceGradeColumns.map((grade) =>
-            formatNumber(row.gradeCounts[grade] ?? 0)
+            formatNumber(row.gradeCounts[grade] ?? 0, locale)
           ),
-          formatNumber(row.totalCount),
+          formatNumber(row.totalCount, locale),
         ])}
         gridTemplateColumns={
           data.priceGradeColumns.length === 0
@@ -502,15 +479,22 @@ function SalesLeadTimeDistribution({
 }: {
   data: SalesStatisticsData;
 }) {
+  const t = useTranslations("statistics.sales");
+  const bucketLabel = (key: typeof data.summary.leadTime.buckets[number]["key"]) => {
+    if (key === "DAYS_0_29") return t("leadDistribution.days0_29");
+    if (key === "DAYS_30_59") return t("leadDistribution.days30_59");
+    if (key === "DAYS_60_89") return t("leadDistribution.days60_89");
+    return t("leadDistribution.days90Plus");
+  };
   const groups = data.summary.leadTime.buckets.map((bucket) => ({
-    label: bucket.label,
+    label: bucketLabel(bucket.key),
     count: bucket.count,
   }));
 
   return (
     <Section
-      title="판매 소요기간 구성"
-      description="매입 확정일부터 원 판매일까지 계산할 수 있는 표본만 구간별로 비교합니다."
+      title={t("leadDistribution.title")}
+      description={t("leadDistribution.subtitle")}
     >
       <BarList
         groups={groups}
@@ -521,24 +505,32 @@ function SalesLeadTimeDistribution({
 }
 
 function SalesChannelPerformance({ data }: { data: SalesStatisticsData }) {
+  const t = useTranslations("statistics.sales");
+  const {
+    formatAmount: formatSalesAmount,
+    formatAveragePrice: formatSalesAveragePrice,
+    formatGrossProfit: formatSalesGrossProfit,
+    formatLeadTime: formatSalesLeadTime,
+    formatRate: formatSalesRate,
+  } = useSalesStatisticsPresentation();
   return (
     <Section
-      title="판매 채널 성과"
-      description="채널별 판매 규모와 가격·원가가 모두 있는 상품의 매출총이익을 비교합니다."
+      title={t("channel.title")}
+      description={t("channel.subtitle")}
     >
       <CompactTable
         columns={[
-          "채널",
-          { label: "판매", align: "right" },
-          { label: "비중", align: "right" },
-          { label: "판매금액", align: "right" },
-          { label: "평균 판매가", align: "right" },
-          { label: "상품 매출총이익", align: "right" },
-          { label: "판매 소요", align: "right" },
+          t("channel.channel"),
+          { label: t("channel.sales"), align: "right" },
+          { label: t("channel.share"), align: "right" },
+          { label: t("channel.amount"), align: "right" },
+          { label: t("channel.average"), align: "right" },
+          { label: t("channel.grossProfit"), align: "right" },
+          { label: t("channel.lead"), align: "right" },
         ]}
         rows={data.channelRows.map((row) => [
           row.channel,
-          `${formatNumber(row.saleCount)}건`,
+          t("count", { count: row.saleCount }),
           <PresentationValue
             key={`${row.channel}-share`}
             metric={formatSalesRate(row.saleShare)}
@@ -576,6 +568,7 @@ export function SalesStatisticsPanel({
 }: {
   periodSelection: StatisticsPeriodSelection;
 }) {
+  const t = useTranslations("statistics.sales");
   const requestKey =
     buildStatisticsPeriodRequestQuery(periodSelection);
   const [requestState, setRequestState] = React.useState<{
@@ -621,7 +614,7 @@ export function SalesStatisticsPanel({
 
           if (!response.ok || !payload?.ok || !payload.data) {
             throw new Error(
-              payload?.message || "판매 통계를 불러오지 못했습니다."
+              legacyApiMessage(payload, t("loading.error"))
             );
           }
 
@@ -664,7 +657,7 @@ export function SalesStatisticsPanel({
       window.clearTimeout(timerId);
       controller.abort();
     };
-  }, [requestKey, retryRevision]);
+  }, [requestKey, retryRevision, t]);
 
   const visibleData =
     requestState.requestKey === requestKey ? requestState.data : null;
@@ -679,9 +672,9 @@ export function SalesStatisticsPanel({
     return (
       <div aria-busy="true" className="grid gap-3">
         <FeedbackBanner tone="info" size="xs">
-          판매 통계를 불러오는 중입니다.
+          {t("loading.initial")}
         </FeedbackBanner>
-        <EmptyDataState message="판매 원장을 집계하고 있습니다." />
+        <EmptyDataState message={t("loading.aggregating")} />
       </div>
     );
   }
@@ -692,7 +685,7 @@ export function SalesStatisticsPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-semibold">
-              판매 통계를 불러오지 못했습니다.
+              {t("loading.error")}
             </div>
             <div className="mt-1 text-xs">{errorMessage}</div>
           </div>
@@ -702,7 +695,7 @@ export function SalesStatisticsPanel({
             onClick={() => setRetryRevision((value) => value + 1)}
           >
             <RefreshCw />
-            다시 시도
+            {t("loading.retry")}
           </Button>
         </div>
       </FeedbackBanner>
@@ -717,8 +710,7 @@ export function SalesStatisticsPanel({
     <div aria-busy={isLoading} className="grid min-w-0 gap-4">
       {isLoading ? (
         <FeedbackBanner tone="info" size="xs">
-          같은 조건으로 통계를 다시 확인하고 있습니다. 현재 결과는 계속
-          표시합니다.
+          {t("loading.refresh")}
         </FeedbackBanner>
       ) : null}
       {errorMessage ? (
@@ -731,7 +723,7 @@ export function SalesStatisticsPanel({
               onClick={() => setRetryRevision((value) => value + 1)}
             >
               <RefreshCw />
-              다시 시도
+              {t("loading.retry")}
             </Button>
           </div>
         </FeedbackBanner>
@@ -749,4 +741,23 @@ export function SalesStatisticsPanel({
       <SalesChannelPerformance data={visibleData} />
     </div>
   );
+}
+type SalesStatisticsTranslator = ReturnType<typeof useTranslations<"statistics.sales">>;
+
+function salesDimensionValueLabel(value: string, t: SalesStatisticsTranslator) {
+  const entries: Record<string, string> = {
+    [SALES_STATISTICS_UNKNOWN.sku]: "unknown.sku",
+    [SALES_STATISTICS_UNKNOWN.model]: "unknown.model",
+    [SALES_STATISTICS_UNKNOWN.storage]: "unknown.storage",
+    [SALES_STATISTICS_UNKNOWN.color]: "unknown.color",
+    [SALES_STATISTICS_UNKNOWN.grade]: "unknown.grade",
+    [SALES_STATISTICS_UNKNOWN.warranty]: "unknown.warranty",
+    [SALES_STATISTICS_UNKNOWN.channel]: "unknown.channel",
+  };
+  return entries[value] ? t(entries[value] as never) : value;
+}
+
+function salesPriceBandLabel(value: string, t: SalesStatisticsTranslator) {
+  if (!(SALES_STATISTICS_PRICE_BANDS as readonly string[]).includes(value)) return value;
+  return t(`priceBand.${value}` as never);
 }

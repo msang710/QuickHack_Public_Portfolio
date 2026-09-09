@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import {
   CheckCheck,
   Database,
@@ -17,7 +19,6 @@ import {
 } from "@/quickhack_shared/catalog/product-criteria";
 import {
   WARRANTY_GROUPS,
-  warrantyGroupLabel,
   type WarrantyGroupCode,
 } from "@/quickhack_shared/sales-channel/sales-matching";
 import { RANDOM_MATCHING_OPTION_VALUE } from "@/quickhack_shared/sales-channel/order-matching";
@@ -146,12 +147,17 @@ function formFromItem(item: SalesOfferDto): SalesOfferForm {
   };
 }
 
-function optionLabel(value: string | null, mode: MatchMode) {
+function optionLabel(
+  value: string | null,
+  mode: MatchMode,
+  randomLabel: string,
+  allLabel: string
+) {
   if (mode === "RANDOM" || value === RANDOM_MATCHING_OPTION_VALUE) {
-    return "랜덤";
+    return randomLabel;
   }
 
-  return value || "전체";
+  return value || allLabel;
 }
 
 function searchText(item: SalesOfferDto) {
@@ -169,6 +175,11 @@ function searchText(item: SalesOfferDto) {
 }
 
 export function SalesOfferManagerView() {
+  const t = useTranslations("catalog.salesOffer");
+  const warrantyFallbackLabels = React.useMemo<Record<string, string>>(() => ({
+    "2Y": t("warranty.twoYear"),
+    "1Y": t("warranty.oneYear"),
+  }), [t]);
   const { runGuardedAction } = useUnsavedChanges();
   const [criteria, setCriteria] = React.useState<ProductCriteriaPayload | null>(null);
   const [items, setItems] = React.useState<SalesOfferDto[]>([]);
@@ -198,8 +209,8 @@ export function SalesOfferManagerView() {
   useUnsavedForm({
     id: SALES_OFFER_FORM_ID,
     label: selectedItem
-      ? `${selectedItem.offerCode} 판매 오퍼`
-      : "새 판매 오퍼",
+      ? t("form.selected", { code: selectedItem.offerCode })
+      : t("form.new"),
     isDirty: !unsavedFormSnapshotsEqual(formBaseline, form),
     isBusy: isSaving,
     discard: discardForm,
@@ -221,11 +232,11 @@ export function SalesOfferManagerView() {
         .catch(() => null)) as SalesOffersApiResponse | null;
 
       if (!criteriaResponse.ok || !criteriaPayload?.ok || !criteriaPayload.data) {
-        throw new Error(criteriaPayload?.message || "상품 기준값을 불러오지 못했습니다.");
+        throw new Error(criteriaPayload?.message || t("message.criteriaLoadFailed"));
       }
 
       if (!offerResponse.ok || !offerPayload?.ok) {
-        throw new Error(offerPayload?.message || "판매 오퍼 목록을 불러오지 못했습니다.");
+        throw new Error(offerPayload?.message || t("message.listLoadFailed"));
       }
 
       const nextItems = offerPayload.items ?? [];
@@ -244,7 +255,7 @@ export function SalesOfferManagerView() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     queueMicrotask(() => void loadData(null));
@@ -299,7 +310,7 @@ export function SalesOfferManagerView() {
     () => {
       const linkedIds = linkedOptionIds("MODEL_STORAGE");
       return [
-        { value: RANDOM_MATCHING_OPTION_VALUE, label: "랜덤" },
+        { value: RANDOM_MATCHING_OPTION_VALUE, label: t("common.random") },
         ...activeCriteriaOptions
           .filter(
             (option) =>
@@ -313,13 +324,13 @@ export function SalesOfferManagerView() {
           })),
       ];
     },
-    [activeCriteriaOptions, linkedOptionIds]
+    [activeCriteriaOptions, linkedOptionIds, t]
   );
   const colorOptions = React.useMemo(
     () => {
       const linkedIds = linkedOptionIds("MODEL_COLOR");
       return [
-        { value: RANDOM_MATCHING_OPTION_VALUE, label: "랜덤" },
+        { value: RANDOM_MATCHING_OPTION_VALUE, label: t("common.random") },
         ...activeCriteriaOptions
           .filter(
             (option) =>
@@ -333,7 +344,7 @@ export function SalesOfferManagerView() {
           })),
       ];
     },
-    [activeCriteriaOptions, linkedOptionIds]
+    [activeCriteriaOptions, linkedOptionIds, t]
   );
   const warrantyOptions = React.useMemo(
     () =>
@@ -353,73 +364,73 @@ export function SalesOfferManagerView() {
     () => [
       {
         key: "offerCode",
-        label: "오퍼 코드",
+        label: t("columns.code"),
         width: "250px",
-        placeholder: "오퍼 코드",
+        placeholder: t("columns.code"),
         cellClassName: "flex items-center px-3 font-mono text-xs",
         render: (item) => item.offerCode,
         text: (item) => item.offerCode,
       },
       {
         key: "model",
-        label: "기종",
+        label: t("columns.model"),
         width: "minmax(190px,1fr)",
-        placeholder: "기종",
+        placeholder: t("columns.model"),
         cellClassName: "flex items-center px-3 font-medium",
         render: (item) => item.model,
         text: (item) => item.model,
       },
       {
         key: "storage",
-        label: "용량",
+        label: t("columns.storage"),
         width: "110px",
-        placeholder: "용량",
+        placeholder: t("columns.storage"),
         cellClassName: "flex items-center px-3",
-        render: (item) => optionLabel(item.requiredStorage, item.storageMatchMode),
-        text: (item) => optionLabel(item.requiredStorage, item.storageMatchMode),
+        render: (item) => optionLabel(item.requiredStorage, item.storageMatchMode, t("common.random"), t("common.all")),
+        text: (item) => optionLabel(item.requiredStorage, item.storageMatchMode, t("common.random"), t("common.all")),
       },
       {
         key: "color",
-        label: "색상",
+        label: t("columns.color"),
         width: "140px",
-        placeholder: "색상",
+        placeholder: t("columns.color"),
         cellClassName: "flex items-center px-3",
-        render: (item) => optionLabel(item.requiredColor, item.colorMatchMode),
-        text: (item) => optionLabel(item.requiredColor, item.colorMatchMode),
+        render: (item) => optionLabel(item.requiredColor, item.colorMatchMode, t("common.random"), t("common.all")),
+        text: (item) => optionLabel(item.requiredColor, item.colorMatchMode, t("common.random"), t("common.all")),
       },
       {
         key: "warranty",
-        label: "보증조건",
+        label: t("columns.warranty"),
         width: "110px",
-        placeholder: "보증조건",
+        placeholder: t("columns.warranty"),
         cellClassName: "flex items-center px-3",
-        render: (item) => item.warrantyLabel || warrantyGroupLabel(item.warrantyGroup),
-        text: (item) => item.warrantyLabel || warrantyGroupLabel(item.warrantyGroup),
+        render: (item) => item.warrantyLabel || warrantyFallbackLabels[item.warrantyGroup] || "-",
+        text: (item) => item.warrantyLabel || warrantyFallbackLabels[item.warrantyGroup] || "-",
       },
       {
         key: "mappings",
-        label: "채널매핑",
+        label: t("columns.mappings"),
         width: "100px",
-        placeholder: "매핑 수",
+        placeholder: t("columns.mappingCount"),
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
         render: (item) => item.mappedVendorItemCount,
         text: (item) => String(item.mappedVendorItemCount),
       },
       {
         key: "status",
-        label: "상태",
+        label: t("columns.status"),
         width: "90px",
-        placeholder: "상태",
+        placeholder: t("columns.status"),
         cellClassName: "flex items-center px-3",
         render: (item) => (
           <Badge variant={item.isActive ? "success" : "neutral"}>
-            {item.isActive ? "사용" : "비활성"}
+            {item.isActive ? t("common.active") : t("common.inactive")}
           </Badge>
         ),
-        text: (item) => (item.isActive ? "사용" : "비활성"),
+        text: (item) => item.isActive ? t("common.active") : t("common.inactive"),
       },
     ],
-    []
+    [t, warrantyFallbackLabels]
   );
 
   function updateForm<K extends keyof SalesOfferForm>(key: K, value: SalesOfferForm[K]) {
@@ -440,7 +451,7 @@ export function SalesOfferManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [SALES_OFFER_FORM_ID],
-      targetLabel: "새 판매 오퍼 작성",
+      targetLabel: t("unsaved.new"),
       action: applyNewItem,
     });
   }
@@ -453,7 +464,7 @@ export function SalesOfferManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [SALES_OFFER_FORM_ID],
-      targetLabel: `${item.offerCode} 판매 오퍼 열기`,
+      targetLabel: t("unsaved.open", { code: item.offerCode }),
       action: () => {
         setSelectedId(item.id);
         setForm(formFromItem(item));
@@ -466,7 +477,7 @@ export function SalesOfferManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [SALES_OFFER_FORM_ID],
-      targetLabel: "판매 오퍼 목록 새로고침",
+      targetLabel: t("unsaved.reload"),
       action: () => {
         void loadData(selectedId);
       },
@@ -477,7 +488,7 @@ export function SalesOfferManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [SALES_OFFER_FORM_ID],
-      targetLabel: "기본 판매 오퍼 생성",
+      targetLabel: t("unsaved.bootstrap"),
       action: () => {
         void bootstrap();
       },
@@ -490,7 +501,7 @@ export function SalesOfferManagerView() {
       !form.salesOfferId &&
       (!form.modelOptionId || !form.warrantyGroupOptionId)
     ) {
-      setMessage("기종과 보증조건을 선택해야 합니다.");
+      setMessage(t("message.required"));
       setMessageTone("warning");
       return;
     }
@@ -532,11 +543,11 @@ export function SalesOfferManagerView() {
       });
       const payload = (await response.json().catch(() => null)) as SalesOffersApiResponse | null;
       if (!response.ok || !payload?.ok || !payload.item) {
-        throw new Error(payload?.message || "판매 오퍼를 저장하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.saveFailed")));
       }
 
       await loadData(payload.item.id);
-      setMessage("판매 오퍼를 저장했습니다.");
+      setMessage(t("message.saved"));
       setMessageTone("success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -556,18 +567,16 @@ export function SalesOfferManagerView() {
       });
       const payload = (await response.json().catch(() => null)) as SalesOffersApiResponse | null;
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "기본 판매 오퍼를 생성하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.bootstrapFailed")));
       }
       await loadData(selectedId);
-      setMessage(
-        `${payload.data?.distinctProductCount ?? 0}개 기종의 기본 판매 구성 ${
-          payload.data?.offerCount ?? 0
-        }건을 확인했습니다. 새로 생성 ${
-          payload.data?.createdCount ?? 0
-        }건, 다시 활성화 ${
-          payload.data?.reactivatedCount ?? 0
-        }건, 변경 없음 ${payload.data?.unchangedCount ?? 0}건입니다.`
-      );
+      setMessage(t("message.bootstrapResult", {
+        products: payload.data?.distinctProductCount ?? 0,
+        offers: payload.data?.offerCount ?? 0,
+        created: payload.data?.createdCount ?? 0,
+        reactivated: payload.data?.reactivatedCount ?? 0,
+        unchanged: payload.data?.unchangedCount ?? 0,
+      }));
       setMessageTone("success");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -588,41 +597,41 @@ export function SalesOfferManagerView() {
     >
       <div className="flex min-h-0 flex-col gap-4">
         <SummaryStrip className="md:grid-cols-4">
-          <SummaryCell icon={Store} label="전체 오퍼" value={items.length} />
-          <SummaryCell icon={CheckCheck} label="사용 중" value={activeCount} />
-          <SummaryCell icon={X} label="비활성" value={items.length - activeCount} />
-          <SummaryCell icon={Database} label="채널 연결" value={mappedCount} />
+          <SummaryCell icon={Store} label={t("summary.total")} value={items.length} />
+          <SummaryCell icon={CheckCheck} label={t("summary.active")} value={activeCount} />
+          <SummaryCell icon={X} label={t("summary.inactive")} value={items.length - activeCount} />
+          <SummaryCell icon={Database} label={t("summary.mapped")} value={mappedCount} />
         </SummaryStrip>
 
         <WorkspacePanel className="flex-1">
           <PanelToolbar className="xl:grid-cols-[360px_180px_auto_auto]">
             <SearchInput
-              placeholder="오퍼 코드, 기종, 용량, 색상 검색"
+              placeholder={t("toolbar.search")}
               value={query}
               onValueChange={setQuery}
             />
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="ACTIVE">사용 중</SelectItem>
-                <SelectItem value="INACTIVE">비활성</SelectItem>
-                <SelectItem value="ALL">전체</SelectItem>
+                <SelectItem value="ACTIVE">{t("toolbar.active")}</SelectItem>
+                <SelectItem value="INACTIVE">{t("toolbar.inactive")}</SelectItem>
+                <SelectItem value="ALL">{t("toolbar.all")}</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" onClick={requestReload}>
               <RefreshCcw className={cn("size-4", isLoading && "animate-spin")} />
-              새로고침
+              {t("toolbar.refresh")}
             </Button>
             <Button variant="outline" onClick={requestBootstrap} disabled={isSaving}>
               <Database className="size-4" />
-              기본 오퍼 생성
+              {t("toolbar.bootstrap")}
             </Button>
           </PanelToolbar>
           <VirtualizedDataGrid
             rows={filteredItems}
             columns={columns}
             rowKey={(item) => String(item.id)}
-            emptyMessage={isLoading ? "판매 오퍼를 불러오는 중입니다." : "표시할 판매 오퍼가 없습니다."}
+            emptyMessage={isLoading ? t("toolbar.loading") : t("toolbar.empty")}
             selectedRowKey={selectedId ? String(selectedId) : ""}
             onRowClick={selectItem}
             className="rounded-none border-0"
@@ -635,13 +644,13 @@ export function SalesOfferManagerView() {
       <aside className="min-h-0 overflow-auto rounded-md border bg-popover p-4">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">판매 오퍼 편집</h2>
+            <h2 className="text-sm font-semibold">{t("editor.title")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              기종, 용량, 색상, 보증조건을 하나의 판매 단위로 관리합니다.
+              {t("editor.description")}
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={newItem}>
-            <Plus className="size-4" /> 추가
+            <Plus className="size-4" /> {t("editor.add")}
           </Button>
         </div>
 
@@ -656,17 +665,17 @@ export function SalesOfferManagerView() {
 
         <div className="grid gap-3">
           <InventoryEditField
-            label="오퍼 코드"
+            label={t("editor.code")}
             value={form.offerCode}
-            placeholder="저장 시 자동 생성"
+            placeholder={t("editor.generated")}
             readOnly
             onChange={() => undefined}
           />
           <SearchSelect
-            label="기종"
+            label={t("editor.model")}
             value={form.modelOptionId}
             options={modelOptions}
-            placeholder="기종 선택"
+            placeholder={t("editor.modelSelect")}
             allowEmpty
             disabled={editingExisting}
             onValueChange={(value) => {
@@ -676,25 +685,25 @@ export function SalesOfferManagerView() {
             }}
           />
           <SearchSelect
-            label="용량 조건"
+            label={t("editor.storage")}
             value={form.storage}
             options={storageOptions}
-            placeholder="전체 용량"
+            placeholder={t("editor.allStorage")}
             allowEmpty
             disabled={editingExisting || !form.modelOptionId}
             onValueChange={(value) => updateForm("storage", value)}
           />
           <SearchSelect
-            label="색상 조건"
+            label={t("editor.color")}
             value={form.color}
             options={colorOptions}
-            placeholder="전체 색상"
+            placeholder={t("editor.allColor")}
             allowEmpty
             disabled={editingExisting || !form.modelOptionId}
             onValueChange={(value) => updateForm("color", value)}
           />
           <label className="grid gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">보증조건</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("editor.warranty")}</span>
             <Select
               value={form.warrantyGroupOptionId}
               disabled={editingExisting}
@@ -702,32 +711,32 @@ export function SalesOfferManagerView() {
                 updateForm("warrantyGroupOptionId", value)
               }
             >
-              <SelectTrigger><SelectValue placeholder="보증조건 선택" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("editor.warrantySelect")} /></SelectTrigger>
               <SelectContent>
                 {warrantyOptions.map((option) => (
                   <SelectItem
                     key={option.optionId}
                     value={String(option.optionId)}
                   >
-                    {option.label || warrantyGroupLabel(option.optionKey)}
+                    {option.label || warrantyFallbackLabels[option.optionKey] || "-"}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </label>
           <label className="grid gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">상태</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("editor.status")}</span>
             <Select value={form.isActive} onValueChange={(value) => updateForm("isActive", value as "1" | "0")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">사용</SelectItem>
-                <SelectItem value="0">비활성</SelectItem>
+                <SelectItem value="1">{t("common.active")}</SelectItem>
+                <SelectItem value="0">{t("common.inactive")}</SelectItem>
               </SelectContent>
             </Select>
           </label>
           <Button onClick={() => void save()} disabled={isSaving}>
             <Save className="size-4" />
-            {isSaving ? "저장중" : "오퍼 저장"}
+            {isSaving ? t("common.saving") : t("editor.save")}
           </Button>
         </div>
       </aside>

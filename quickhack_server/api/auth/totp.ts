@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   ]);
   const session = await authService.getAuthSessionFromToken(token);
   if (!session) {
-    return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ ok: false, code: "AUTH_REQUIRED" }, { status: 401 });
   }
   return NextResponse.json({
     ok: true,
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
   const body = parseJsonObject(bodyText);
   if (!body) {
-    return NextResponse.json({ ok: false, message: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json({ ok: false, code: "INVALID_BODY" }, { status: 400 });
   }
 
   const [authService, totpService] = await Promise.all([
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
   ]);
   const session = await authService.getAuthSessionFromToken(token);
   if (!session) {
-    return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ ok: false, code: "AUTH_REQUIRED" }, { status: 401 });
   }
 
   const action = String(body.action || "").trim();
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
         enrollmentToken: String(body.enrollmentToken || ""),
       });
       if (!result.confirmed) {
-        return NextResponse.json({ ok: false, message: "OTP 코드가 올바르지 않습니다." }, { status: 401 });
+        return NextResponse.json({ ok: false, code: "OTP_CODE_INVALID" }, { status: 401 });
       }
       const response = NextResponse.json({
         ok: true,
@@ -101,25 +101,25 @@ export async function POST(request: NextRequest) {
         action,
       });
       if (!result.verification.enabled) {
-        return NextResponse.json({ ok: false, message: "이 계정에는 OTP가 설정되어 있지 않습니다." }, { status: 409 });
+        return NextResponse.json({ ok: false, code: "OTP_NOT_CONFIGURED" }, { status: 409 });
       }
       if (!result.verification.verified) {
         return NextResponse.json(
           {
             ok: false,
-            message: result.verification.locked
-              ? `OTP 인증이 잠겼습니다. ${result.verification.remainingLockedSeconds}초 뒤 다시 시도하세요.`
-              : "OTP 코드가 올바르지 않습니다.",
+            code: result.verification.locked
+              ? "OTP_RATE_LIMITED"
+              : "OTP_CODE_INVALID",
+            details: result.verification.locked
+              ? { remainingSeconds: result.verification.remainingLockedSeconds }
+              : undefined,
           },
           { status: result.verification.locked ? 429 : 403 }
         );
       }
       const response = NextResponse.json({
         ok: true,
-        message:
-          action === "disable"
-            ? "OTP 2차 인증을 해제했습니다."
-            : "OTP 복구코드를 새로 발급했습니다.",
+        resultCode: action === "disable" ? "OTP_DISABLED" : "OTP_RECOVERY_CODES_ISSUED",
         disabled: action === "disable",
         recoveryCodes: result.recoveryCodes,
       });
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
-    return NextResponse.json({ ok: false, message: "지원하지 않는 OTP 요청입니다." }, { status: 400 });
+    return NextResponse.json({ ok: false, code: "OTP_ACTION_UNSUPPORTED" }, { status: 400 });
   } catch (error) {
     return apiErrorResponse(error);
   }

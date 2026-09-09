@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import QRCode from "qrcode";
 import { KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 import { useUnsavedChanges } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
@@ -40,6 +42,9 @@ export type AccountTotpStatus = {
 
 type TotpApiResponse = {
   ok: boolean;
+  code?: string;
+  details?: { remainingSeconds?: number };
+  resultCode?: "OTP_DISABLED" | "OTP_RECOVERY_CODES_ISSUED";
   message?: string;
   status?: AccountTotpStatus;
   setup?: {
@@ -64,6 +69,7 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
+  const t = useTranslations("settings.accountTotp");
   const { runGuardedAction } = useUnsavedChanges();
   const [status, setStatus] = React.useState<AccountTotpStatus | null>(null);
   const [setup, setSetup] = React.useState<
@@ -76,7 +82,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
   const [managementCode, setManagementCode] = React.useState("");
   const recovery = useOneTimeRecoveryCodes({
     formId: ONE_TIME_RESULT_FORM_IDS.personalRecoveryCodes,
-    label: "내 OTP 복구코드",
+    label: t("recoveryLabel"),
   });
   const recoveryCodes = recovery.codes;
   const setRecoveryCodes = recovery.setCodes;
@@ -94,7 +100,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
         | null;
 
       if (!response.ok || !payload?.ok || !payload.status) {
-        throw new Error(payload?.message || "OTP 상태를 확인하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.statusFailed")));
       }
 
       setStatus(payload.status);
@@ -105,7 +111,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [onStatusChange]);
+  }, [onStatusChange, t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => void loadStatus(), 0);
@@ -131,14 +137,14 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
       })
       .catch(() => {
         if (!cancelled) {
-          setMessage("QR 코드를 만들지 못했습니다. 등록 키를 직접 입력하세요.");
+          setMessage(t("message.qrFailed"));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [setup?.otpauthUri]);
+  }, [setup?.otpauthUri, t]);
 
   async function postAction(body: Record<string, unknown>) {
     const response = await fetch("/api/auth/totp", {
@@ -151,7 +157,22 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
       | null;
 
     if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.message || "OTP 작업을 처리하지 못했습니다.");
+      const errorKey = {
+        OTP_CODE_INVALID: "codeInvalid",
+        OTP_NOT_CONFIGURED: "notConfigured",
+        OTP_ACTION_UNSUPPORTED: "actionUnsupported",
+        AUTH_REQUIRED: "authRequired",
+        INVALID_BODY: "invalidBody",
+      }[payload?.code ?? ""];
+      throw new Error(
+        payload?.code === "OTP_RATE_LIMITED"
+          ? t("message.rateLimited", {
+              seconds: payload.details?.remainingSeconds ?? 0,
+            })
+          : errorKey
+            ? t(`message.${errorKey}` as "message.codeInvalid")
+            : legacyApiMessage(payload, t("message.actionFailed"))
+      );
     }
 
     return payload;
@@ -169,13 +190,13 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
       const payload = await postAction({ action: "setup", password: setupPassword });
 
       if (!payload.setup) {
-        throw new Error("OTP 등록 정보를 받지 못했습니다.");
+        throw new Error(t("message.setupMissing"));
       }
 
       setQrDataUrl("");
       setSetup(payload.setup);
       setSetupPassword("");
-      setMessage("인증 앱에 등록한 뒤 표시되는 6자리 코드를 입력하세요.");
+      setMessage(t("message.enterCode"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -199,14 +220,14 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
       });
 
       if (!payload.confirmed) {
-        throw new Error("OTP 등록을 완료하지 못했습니다.");
+        throw new Error(t("message.confirmFailed"));
       }
 
       setRecoveryCodes(payload.recoveryCodes ?? []);
       setSetup(null);
       setQrDataUrl("");
       setSetupCode("");
-      setMessage("OTP 등록이 완료되었습니다. 복구코드는 지금 안전한 곳에 보관하세요.");
+      setMessage(t("message.confirmed"));
       await loadStatus();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -217,7 +238,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
 
   async function manageOtp(action: "recoveryCodes" | "disable") {
     if (!managementPassword || !managementCode || busyAction) {
-      setMessage("현재 비밀번호와 OTP 6자리 코드를 모두 입력하세요.");
+      setMessage(t("message.credentialsRequired"));
       return;
     }
 
@@ -234,10 +255,9 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
       setManagementCode("");
       setRecoveryCodes(payload.recoveryCodes ?? []);
       setMessage(
-        payload.message ||
-          (action === "disable"
-            ? "OTP 2차 인증을 해제했습니다."
-            : "복구코드를 새로 발급했습니다.")
+        payload.resultCode === "OTP_DISABLED"
+          ? t("message.disabled")
+          : t("message.recoveryIssued")
       );
       await loadStatus();
     } catch (error) {
@@ -255,7 +275,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
     runGuardedAction({
       intent: "internal-change",
       formIds: [ONE_TIME_RESULT_FORM_IDS.personalRecoveryCodes],
-      targetLabel: "OTP 등록 완료",
+      targetLabel: t("guarded.confirm"),
       action: () => {
         void confirmSetup();
       },
@@ -264,13 +284,13 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
 
   function requestManageOtp(action: "recoveryCodes" | "disable") {
     if (!managementPassword || !managementCode || busyAction) {
-      setMessage("현재 비밀번호와 OTP 6자리 코드를 모두 입력하세요.");
+      setMessage(t("message.credentialsRequired"));
       return;
     }
 
     if (
       action === "disable" &&
-      !window.confirm("이 계정의 OTP 2차 인증을 해제할까요?")
+      !window.confirm(t("guarded.disableConfirm"))
     ) {
       return;
     }
@@ -279,7 +299,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
       intent: "internal-change",
       formIds: [ONE_TIME_RESULT_FORM_IDS.personalRecoveryCodes],
       targetLabel:
-        action === "disable" ? "OTP 2차 인증 해제" : "OTP 복구코드 재발급",
+        action === "disable" ? t("guarded.disable") : t("guarded.recovery"),
       action: () => {
         void manageOtp(action);
       },
@@ -292,14 +312,14 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
         <div>
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">OTP 2차 인증</h2>
+            <h2 className="text-sm font-semibold">{t("title")}</h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            민감한 메뉴를 열 때 인증 앱의 6자리 코드로 본인을 확인합니다.
+            {t("description")}
           </p>
         </div>
         <Badge variant={status?.enabled ? "success" : "neutral"}>
-          {isLoading ? "확인 중" : status?.enabled ? "설정됨" : "미설정"}
+          {isLoading ? t("status.checking") : status?.enabled ? t("status.configured") : t("status.unconfigured")}
         </Badge>
       </div>
 
@@ -311,15 +331,14 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
 
       {!isLoading && status && !status.server.configured ? (
         <div className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          OTP 보안 서비스를 사용할 수 없어 OTP 등록과 보호된 작업이 차단되었습니다.
-          관리자는 QuickHack 본서버 콘솔에서 OTP 보안 상태를 확인해야 합니다.
+          {t("unavailable")}
         </div>
       ) : null}
 
       {!isLoading && status?.server.configured && !status.enabled ? (
         <div className="grid gap-3 border-t p-3">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <AccountFieldLabel label="현재 비밀번호">
+            <AccountFieldLabel label={t("setup.password")}>
               <Input
                 type="password"
                 autoComplete="current-password"
@@ -336,7 +355,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
               onClick={() => void startSetup()}
             >
               <KeyRound className="size-4" />
-              OTP 등록 시작
+              {t("setup.start")}
             </Button>
           </div>
 
@@ -347,7 +366,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
                   {qrDataUrl ? (
                     <Image
                       src={qrDataUrl}
-                      alt="OTP 등록 QR 코드"
+                      alt={t("setup.qrAlt")}
                       width={176}
                       height={176}
                       unoptimized
@@ -355,21 +374,21 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
                     />
                   ) : (
                     <div className="grid size-44 place-items-center text-xs text-muted-foreground">
-                      QR 코드 생성 중
+                      {t("setup.qrLoading")}
                     </div>
                   )}
                   <span className="text-center text-xs text-muted-foreground">
-                    인증 앱에서 QR 코드를 스캔하세요.
+                    {t("setup.qrHint")}
                   </span>
                 </div>
                 <div className="grid min-w-0 content-start gap-3">
                   <div>
-                    <div className="text-xs font-semibold">인증 앱 등록 키</div>
+                    <div className="text-xs font-semibold">{t("setup.secret")}</div>
                     <div className="mt-1 break-all border bg-secondary px-2 py-1 font-mono text-xs">
                       {setup.secret}
                     </div>
                   </div>
-                  <AccountFieldLabel label="인증 앱 6자리 코드">
+                  <AccountFieldLabel label={t("setup.code")}>
                     <Input
                       inputMode="numeric"
                       autoComplete="one-time-code"
@@ -384,7 +403,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
                     disabled={!setupCode || Boolean(busyAction)}
                     onClick={requestConfirmSetup}
                   >
-                    OTP 등록 완료
+                    {t("setup.confirm")}
                   </Button>
                 </div>
               </div>
@@ -397,20 +416,20 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
         <div className="grid gap-3 border-t p-3">
           <div className="grid gap-2 text-xs sm:grid-cols-3">
             <div>
-              <div className="text-muted-foreground">등록일시</div>
+              <div className="text-muted-foreground">{t("management.verifiedAt")}</div>
               <div className="mt-1 tabular-nums">{formatDateTime(status.verifiedAt)}</div>
             </div>
             <div>
-              <div className="text-muted-foreground">잠금 만료</div>
+              <div className="text-muted-foreground">{t("management.lockedUntil")}</div>
               <div className="mt-1 tabular-nums">{formatDateTime(status.lockedUntil)}</div>
             </div>
             <div>
-              <div className="text-muted-foreground">남은 복구코드</div>
-              <div className="mt-1 tabular-nums">{status.unusedRecoveryCodeCount}개</div>
+              <div className="text-muted-foreground">{t("management.recoveryRemaining")}</div>
+              <div className="mt-1 tabular-nums">{t("management.recoveryCount", { count: status.unusedRecoveryCodeCount })}</div>
             </div>
           </div>
           <div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
-            <AccountFieldLabel label="현재 비밀번호">
+            <AccountFieldLabel label={t("management.password")}>
               <Input
                 type="password"
                 autoComplete="current-password"
@@ -419,7 +438,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
                 onChange={(event) => setManagementPassword(event.target.value)}
               />
             </AccountFieldLabel>
-            <AccountFieldLabel label="현재 OTP 6자리 코드">
+            <AccountFieldLabel label={t("management.code")}>
               <Input
                 inputMode="numeric"
                 autoComplete="one-time-code"
@@ -437,7 +456,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
               onClick={() => requestManageOtp("recoveryCodes")}
             >
               <KeyRound className="size-4" />
-              복구코드 재발급
+              {t("management.reissue")}
             </Button>
             <Button
               type="button"
@@ -447,7 +466,7 @@ export function AccountTotpPanel({ onStatusChange }: AccountTotpPanelProps) {
               onClick={() => requestManageOtp("disable")}
             >
               <ShieldOff className="size-4" />
-              OTP 해제
+              {t("management.disable")}
             </Button>
           </div>
         </div>

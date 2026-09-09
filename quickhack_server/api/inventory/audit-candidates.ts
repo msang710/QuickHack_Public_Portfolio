@@ -40,14 +40,14 @@ export async function GET(request: NextRequest) {
         return apiFailureResponse({
           status: 401,
           code: "AUTHENTICATION_REQUIRED",
-          message: "로그인이 필요합니다.",
+
         });
       }
       if (!canAccessRole(user.role, "STAFF")) {
         return apiFailureResponse({
           status: 403,
           code: "PERMISSION_DENIED",
-          message: "재고 실사 대상 조회 권한이 없습니다.",
+
         });
       }
       setOperationTraceUserId(user.userId);

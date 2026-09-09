@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Activity,
   AlertTriangle,
@@ -48,6 +50,7 @@ import type {
   ResponsePerformanceTraceDetail,
   ResponsePerformanceTraceSummary,
 } from "@/quickhack_shared/observability/response-performance";
+import { RESPONSE_PERFORMANCE_OPERATION_NAMES } from "@/quickhack_shared/observability/response-performance";
 import { cn } from "@/quickhack_shared/core/utils";
 
 type OperationColumnKey =
@@ -74,36 +77,33 @@ type TraceColumnKey =
   | "outsideServer"
   | "targetCount";
 
-const RANGE_LABELS: Record<ResponsePerformanceRange, string> = {
-  "1h": "최근 1시간",
-  "6h": "최근 6시간",
-  "24h": "최근 24시간",
-  "7d": "최근 7일",
-};
-
-const STATUS_LABELS: Record<ResponsePerformanceStatusFilter, string> = {
-  ALL: "전체 상태",
-  SUCCESS: "성공",
-  FAILED: "실패",
-};
-
-function formatDuration(value: number | null | undefined) {
-  if (value === null || value === undefined) return "-";
-  if (value < 1_000) return `${value.toLocaleString("ko-KR")}ms`;
-  if (value < 60_000) return `${(value / 1_000).toFixed(1)}초`;
-
-  const minutes = Math.floor(value / 60_000);
-  const seconds = Math.round((value % 60_000) / 1_000);
-  return `${minutes}분 ${seconds}초`;
+function useResponsePerformancePresentation() {
+  const locale = useLocale();
+  const t = useTranslations("developer.responsePerformance");
+  const intlLocale = locale;
+  const rangeLabels: Record<ResponsePerformanceRange, string> = {
+    "1h": t("range.h1"), "6h": t("range.h6"), "24h": t("range.h24"), "7d": t("range.d7"),
+  };
+  const statusLabels: Record<ResponsePerformanceStatusFilter, string> = {
+    ALL: t("status.all"), SUCCESS: t("status.success"), FAILED: t("status.failed"),
+  };
+  const formatDuration = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return "-";
+    if (value < 1_000) return t("duration.ms", { value });
+    if (value < 60_000) return t("duration.seconds", { value: Number((value / 1_000).toFixed(1)) });
+    return t("duration.minutesSeconds", { minutes: Math.floor(value / 60_000), seconds: Math.round((value % 60_000) / 1_000) });
+  };
+  const knownOperations = new Set<string>(RESPONSE_PERFORMANCE_OPERATION_NAMES);
+  const operationLabel = (operationName: string) => knownOperations.has(operationName)
+    ? t(`operation.${operationName.replaceAll(".", "_").replaceAll("-", "_")}` as never)
+    : operationName;
+  return { formatDuration, formatNumber: (value: number) => value.toLocaleString(intlLocale), operationLabel, rangeLabels, statusLabel: (status: string) => status === "SUCCESS" ? t("status.success") : t("status.failed"), statusLabels, t };
 }
 
 function statusVariant(status: string) {
   return status === "SUCCESS" ? ("success" as const) : ("danger" as const);
 }
 
-function statusLabel(status: string) {
-  return status === "SUCCESS" ? "성공" : "실패";
-}
 
 function SummaryMetric({
   icon: Icon,
@@ -187,9 +187,9 @@ function durationStatsForSelection(
   };
 }
 
-function traceSearchText(trace: ResponsePerformanceTraceSummary) {
+function traceSearchText(trace: ResponsePerformanceTraceSummary, operationLabel: (name: string) => string) {
   return [
-    trace.operationLabel,
+    operationLabel(trace.operationName),
     trace.operationName,
     trace.route,
     trace.method,
@@ -206,8 +206,9 @@ function traceSearchText(trace: ResponsePerformanceTraceSummary) {
 }
 
 function SpanList({ detail }: { detail: ResponsePerformanceTraceDetail }) {
+  const { formatDuration, t } = useResponsePerformancePresentation();
   if (detail.spans.length === 0) {
-    return <div className="text-sm text-muted-foreground">기록된 세부 구간이 없습니다.</div>;
+    return <div className="text-sm text-muted-foreground">{t("span.empty")}</div>;
   }
 
   return (
@@ -224,7 +225,7 @@ function SpanList({ detail }: { detail: ResponsePerformanceTraceDetail }) {
                 {span.name}
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
-                {formatDuration(span.totalMs)} · {span.count}회
+                {formatDuration(span.totalMs)} · {t("span.count", { count: span.count })}
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
@@ -237,14 +238,14 @@ function SpanList({ detail }: { detail: ResponsePerformanceTraceDetail }) {
         );
       })}
       <p className="text-[11px] leading-4 text-muted-foreground">
-        상위 구간과 내부 구간이 함께 기록될 수 있어 span 시간의 합은 전체 시간과
-        일치하지 않을 수 있습니다.
+        {t("span.note")}
       </p>
     </div>
   );
 }
 
 export function ResponsePerformanceView() {
+  const { formatDuration, formatNumber: formatLocalizedNumber, operationLabel, rangeLabels, statusLabel, statusLabels, t } = useResponsePerformancePresentation();
   const [range, setRange] = React.useState<ResponsePerformanceRange>("24h");
   const [status, setStatus] =
     React.useState<ResponsePerformanceStatusFilter>("ALL");
@@ -277,11 +278,7 @@ export function ResponsePerformanceView() {
         | null;
 
       if (!response.ok || !payload?.ok || payload.mode !== "REPORT") {
-        throw new Error(
-          payload && "message" in payload
-            ? payload.message
-            : "응답 성능 기록을 불러오지 못했습니다."
-        );
+        throw new Error(legacyApiMessage(payload, t("error.report")));
       }
 
       setReport(payload);
@@ -301,7 +298,7 @@ export function ResponsePerformanceView() {
     } finally {
       setIsLoading(false);
     }
-  }, [range, status]);
+  }, [range, status, t]);
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => void loadReport(), 0);
@@ -312,13 +309,13 @@ export function ResponsePerformanceView() {
     const byName = new Map<string, string>();
 
     for (const item of report?.operations ?? []) {
-      byName.set(item.operationName, item.operationLabel);
+      byName.set(item.operationName, operationLabel(item.operationName));
     }
 
     return Array.from(byName.entries())
       .map(([value, label]) => ({ value, label }))
-      .sort((left, right) => left.label.localeCompare(right.label, "ko"));
-  }, [report]);
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [operationLabel, report]);
 
   const filteredOperations = React.useMemo(
     () =>
@@ -333,9 +330,9 @@ export function ResponsePerformanceView() {
     return (report?.traces ?? []).filter(
       (trace) =>
         (!operation || trace.operationName === operation) &&
-        (!normalizedQuery || traceSearchText(trace).includes(normalizedQuery))
+        (!normalizedQuery || traceSearchText(trace, operationLabel).includes(normalizedQuery))
     );
-  }, [operation, query, report]);
+  }, [operation, operationLabel, query, report]);
 
   const activeSelectedLogId = React.useMemo(() => {
     if (
@@ -362,11 +359,7 @@ export function ResponsePerformanceView() {
           | null;
 
         if (!response.ok || !payload?.ok || payload.mode !== "DETAIL") {
-          throw new Error(
-            payload && "message" in payload
-              ? payload.message
-              : "성능 trace 상세를 불러오지 못했습니다."
-          );
+          throw new Error(legacyApiMessage(payload, t("error.detail")));
         }
 
         if (!canceled) {
@@ -385,7 +378,7 @@ export function ResponsePerformanceView() {
     return () => {
       canceled = true;
     };
-  }, [activeSelectedLogId]);
+  }, [activeSelectedLogId, t]);
 
   const selectedStats = report
     ? durationStatsForSelection(report, operation)
@@ -402,12 +395,12 @@ export function ResponsePerformanceView() {
     () => [
       {
         key: "operation",
-        label: "조작",
+        label: t("columns.operation"),
         width: "1.8fr",
-        text: (row) => `${row.operationLabel} ${row.operationName} ${row.route}`,
+        text: (row) => `${operationLabel(row.operationName)} ${row.operationName} ${row.route}`,
         render: (row) => (
           <div className="min-w-0">
-            <div className="truncate font-semibold">{row.operationLabel}</div>
+            <div className="truncate font-semibold">{operationLabel(row.operationName)}</div>
             <div className="truncate text-xs text-muted-foreground">
               {row.method} {row.route}
             </div>
@@ -416,28 +409,28 @@ export function ResponsePerformanceView() {
       },
       {
         key: "samples",
-        label: "표본",
+        label: t("columns.samples"),
         width: "0.8fr",
         text: (row) => row.sampleCount,
         sortValue: (row) => row.sampleCount,
         render: (row) => (
           <div className="text-xs tabular-nums">
-            <div>{row.sampleCount.toLocaleString("ko-KR")}건</div>
+            <div>{t("columns.count", { count: row.sampleCount })}</div>
             <div className="text-muted-foreground">
-              성공 {row.successSampleCount} / 실패 {row.failedSampleCount}
+              {t("columns.sampleResult", { success: row.successSampleCount, failed: row.failedSampleCount })}
             </div>
           </div>
         ),
       },
       ...([
-        ["average", "평균", (row: ResponsePerformanceOperationSummary) => row.duration.averageMs],
+        ["average", t("columns.average"), (row: ResponsePerformanceOperationSummary) => row.duration.averageMs],
         ["p50", "P50", (row: ResponsePerformanceOperationSummary) => row.duration.p50Ms],
         ["p95", "P95", (row: ResponsePerformanceOperationSummary) => row.duration.p95Ms],
-        ["max", "최장", (row: ResponsePerformanceOperationSummary) => row.duration.maxMs],
-        ["query", "누적 DB 평균", (row: ResponsePerformanceOperationSummary) => row.averageQueryMs],
+        ["max", t("columns.max"), (row: ResponsePerformanceOperationSummary) => row.duration.maxMs],
+        ["query", t("columns.queryAverage"), (row: ResponsePerformanceOperationSummary) => row.averageQueryMs],
         [
           "transactionWait",
-          "TX 진입 평균",
+          t("columns.txAverage"),
           (row: ResponsePerformanceOperationSummary) => row.averageTransactionWaitMs,
         ],
       ] as const).map(([key, label, value]) => ({
@@ -454,19 +447,19 @@ export function ResponsePerformanceView() {
       })),
       {
         key: "clientSamples",
-        label: "Client 표본",
+        label: t("columns.clientSamples"),
         width: "0.8fr",
         text: (row) => row.clientSampleCount,
         sortValue: (row) => row.clientSampleCount,
         render: (row) => (
           <span className="text-sm tabular-nums text-muted-foreground">
-            {row.clientSampleCount}건 / {row.clientCoveragePercent}%
+            {t("columns.clientCoverage", { count: row.clientSampleCount, coverage: row.clientCoveragePercent })}
           </span>
         ),
       },
       {
         key: "clientAverage",
-        label: "Client 평균",
+        label: t("columns.clientAverage"),
         width: "0.8fr",
         text: (row) => row.clientDuration.averageMs ?? "",
         sortValue: (row) => row.clientDuration.averageMs ?? "",
@@ -478,7 +471,7 @@ export function ResponsePerformanceView() {
       },
       {
         key: "outsideServer",
-        label: "서버 밖 평균",
+        label: t("columns.outsideAverage"),
         width: "0.85fr",
         text: (row) => row.averageOutsideServerMs ?? "",
         sortValue: (row) => row.averageOutsideServerMs ?? "",
@@ -489,7 +482,7 @@ export function ResponsePerformanceView() {
         ),
       },
     ],
-    []
+    [formatDuration, operationLabel, t]
   );
 
   const traceColumns = React.useMemo<
@@ -498,7 +491,7 @@ export function ResponsePerformanceView() {
     () => [
       {
         key: "startedAt",
-        label: "시작 일시",
+        label: t("columns.startedAt"),
         width: "1.15fr",
         text: (row) => row.startedAt,
         render: (row) => (
@@ -509,12 +502,12 @@ export function ResponsePerformanceView() {
       },
       {
         key: "operation",
-        label: "조작",
+        label: t("columns.operation"),
         width: "1.45fr",
-        text: (row) => `${row.operationLabel} ${row.operationName}`,
+        text: (row) => `${operationLabel(row.operationName)} ${row.operationName}`,
         render: (row) => (
           <div className="min-w-0">
-            <div className="truncate font-medium">{row.operationLabel}</div>
+            <div className="truncate font-medium">{operationLabel(row.operationName)}</div>
             <div className="truncate text-xs text-muted-foreground">
               {row.method} {row.route}
             </div>
@@ -523,7 +516,7 @@ export function ResponsePerformanceView() {
       },
       {
         key: "status",
-        label: "상태",
+        label: t("columns.status"),
         width: "0.65fr",
         text: (row) => row.status,
         render: (row) => (
@@ -532,7 +525,7 @@ export function ResponsePerformanceView() {
       },
       {
         key: "duration",
-        label: "전체",
+        label: t("columns.total"),
         width: "0.75fr",
         text: (row) => row.durationMs,
         sortValue: (row) => row.durationMs,
@@ -544,7 +537,7 @@ export function ResponsePerformanceView() {
       },
       {
         key: "query",
-        label: "누적 DB",
+        label: t("columns.query"),
         width: "0.7fr",
         text: (row) => row.query.totalMs,
         sortValue: (row) => row.query.totalMs,
@@ -556,7 +549,7 @@ export function ResponsePerformanceView() {
       },
       {
         key: "transactionWait",
-        label: "TX 진입",
+        label: t("columns.tx"),
         width: "0.7fr",
         text: (row) => row.transaction.waitMs,
         sortValue: (row) => row.transaction.waitMs,
@@ -568,7 +561,7 @@ export function ResponsePerformanceView() {
       },
       {
         key: "clientTotal",
-        label: "Client 전체",
+        label: t("columns.clientTotal"),
         width: "0.75fr",
         text: (row) => row.client?.responseCompleteMs ?? "",
         sortValue: (row) => row.client?.responseCompleteMs ?? "",
@@ -580,7 +573,7 @@ export function ResponsePerformanceView() {
       },
       {
         key: "outsideServer",
-        label: "서버 밖",
+        label: t("columns.outside"),
         width: "0.7fr",
         text: (row) => row.client?.outsideServerMs ?? "",
         sortValue: (row) => row.client?.outsideServerMs ?? "",
@@ -592,18 +585,18 @@ export function ResponsePerformanceView() {
       },
       {
         key: "targetCount",
-        label: "대상",
+        label: t("columns.target"),
         width: "0.55fr",
         text: (row) => row.targetCount ?? "",
         sortValue: (row) => row.targetCount ?? "",
         render: (row) => (
           <span className="text-sm tabular-nums text-muted-foreground">
-            {row.targetCount === null ? "-" : `${row.targetCount}건`}
+            {row.targetCount === null ? "-" : t("columns.count", { count: row.targetCount })}
           </span>
         ),
       },
     ],
-    []
+    [formatDuration, operationLabel, statusLabel, t]
   );
 
   return (
@@ -611,39 +604,39 @@ export function ResponsePerformanceView() {
       <div className="grid shrink-0 grid-cols-2 gap-2 xl:grid-cols-4 2xl:grid-cols-7">
         <SummaryMetric
           icon={Activity}
-          label="측정 표본"
-          value={(selectedStats?.sampleCount ?? 0).toLocaleString("ko-KR")}
+          label={t("summary.measured")}
+          value={formatLocalizedNumber(selectedStats?.sampleCount ?? 0)}
         />
         <SummaryMetric
           icon={CheckCircle2}
-          label="성공 표본"
-          value={(selectedStats?.successSampleCount ?? 0).toLocaleString("ko-KR")}
+          label={t("summary.success")}
+          value={formatLocalizedNumber(selectedStats?.successSampleCount ?? 0)}
         />
         <SummaryMetric
           icon={XCircle}
-          label="실패 표본"
-          value={(selectedStats?.failedSampleCount ?? 0).toLocaleString("ko-KR")}
+          label={t("summary.failed")}
+          value={formatLocalizedNumber(selectedStats?.failedSampleCount ?? 0)}
           tone={selectedStats?.failedSampleCount ? "danger" : "default"}
         />
         <SummaryMetric
           icon={TimerReset}
-          label="1초 이상"
-          value={(selectedStats?.slowSampleCount ?? 0).toLocaleString("ko-KR")}
+          label={t("summary.slow")}
+          value={formatLocalizedNumber(selectedStats?.slowSampleCount ?? 0)}
           tone={selectedStats?.slowSampleCount ? "warning" : "default"}
         />
         <SummaryMetric
           icon={Clock3}
-          label="표본 P50"
+          label={t("summary.p50")}
           value={formatDuration(selectedStats?.duration.p50Ms)}
         />
         <SummaryMetric
           icon={Gauge}
-          label="표본 P95"
+          label={t("summary.p95")}
           value={formatDuration(selectedStats?.duration.p95Ms)}
         />
         <SummaryMetric
           icon={AlertTriangle}
-          label="최장"
+          label={t("summary.max")}
           value={formatDuration(selectedStats?.duration.maxMs)}
           tone={(selectedStats?.duration.maxMs ?? 0) >= 1_000 ? "warning" : "default"}
         />
@@ -651,14 +644,12 @@ export function ResponsePerformanceView() {
 
       {report?.sample.productionSamplingDetected ? (
         <FeedbackBanner tone="warning" size="xs" className="shrink-0">
-          운영 환경에서는 빠른 성공 요청이 표본 수집됩니다. 표시된 건수와 분포는 전체
-          트래픽 통계가 아닙니다.
+          {t("notice.production")}
         </FeedbackBanner>
       ) : null}
       {report?.sample.truncated ? (
         <FeedbackBanner tone="warning" size="xs" className="shrink-0">
-          조건에 맞는 {report.sample.matchedCount.toLocaleString("ko-KR")}건 중 최근{" "}
-          {report.sample.analyzedCount.toLocaleString("ko-KR")}개 표본을 기준으로 집계했습니다.
+          {t("notice.truncated", { matched: report.sample.matchedCount, analyzed: report.sample.analyzedCount })}
         </FeedbackBanner>
       ) : null}
       {report &&
@@ -666,19 +657,17 @@ export function ResponsePerformanceView() {
         report.ingestion.droppedCount > 0 ||
         report.ingestion.lastFailure) ? (
         <FeedbackBanner tone="danger" size="xs" className="shrink-0">
-          성능 로그 적재 상태: 대기 {report.ingestion.pendingCount}건 / 유실{" "}
-          {report.ingestion.droppedCount}건
-          {report.ingestion.lastFailure ? ` / ${report.ingestion.lastFailure}` : ""}
+          {t("notice.ingestion", { pending: report.ingestion.pendingCount, dropped: report.ingestion.droppedCount, failure: report.ingestion.lastFailure ? ` / ${report.ingestion.lastFailure}` : "" })}
         </FeedbackBanner>
       ) : null}
 
       <div className="grid shrink-0 grid-cols-[150px_150px_220px_minmax(260px,1fr)_auto] gap-2 rounded-md border bg-popover p-3">
         <Select value={range} onValueChange={(value) => setRange(value as ResponsePerformanceRange)}>
-          <SelectTrigger aria-label="성능 조회 기간">
+          <SelectTrigger aria-label={t("filter.range")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(RANGE_LABELS).map(([value, label]) => (
+            {Object.entries(rangeLabels).map(([value, label]) => (
               <SelectItem key={value} value={value}>
                 {label}
               </SelectItem>
@@ -689,11 +678,11 @@ export function ResponsePerformanceView() {
           value={status}
           onValueChange={(value) => setStatus(value as ResponsePerformanceStatusFilter)}
         >
-          <SelectTrigger aria-label="성능 요청 상태">
+          <SelectTrigger aria-label={t("filter.status")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+            {Object.entries(statusLabels).map(([value, label]) => (
               <SelectItem key={value} value={value}>
                 {label}
               </SelectItem>
@@ -704,11 +693,11 @@ export function ResponsePerformanceView() {
           value={operation || "ALL"}
           onValueChange={(value) => setOperation(value === "ALL" ? "" : value)}
         >
-          <SelectTrigger aria-label="성능 조작 종류">
-            <SelectValue placeholder="전체 조작" />
+          <SelectTrigger aria-label={t("filter.operation")}>
+            <SelectValue placeholder={t("filter.allOperations")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">전체 조작</SelectItem>
+            <SelectItem value="ALL">{t("filter.allOperations")}</SelectItem>
             {operationOptions.map((item) => (
               <SelectItem key={item.value} value={item.value}>
                 {item.label}
@@ -717,14 +706,14 @@ export function ResponsePerformanceView() {
           </SelectContent>
         </Select>
         <SearchInput
-          aria-label="성능 trace 검색"
-          placeholder="조작, API 경로, Trace ID, 오류 검색"
+          aria-label={t("filter.search")}
+          placeholder={t("filter.searchPlaceholder")}
           value={query}
           onValueChange={setQuery}
         />
         <Button variant="outline" onClick={loadReport} disabled={isLoading}>
           <RefreshCcw className={cn("size-4", isLoading && "animate-spin")} />
-          새로고침
+          {t("filter.refresh")}
         </Button>
       </div>
 
@@ -738,18 +727,18 @@ export function ResponsePerformanceView() {
         <WorkspacePanel>
           <div className="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
             <div>
-              <h2 className="text-sm font-semibold">조작별 서버 처리 성능</h2>
+              <h2 className="text-sm font-semibold">{t("operationPanel.title")}</h2>
               <p className="text-xs text-muted-foreground">
-                성공 표본의 지연 시간과 trace 안에서 측정된 누적 DB 구간을 비교합니다.
+                {t("operationPanel.subtitle")}
               </p>
             </div>
-            <Badge variant="neutral">{filteredOperations.length}개 조작</Badge>
+            <Badge variant="neutral">{t("operationPanel.count", { count: filteredOperations.length })}</Badge>
           </div>
           <VirtualizedDataGrid
             rows={filteredOperations}
             columns={operationColumns}
             rowKey={(row) => row.key}
-            emptyMessage={isLoading ? "성능 표본을 불러오는 중입니다." : "측정된 조작이 없습니다."}
+            emptyMessage={isLoading ? t("operationPanel.loading") : t("operationPanel.empty")}
             selectedRowKey={
               operation
                 ? filteredOperations.find((item) => item.operationName === operation)?.key
@@ -769,18 +758,18 @@ export function ResponsePerformanceView() {
           <WorkspacePanel>
             <div className="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
               <div>
-                <h2 className="text-sm font-semibold">요청 trace</h2>
+                <h2 className="text-sm font-semibold">{t("tracePanel.title")}</h2>
                 <p className="text-xs text-muted-foreground">
-                  서버가 기록한 최근 요청 표본입니다.
+                  {t("tracePanel.subtitle")}
                 </p>
               </div>
-              <Badge variant="neutral">{filteredTraces.length}건</Badge>
+              <Badge variant="neutral">{t("tracePanel.count", { count: filteredTraces.length })}</Badge>
             </div>
             <VirtualizedDataGrid
               rows={filteredTraces}
               columns={traceColumns}
               rowKey={(row) => row.logId}
-              emptyMessage={isLoading ? "성능 trace를 불러오는 중입니다." : "조건에 맞는 trace가 없습니다."}
+              emptyMessage={isLoading ? t("tracePanel.loading") : t("tracePanel.empty")}
               selectedRowKey={activeSelectedLogId}
               onRowClick={(row) => setSelectedLogId(row.logId)}
               minWidth="1280px"
@@ -793,24 +782,24 @@ export function ResponsePerformanceView() {
 
           <WorkspacePanel as="aside">
             <div className="shrink-0 border-b p-4">
-              <h2 className="text-sm font-semibold">Trace 상세</h2>
+              <h2 className="text-sm font-semibold">{t("detail.title")}</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                전체 시간, DB, 트랜잭션과 세부 측정 구간을 확인합니다.
+                {t("detail.subtitle")}
               </p>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
               {isDetailLoading ? (
                 <div className="grid h-full place-items-center text-sm text-muted-foreground">
-                  상세 정보를 불러오는 중입니다.
+                  {t("detail.loading")}
                 </div>
               ) : !detail || detail.logId !== activeSelectedLogId ? (
                 <div className="grid h-full place-items-center rounded-md border border-dashed text-sm text-muted-foreground">
-                  왼쪽 표에서 trace를 선택하세요.
+                  {t("detail.select")}
                 </div>
               ) : (
                 <div className="grid gap-4">
                   <div className="grid gap-2 rounded-md border p-3">
-                    <DetailRow label="조작" value={detail.operationLabel} />
+                    <DetailRow label={t("detail.operation")} value={operationLabel(detail.operationName)} />
                     <DetailRow label="API" value={`${detail.method} ${detail.route}`} />
                     <DetailRow
                       label="Trace ID"
@@ -822,7 +811,7 @@ export function ResponsePerformanceView() {
                               type="button"
                               size="icon"
                               variant="ghost"
-                              aria-label="Trace ID 복사"
+                              aria-label={t("detail.copyTrace")}
                               onClick={() => void navigator.clipboard.writeText(detail.traceId)}
                             >
                               <Copy className="size-3.5" />
@@ -833,18 +822,18 @@ export function ResponsePerformanceView() {
                         )
                       }
                     />
-                    <DetailRow label="시작" value={formatDate(detail.startedAt)} />
-                    <DetailRow label="전체 시간" value={formatDuration(detail.durationMs)} />
+                    <DetailRow label={t("detail.started")} value={formatDate(detail.startedAt)} />
+                    <DetailRow label={t("detail.total")} value={formatDuration(detail.durationMs)} />
                     <DetailRow
-                      label="실행자"
+                      label={t("detail.actor")}
                       value={
                         detail.displayName
                           ? `${detail.displayName}${detail.username ? ` (${detail.username})` : ""}`
-                          : "시스템"
+                          : t("system")
                       }
                     />
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">상태</span>
+                      <span className="text-muted-foreground">{t("detail.status")}</span>
                       <Badge variant={statusVariant(detail.status)}>
                         {statusLabel(detail.status)}
                       </Badge>
@@ -853,58 +842,56 @@ export function ResponsePerformanceView() {
 
                   <div className="grid gap-2 rounded-md border p-3">
                     <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                      <Gauge className="size-3.5" /> Client / Gateway
+                      <Gauge className="size-3.5" /> {t("detail.clientGateway")}
                     </div>
                     <DetailRow
-                      label="응답 헤더 수신"
+                      label={t("detail.responseHeader")}
                       value={formatDuration(detail.client?.headerReceivedMs)}
                     />
                     <DetailRow
-                      label="응답 소비 완료"
+                      label={t("detail.responseComplete")}
                       value={formatDuration(detail.client?.responseCompleteMs)}
                     />
                     <DetailRow
-                      label="본문 처리"
+                      label={t("detail.body")}
                       value={formatDuration(detail.client?.bodyProcessingMs)}
                     />
                     <DetailRow
-                      label="Client gateway"
+                      label={t("detail.clientGatewayTime")}
                       value={formatDuration(detail.client?.gatewayMs)}
                     />
                     <DetailRow
-                      label="서버 밖 구간"
+                      label={t("detail.outside")}
                       value={formatDuration(detail.client?.outsideServerMs)}
                     />
                     <p className="text-[11px] leading-4 text-muted-foreground">
-                      서버 밖 구간은 Client 응답 소비 완료에서 중앙 서버 trace 시간을 뺀
-                      값입니다. 클라이언트 표본이 없으면 0이 아니라 -로 표시합니다.
+                      {t("detail.outsideNote")}
                     </p>
                   </div>
 
                   <div className="grid gap-2 rounded-md border p-3">
                     <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                      <Database className="size-3.5" /> DB / 트랜잭션
+                      <Database className="size-3.5" /> {t("detail.dbTx")}
                     </div>
-                    <DetailRow label="쿼리" value={`${detail.query.count}회`} />
-                    <DetailRow label="누적 DB query" value={formatDuration(detail.query.totalMs)} />
-                    <DetailRow label="최장 쿼리" value={formatDuration(detail.query.maxMs)} />
-                    <DetailRow label="트랜잭션" value={`${detail.transaction.count}회`} />
-                    <DetailRow label="TX 콜백 진입" value={formatDuration(detail.transaction.waitMs)} />
-                    <DetailRow label="TX 실행" value={formatDuration(detail.transaction.runMs)} />
+                    <DetailRow label={t("detail.query")} value={t("span.count", { count: detail.query.count })} />
+                    <DetailRow label={t("detail.totalQuery")} value={formatDuration(detail.query.totalMs)} />
+                    <DetailRow label={t("detail.longestQuery")} value={formatDuration(detail.query.maxMs)} />
+                    <DetailRow label={t("detail.transaction")} value={t("span.count", { count: detail.transaction.count })} />
+                    <DetailRow label={t("detail.txCallback")} value={formatDuration(detail.transaction.waitMs)} />
+                    <DetailRow label={t("detail.txExecution")} value={formatDuration(detail.transaction.runMs)} />
                     <p className="text-[11px] leading-4 text-muted-foreground">
-                      병렬 query는 각각의 시간을 합산하므로 누적 DB 시간이 전체 응답보다
-                      클 수 있습니다. TX 콜백 진입은 DB 잠금 대기 시간과 동일하지 않습니다.
+                      {t("detail.dbNote")}
                     </p>
                   </div>
 
                   <div className="grid gap-2 rounded-md border p-3">
-                    <div className="text-xs font-semibold text-muted-foreground">세부 구간</div>
+                    <div className="text-xs font-semibold text-muted-foreground">{t("detail.spans")}</div>
                     <SpanList detail={detail} />
                   </div>
 
                   {Object.keys(detail.context).length > 0 ? (
                     <div className="grid gap-2 rounded-md border p-3">
-                      <div className="text-xs font-semibold text-muted-foreground">실행 환경</div>
+                      <div className="text-xs font-semibold text-muted-foreground">{t("detail.environment")}</div>
                       {Object.entries(detail.context).map(([name, value]) => (
                         <DetailRow key={name} label={name} value={value || "-"} />
                       ))}
@@ -913,8 +900,8 @@ export function ResponsePerformanceView() {
 
                   {detail.errorCode || detail.errorMessage ? (
                     <div className="grid gap-2 rounded-md border border-red-200 bg-red-50 p-3">
-                      <DetailRow label="오류 코드" value={detail.errorCode || "-"} />
-                      <DetailRow label="오류" value={detail.errorMessage || "-"} />
+                      <DetailRow label={t("detail.errorCode")} value={detail.errorCode || "-"} />
+                      <DetailRow label={t("detail.error")} value={detail.errorMessage || "-"} />
                     </div>
                   ) : null}
                 </div>

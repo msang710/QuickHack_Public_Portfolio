@@ -32,7 +32,7 @@ export function composeClientPlatform(
       role: "client",
       platform,
       recovery: "Run QuickHack on a supported Windows or Linux host.",
-      message: `QuickHack client does not support platform: ${platform}.`,
+      message: "UNSUPPORTED_PLATFORM",
     });
   }
 

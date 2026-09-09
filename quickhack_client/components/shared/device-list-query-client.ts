@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import type {
   DeviceListPage,
   DeviceListRow,
@@ -41,6 +43,7 @@ async function requestDeviceListPage(
   endpoint: string,
   queryString: string,
   cursor: string | null,
+  fallbackMessage: string,
   signal?: AbortSignal
 ) {
   const response = await fetch(requestUrl(endpoint, queryString, cursor), {
@@ -52,12 +55,16 @@ async function requestDeviceListPage(
     | null;
 
   if (!response.ok || !payload?.ok || !payload.data) {
-    throw new Error(payload?.message || "기기 목록을 불러오지 못했습니다.");
+    throw new Error(legacyApiMessage(payload, fallbackMessage));
   }
   return payload.data;
 }
 
-export async function requestDeviceDetail(pgNo: string, signal?: AbortSignal) {
+export async function requestDeviceDetail(
+  pgNo: string,
+  fallbackMessage: string,
+  signal?: AbortSignal
+) {
   const response = await fetch(
     `/api/inventory/devices/${encodeURIComponent(pgNo)}`,
     { cache: "no-store", signal }
@@ -67,7 +74,7 @@ export async function requestDeviceDetail(pgNo: string, signal?: AbortSignal) {
     | null;
 
   if (!response.ok || !payload?.ok || !payload.data) {
-    throw new Error(payload?.message || "기기 상세 정보를 불러오지 못했습니다.");
+    throw new Error(legacyApiMessage(payload, fallbackMessage));
   }
   return payload.data;
 }
@@ -75,6 +82,7 @@ export async function requestDeviceDetail(pgNo: string, signal?: AbortSignal) {
 export async function requestDeviceHistoryPage(
   pgNo: string,
   section: DeviceHistorySection,
+  fallbackMessage: string,
   cursor: string | null = null,
   signal?: AbortSignal
 ) {
@@ -89,7 +97,7 @@ export async function requestDeviceHistoryPage(
     | null;
 
   if (!response.ok || !payload?.ok || !payload.data) {
-    throw new Error(payload?.message || "기기 이력을 불러오지 못했습니다.");
+    throw new Error(legacyApiMessage(payload, fallbackMessage));
   }
   return payload.data;
 }
@@ -103,6 +111,7 @@ export function useDeviceListQuery({
   queryString: string;
   autoLoadAll?: boolean;
 }) {
+  const t = useTranslations("common.deviceQuery");
   const [items, setItems] = React.useState<DeviceListRow[]>([]);
   const [facets, setFacets] = React.useState<DeviceListPage["facets"]>();
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
@@ -132,6 +141,7 @@ export function useDeviceListQuery({
           endpoint,
           queryString,
           cursor,
+          t("listFailed"),
           controller.signal
         );
         loaded.push(...lastPage.items);
@@ -159,7 +169,7 @@ export function useDeviceListQuery({
         setIsLoading(false);
       }
     }
-  }, [autoLoadAll, endpoint, queryString]);
+  }, [autoLoadAll, endpoint, queryString, t]);
 
   React.useEffect(() => {
     let canceled = false;
@@ -183,6 +193,7 @@ export function useDeviceListQuery({
         endpoint,
         queryString,
         nextCursor,
+        t("listFailed"),
         abortControllerRef.current?.signal
       );
       if (requestSequenceRef.current === requestSequence) {
@@ -198,7 +209,7 @@ export function useDeviceListQuery({
         setIsLoadingMore(false);
       }
     }
-  }, [endpoint, isLoading, isLoadingMore, nextCursor, queryString]);
+  }, [endpoint, isLoading, isLoadingMore, nextCursor, queryString, t]);
 
   return {
     items,

@@ -28,7 +28,6 @@ function transitionError(error, code, message) {
 function publicError(error) {
   return {
     code: error?.code || "RUNTIME_SETTINGS_TRANSITION_FAILED",
-    message: error instanceof Error ? error.message : String(error),
   };
 }
 
@@ -82,7 +81,7 @@ export function createRuntimeSettingsTransitionCoordinator({
         if (!verification.stopped) {
           throw new RuntimeSettingsTransitionError(
             "PORT_INSPECTION_FAILED",
-            "QuickHack 포트가 완전히 닫히지 않아 런타임 설정을 변경할 수 없습니다."
+            "PORT_INSPECTION_FAILED"
           );
         }
 
@@ -109,7 +108,7 @@ export function createRuntimeSettingsTransitionCoordinator({
           throw transitionError(
             error,
             "QUICKHACK_RESTART_FAILED",
-            "새 런타임 설정은 저장했지만 QuickHack을 다시 시작하지 못했습니다."
+            "QUICKHACK_RESTART_FAILED"
           );
         }
         publish({ restartResult: { attempted: true, succeeded: true } });
@@ -130,7 +129,7 @@ export function createRuntimeSettingsTransitionCoordinator({
         error = transitionError(
           cause,
           "RUNTIME_SETTINGS_WRITE_FAILED",
-          "런타임 설정을 저장하지 못했습니다. 기존 설정을 유지합니다."
+          "RUNTIME_SETTINGS_WRITE_FAILED"
         );
       }
 
@@ -159,7 +158,7 @@ export function createRuntimeSettingsTransitionCoordinator({
           });
           error = new RuntimeSettingsTransitionError(
             error?.code || "RUNTIME_SETTINGS_TRANSITION_FAILED",
-            `${error instanceof Error ? error.message : String(error)} 기존 설정으로 QuickHack을 복구 시작하지도 못했습니다.`,
+            error?.code || "RUNTIME_SETTINGS_TRANSITION_FAILED",
             { details: restartError instanceof Error ? restartError.message : String(restartError) }
           );
         }
@@ -178,7 +177,7 @@ export function createRuntimeSettingsTransitionCoordinator({
     if (isActive()) {
       throw new RuntimeSettingsTransitionError(
         "RUNTIME_SETTINGS_TRANSITION_IN_PROGRESS",
-        "이미 런타임 설정 변경을 처리하고 있습니다.",
+        "RUNTIME_SETTINGS_TRANSITION_IN_PROGRESS",
         { statusCode: 409 }
       );
     }
@@ -205,7 +204,7 @@ export function createRuntimeSettingsTransitionCoordinator({
     if (!state || state.operationId !== operationId || !completion) {
       throw new RuntimeSettingsTransitionError(
         "RUNTIME_SETTINGS_TRANSITION_NOT_FOUND",
-        "런타임 설정 변경 작업을 찾을 수 없습니다.",
+        "RUNTIME_SETTINGS_TRANSITION_NOT_FOUND",
         { statusCode: 404 }
       );
     }

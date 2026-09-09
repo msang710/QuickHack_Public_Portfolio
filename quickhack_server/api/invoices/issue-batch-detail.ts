@@ -45,13 +45,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
       const user = await getAuthUserFromRequest(request);
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "Login is required." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
       if (!canAccessRole(user.role, "STAFF")) {
         return NextResponse.json(
-          { ok: false, message: "You do not have permission to view invoices." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
@@ -71,7 +71,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
           return apiFailureResponse({
             status: error.code.endsWith("NOT_FOUND") ? 404 : error.code === "INVALID_ID" ? 400 : 409,
             code: error.code,
-            message: error.message,
             cause: error,
           });
         }

@@ -15,9 +15,17 @@ export type DesktopNotificationPresentation = {
   menuId: string;
   title: string;
   body: string;
+  messageKey: DesktopNotificationMessageKey | null;
+  messageArguments: Record<string, string | number>;
   occurredAt: string;
   readAt: string | null;
   resolvedAt: string | null;
 };
+
+export type DesktopNotificationMessageKey =
+  | "inspectionComplete"
+  | "inspectionCompleteGrouped"
+  | "shipmentAddressChange"
+  | "returnRequest";
 
 export const DESKTOP_NOTIFICATION_PAGE_LIMIT = 50;

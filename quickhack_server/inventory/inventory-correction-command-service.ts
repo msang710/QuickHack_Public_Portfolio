@@ -195,7 +195,7 @@ function inputError(message: string) {
 function scalar(value: unknown): InventoryCorrectionScalar {
   if (value === null || value === undefined) return null;
   if (typeof value === "string" || typeof value === "number") return value;
-  throw inputError("보정 값은 문자열, 숫자 또는 null이어야 합니다.");
+  throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
 }
 
 function nullableText(value: unknown) {
@@ -205,24 +205,24 @@ function nullableText(value: unknown) {
 
 function requiredText(value: unknown, label: string) {
   const normalized = nullableText(value);
-  if (!normalized) throw inputError(`${label} 값이 필요합니다.`);
+  if (!normalized) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   return normalized;
 }
 
 function nullableInteger(value: unknown, label: string, minimum = 0) {
   if (value === null || value === undefined || String(value).trim() === "") return null;
   const normalized = String(value).replace(/,/g, "").trim();
-  if (!/^\d+$/.test(normalized)) throw inputError(`${label}은 정수로 입력해야 합니다.`);
+  if (!/^\d+$/.test(normalized)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   const parsed = Number.parseInt(normalized, 10);
   if (!Number.isSafeInteger(parsed) || parsed < minimum) {
-    throw inputError(`${label} 값이 올바르지 않습니다.`);
+    throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   }
   return parsed;
 }
 
 function requiredInteger(value: unknown, label: string, minimum = 0) {
   const parsed = nullableInteger(value, label, minimum);
-  if (parsed === null) throw inputError(`${label} 값이 필요합니다.`);
+  if (parsed === null) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   return parsed;
 }
 
@@ -230,7 +230,7 @@ function strictDateTime(value: unknown, label: string) {
   try {
     return strictOptionalKstDateTime(value);
   } catch {
-    throw inputError(`${label}은 실제 존재하는 YYYY-MM-DD HH:mm:ss 형식이어야 합니다.`);
+    throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   }
 }
 
@@ -238,7 +238,7 @@ function strictDate(value: unknown, label: string) {
   try {
     return strictOptionalDatabaseDate(value);
   } catch {
-    throw inputError(`${label}은 실제 존재하는 YYYY-MM-DD 형식이어야 합니다.`);
+    throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   }
 }
 
@@ -252,13 +252,13 @@ function sameValue(left: InventoryCorrectionScalar, right: InventoryCorrectionSc
 
 function parsePatches(value: unknown) {
   if (!Array.isArray(value) || value.length === 0) {
-    throw inputError("저장할 필드 변경사항이 없습니다.");
+    throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   }
-  if (value.length > 500) throw inputError("한 번에 수정할 수 있는 필드 수를 초과했습니다.");
+  if (value.length > 500) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   const seen = new Set<string>();
   return value.map((raw): InventoryCorrectionPatch => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      throw inputError("필드 변경사항 형식이 올바르지 않습니다.");
+      throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     }
     const row = raw as Record<string, unknown>;
     const recordKind = String(row.recordKind ?? "") as InventoryCorrectionRecordKind;
@@ -273,16 +273,16 @@ function parsePatches(value: unknown) {
       expectedRevision < 0 ||
       !fieldKey
     ) {
-      throw inputError("필드 변경 대상의 ID 또는 revision이 올바르지 않습니다.");
+      throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     }
     if (!ALLOWED_FIELDS[recordKind].has(fieldKey)) {
       throw publicConflict(
         "INVENTORY_CORRECTION_FIELD_NOT_ALLOWED",
-        `${recordKind}.${fieldKey} 필드는 일반 재고 보정으로 수정할 수 없습니다.`
+        "INVENTORY_CORRECTION_FIELD_NOT_ALLOWED"
       );
     }
     const key = `${recordKind}:${recordId}:${fieldKey}`;
-    if (seen.has(key)) throw inputError(`같은 필드가 중복 제출되었습니다: ${key}`);
+    if (seen.has(key)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     seen.add(key);
     return {
       recordKind,
@@ -301,7 +301,7 @@ function groupPatches(patches: readonly InventoryCorrectionPatch[]) {
     const key = `${patch.recordKind}:${patch.recordId}`;
     const current = groups.get(key) ?? [];
     if (current.length > 0 && current[0].expectedRevision !== patch.expectedRevision) {
-      throw inputError(`같은 레코드에 서로 다른 revision이 제출되었습니다: ${key}`);
+      throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     }
     current.push(patch);
     groups.set(key, current);
@@ -317,7 +317,7 @@ function assertExpectedValues(
     if (!sameValue(values[patch.fieldKey] ?? null, patch.expectedValue)) {
       throw publicConflict(
         "INVENTORY_CORRECTION_STALE_FIELD",
-        `${patch.recordKind}.${patch.fieldKey} 값이 변경되었습니다. 최신 내용을 확인한 뒤 다시 시도해 주세요.`
+        "INVENTORY_CORRECTION_STALE_FIELD"
       );
     }
   }
@@ -357,9 +357,9 @@ async function applyDevicePatches(
     where: { device_id: patches[0].recordId, pg_no: pgNo },
     include: { inventory: true },
   });
-  if (!device) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "기기 정보가 변경되거나 삭제되었습니다.");
+  if (!device) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   if (device.revision !== patches[0].expectedRevision) {
-    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "기기 정보가 변경되었습니다. 최신 내용을 다시 확인해 주세요.");
+    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   }
   const current = {
     model: device.model,
@@ -378,7 +378,7 @@ async function applyDevicePatches(
     } catch (error) {
       throw publicConflict(
         "INVENTORY_CORRECTION_COMPLETED_WORK_EXISTS",
-        error instanceof Error ? error.message : "현재 업무 상태에서는 SKU 조합을 수정할 수 없습니다."
+        "INVENTORY_CORRECTION_COMPLETED_WORK_EXISTS"
       );
     }
   }
@@ -396,7 +396,7 @@ async function applyDevicePatches(
       case "model_seq": next = nullableInteger(patch.nextValue, "고유번호", 1); data.model_seq = next; break;
       case "imei": {
         try { next = normalizeOptionalImei(patch.nextValue); }
-        catch (error) { throw inputError(error instanceof Error ? error.message : "IMEI가 올바르지 않습니다."); }
+        catch (error) { throw inputError("INVENTORY_CORRECTION_INPUT_INVALID"); }
         data.imei = next;
         break;
       }
@@ -404,17 +404,17 @@ async function applyDevicePatches(
       case "color": next = nullableText(patch.nextValue); data.color = next; break;
       case "sale_grade": {
         next = nullableText(patch.nextValue)?.toUpperCase() ?? null;
-        if (next && !SALE_GRADES.has(next)) throw inputError("판매등급 값이 올바르지 않습니다.");
+        if (next && !SALE_GRADES.has(next)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
         data.sale_grade = next;
         break;
       }
       case "warranty": {
         next = nullableText(patch.nextValue);
-        if (next && !WARRANTY_VALUES.has(next)) throw inputError("보증서 값이 올바르지 않습니다.");
+        if (next && !WARRANTY_VALUES.has(next)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
         data.warranty = next;
         break;
       }
-      default: throw inputError(`지원하지 않는 기기 필드입니다: ${patch.fieldKey}`);
+      default: throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     }
     const change = applied(patch, current[patch.fieldKey], next);
     if (change) changes.push(change);
@@ -424,7 +424,7 @@ async function applyDevicePatches(
     where: { device_id: device.device_id, pg_no: pgNo, revision: device.revision },
     data,
   });
-  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "기기 정보가 동시에 변경되었습니다.");
+  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
 
   const modelPatch = patches.find((patch) => patch.fieldKey === "model");
   const modelSeqPatch = patches.find((patch) => patch.fieldKey === "model_seq");
@@ -474,9 +474,9 @@ async function applyInboundPatches(
     where: { inbound_id: patches[0].recordId, pg_no: pgNo },
     include: { inbound_batch: true, _count: { select: { sales_records: true } } },
   });
-  if (!inbound) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "입고 정보가 변경되거나 삭제되었습니다.");
+  if (!inbound) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   if (inbound.revision !== patches[0].expectedRevision) {
-    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "입고 정보가 변경되었습니다. 최신 내용을 다시 확인해 주세요.");
+    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   }
   const current = {
     batch_no: inbound.inbound_batch?.batch_no ?? null,
@@ -493,7 +493,7 @@ async function applyInboundPatches(
   ) {
     throw publicConflict(
       "INVENTORY_CORRECTION_SALES_SNAPSHOT_EXISTS",
-      "판매 원장이 생성된 입고의 매입가·매입처·가격협의일은 일반 재고 보정으로 변경할 수 없습니다."
+      "INVENTORY_CORRECTION_SALES_SNAPSHOT_EXISTS"
     );
   }
 
@@ -534,7 +534,7 @@ async function applyInboundPatches(
         break;
       }
       case "note": next = nullableText(patch.nextValue); data.note = next; break;
-      default: throw inputError(`지원하지 않는 입고 필드입니다: ${patch.fieldKey}`);
+      default: throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     }
     normalized.set(patch.fieldKey, normalized.get(patch.fieldKey) ?? next);
     const change = applied(patch, current[patch.fieldKey], next);
@@ -548,14 +548,14 @@ async function applyInboundPatches(
     const receivedAt = normalized.has("received_at")
       ? (normalized.get("received_at") as Date | null)
       : inbound.received_at;
-    if (!receivedAt) throw inputError("차수를 연결하려면 유효한 입고일시가 필요합니다.");
+    if (!receivedAt) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     data.inbound_batch_id = await resolveInboundBatchId(tx, batchNo, receivedAt);
   }
   const updated = await tx.inbounds.updateMany({
     where: { inbound_id: inbound.inbound_id, pg_no: pgNo, revision: inbound.revision },
     data,
   });
-  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "입고 정보가 동시에 변경되었습니다.");
+  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   return { changes, revision: inbound.revision + 1 };
 }
 
@@ -568,9 +568,9 @@ async function applyInventoryPatches(
   const inventory = await tx.inventory.findFirst({
     where: { inventory_id: patches[0].recordId, pg_no: pgNo },
   });
-  if (!inventory) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "재고 정보가 변경되거나 삭제되었습니다.");
+  if (!inventory) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   if (inventory.revision !== patches[0].expectedRevision) {
-    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "재고 정보가 변경되었습니다. 최신 내용을 다시 확인해 주세요.");
+    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   }
   const current = {
     inventory_status: inventory.inventory_status,
@@ -587,7 +587,7 @@ async function applyInventoryPatches(
     switch (patch.fieldKey) {
       case "inventory_status": {
         next = requiredText(patch.nextValue, "재고상태");
-        if (!INVENTORY_STATUSES.has(next)) throw inputError("재고상태 값이 올바르지 않습니다.");
+        if (!INVENTORY_STATUSES.has(next)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
         nextStatus = next;
         break;
       }
@@ -597,7 +597,7 @@ async function applyInventoryPatches(
         next = dateTimeScalar(stockedAt);
         break;
       }
-      default: throw inputError(`지원하지 않는 재고 필드입니다: ${patch.fieldKey}`);
+      default: throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     }
     const change = applied(patch, current[patch.fieldKey], next);
     if (change) changes.push(change);
@@ -629,7 +629,7 @@ async function applyInventoryPatches(
         updated_at: context.timestamp,
       },
     });
-    if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "재고 정보가 동시에 변경되었습니다.");
+    if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   }
   return { changes, revision: inventory.revision + 1 };
 }
@@ -642,9 +642,9 @@ async function applyInspectionPatches(
   const inspection = await tx.inspections.findFirst({
     where: { inspection_id: patches[0].recordId, pg_no: pgNo },
   });
-  if (!inspection) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "검수 정보가 변경되거나 삭제되었습니다.");
+  if (!inspection) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   if (inspection.revision !== patches[0].expectedRevision) {
-    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "검수 정보가 변경되었습니다. 최신 내용을 다시 확인해 주세요.");
+    throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   }
   const current = {
     inspection_type: inspection.inspection_type,
@@ -673,14 +673,14 @@ async function applyInspectionPatches(
     switch (patch.fieldKey) {
       case "inspection_type": {
         next = requiredText(patch.nextValue, "검수 종류");
-        if (!INSPECTION_TYPES.has(next)) throw inputError("검수 종류가 올바르지 않습니다.");
+        if (!INSPECTION_TYPES.has(next)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
         data.inspection_type = next;
         break;
       }
       case "inspection_round": next = requiredInteger(patch.nextValue, "검수 차수", 1); data.inspection_round = next; break;
       case "inspection_result": {
         next = nullableText(patch.nextValue);
-        if (next && !INSPECTION_RESULTS.has(next)) throw inputError("검수 결과가 올바르지 않습니다.");
+        if (next && !INSPECTION_RESULTS.has(next)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
         data.inspection_result = next;
         break;
       }
@@ -690,7 +690,7 @@ async function applyInspectionPatches(
       case "function_defect": next = nullableText(patch.nextValue); data.function_defect = next; break;
       case "return_yn": {
         next = requiredText(patch.nextValue, "매입처 반품 여부").toUpperCase();
-        if (next !== "Y" && next !== "N") throw inputError("매입처 반품 여부는 Y 또는 N이어야 합니다.");
+        if (next !== "Y" && next !== "N") throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
         data.return_yn = next;
         break;
       }
@@ -706,7 +706,7 @@ async function applyInspectionPatches(
       case "appearance_checked_at": { const value = strictDateTime(patch.nextValue, "외관 검수일시"); next = dateTimeScalar(value); data.appearance_checked_at = value; break; }
       case "function_checked_at": { const value = strictDateTime(patch.nextValue, "기능 검수일시"); next = dateTimeScalar(value); data.function_checked_at = value; break; }
       case "note": next = nullableText(patch.nextValue); data.note = next; break;
-      default: throw inputError(`지원하지 않는 검수 필드입니다: ${patch.fieldKey}`);
+      default: throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
     }
     const change = applied(patch, current[patch.fieldKey], next);
     if (change) changes.push(change);
@@ -716,7 +716,7 @@ async function applyInspectionPatches(
     where: { inspection_id: inspection.inspection_id, pg_no: pgNo, revision: inspection.revision },
     data,
   });
-  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "검수 정보가 동시에 변경되었습니다.");
+  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   const inboundId = inspection.source_type === INSPECTION_SOURCE_TYPE.coupangReturn
     ? null
     : inspection.inbound_id;
@@ -746,7 +746,7 @@ async function projectInboundLifecycle(
       updated_at: timestamp,
     },
   });
-  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "입고 lifecycle이 동시에 변경되었습니다.");
+  if (updated.count !== 1) throw publicConflict("INVENTORY_CORRECTION_STALE_RECORD", "INVENTORY_CORRECTION_STALE_RECORD");
   return {
     change: {
       recordKind: "inbound" as const,
@@ -862,7 +862,7 @@ async function applyPgCorrection(
       inboundProjectionIds.add(result.inboundId);
     }
   }
-  if (changes.length === 0) throw inputError("실제로 변경되는 필드가 없습니다.");
+  if (changes.length === 0) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   for (const inboundId of [...inboundProjectionIds].sort((a, b) => a - b)) {
     const projected = await projectInboundLifecycle(tx, input.pgNo, inboundId, input.timestamp);
     if (projected) {
@@ -885,7 +885,7 @@ async function applyPgCorrection(
 
 function reasonFrom(input: CommandInput) {
   const reason = String(input.editReason ?? "").trim();
-  if (!reason) throw inputError("수정 사유를 입력해야 저장할 수 있습니다.");
+  if (!reason) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   return reason;
 }
 
@@ -896,7 +896,7 @@ export async function updateExistingInventoryRecord(
   user: AuthUser
 ) {
   const pgNo = normalizePgNo(pgNoInput);
-  if (!pgNo) throw inputError("PG 값이 필요합니다.");
+  if (!pgNo) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   const reason = reasonFrom(input);
   const patches = parsePatches(input.patches);
   const timestamp = databaseNow();
@@ -906,18 +906,18 @@ export async function updateExistingInventoryRecord(
     select: { device_id: true },
   });
   if (!targetExists) {
-    throw publicNotFound("INVENTORY_NOT_FOUND", "수정할 기기를 찾을 수 없습니다.");
+    throw publicNotFound("INVENTORY_NOT_FOUND", "INVENTORY_NOT_FOUND");
   }
   try {
     return await runMeasuredTransaction(client, "inventory.correction", async (tx) => {
       await lockDeviceAggregates(tx, { pgNos: [pgNo], requireDevice: true, requireInventory: true });
       const exists = await tx.devices.findUnique({ where: { pg_no: pgNo }, select: { device_id: true } });
-      if (!exists) throw publicNotFound("INVENTORY_NOT_FOUND", "수정할 기기를 찾을 수 없습니다.");
+      if (!exists) throw publicNotFound("INVENTORY_NOT_FOUND", "INVENTORY_NOT_FOUND");
       return applyPgCorrection(tx, { pgNo, patches, user, reason, timestamp, operationKey });
     });
   } catch (error) {
     if (isPostgresqlUniqueViolation(error)) {
-      throw publicConflict("INVENTORY_CORRECTION_UNIQUE_CONFLICT", "IMEI 또는 모델 고유번호가 다른 기기와 중복됩니다.");
+      throw publicConflict("INVENTORY_CORRECTION_UNIQUE_CONFLICT", "INVENTORY_CORRECTION_UNIQUE_CONFLICT");
     }
     throw error;
   }
@@ -930,15 +930,15 @@ export async function updateExistingInventoryRecordsAtomically(
   user: AuthUser
 ) {
   const reason = editReason.trim();
-  if (!reason) throw inputError("수정 사유를 입력해야 저장할 수 있습니다.");
-  if (items.length === 0) throw inputError("일괄 수정할 재고를 선택해야 합니다.");
+  if (!reason) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
+  if (items.length === 0) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   const normalized = items.map((item) => ({
     pgNo: normalizePgNo(item.pgNo),
     patches: parsePatches(item.patches),
   }));
-  if (normalized.some((item) => !item.pgNo)) throw inputError("일괄 수정 대상에 PG가 없습니다.");
+  if (normalized.some((item) => !item.pgNo)) throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   if (new Set(normalized.map((item) => item.pgNo)).size !== normalized.length) {
-    throw inputError("일괄 수정 대상에 같은 PG가 중복되어 있습니다.");
+    throw inputError("INVENTORY_CORRECTION_INPUT_INVALID");
   }
   const ordered = [...normalized].sort((a, b) => compareCanonicalPgNo(a.pgNo, b.pgNo));
   const timestamp = databaseNow();
@@ -990,7 +990,7 @@ export async function updateExistingInventoryRecordsAtomically(
           if (!exists) {
             throw publicNotFound(
               "INVENTORY_NOT_FOUND",
-              `수정할 기기를 찾을 수 없습니다: ${item.pgNo}`
+              "INVENTORY_NOT_FOUND"
             );
           }
           results.push(
@@ -1009,7 +1009,7 @@ export async function updateExistingInventoryRecordsAtomically(
     );
   } catch (error) {
     if (isPostgresqlUniqueViolation(error)) {
-      throw publicConflict("INVENTORY_CORRECTION_UNIQUE_CONFLICT", "IMEI 또는 모델 고유번호가 다른 기기와 중복됩니다.");
+      throw publicConflict("INVENTORY_CORRECTION_UNIQUE_CONFLICT", "INVENTORY_CORRECTION_UNIQUE_CONFLICT");
     }
     throw error;
   }

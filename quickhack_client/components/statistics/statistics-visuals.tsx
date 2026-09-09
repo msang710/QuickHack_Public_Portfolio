@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { FormSection as Section } from "@/quickhack_client/components/ui/form-layout";
 import type {
   StatisticsGroup,
@@ -19,12 +20,12 @@ export const statisticsChartColors = [
   "#db2777",
 ] as const;
 
-export function formatNumber(value: number) {
-  return value.toLocaleString("ko-KR");
+export function formatNumber(value: number, locale: string) {
+  return value.toLocaleString(locale);
 }
 
-export function formatCurrency(value: number) {
-  return new Intl.NumberFormat("ko-KR", {
+export function formatCurrency(value: number, locale: string) {
+  return new Intl.NumberFormat(locale, {
     maximumFractionDigits: 0,
     style: "currency",
     currency: "KRW",
@@ -82,13 +83,14 @@ export function SummaryTile({
 }
 
 export function EmptyDataState({
-  message = "집계할 데이터가 없습니다.",
+  message,
 }: {
   message?: string;
 }) {
+  const t = useTranslations("statistics.visual");
   return (
     <div className="grid min-h-32 place-items-center rounded-md border border-dashed bg-background px-4 text-center text-sm text-muted-foreground">
-      {message}
+      {message ?? t("empty")}
     </div>
   );
 }
@@ -124,6 +126,7 @@ export function BarList({
   total: number;
   renderLabel?: (group: StatisticsGroup) => React.ReactNode;
 }) {
+  const t = useTranslations("statistics.metric");
   if (groups.length === 0) {
     return <EmptyDataState />;
   }
@@ -140,7 +143,7 @@ export function BarList({
                 {renderLabel ? renderLabel(group) : group.label}
               </div>
               <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                {formatNumber(group.count)}건 / {percent}%
+                {t("count", { count: group.count })} / {percent}%
               </div>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-secondary">
@@ -169,7 +172,7 @@ export function CompactTable({
   minWidth,
   maxHeight,
   wrapCells = false,
-  emptyMessage = "표시할 데이터가 없습니다.",
+  emptyMessage,
 }: {
   columns: Array<string | CompactTableColumn>;
   rows: Array<Array<React.ReactNode>>;
@@ -271,6 +274,8 @@ export function LineTrendChart({
   maxAxisLabels?: number;
   showPointMarkers?: boolean;
 }) {
+  const t = useTranslations("statistics.visual");
+  const locale = useLocale();
   const width = 680;
   const height = 220;
   const padding = 30;
@@ -297,7 +302,7 @@ export function LineTrendChart({
       ) : (
         <div className="min-w-0 overflow-hidden rounded-md border bg-background p-3">
           <svg
-            aria-label={`${title} 선 그래프`}
+            aria-label={t("lineAria", { title })}
             className="h-[220px] w-full"
             preserveAspectRatio="none"
             role="img"
@@ -334,7 +339,7 @@ export function LineTrendChart({
             {chartPoints.map((point, index) => (
               <g key={point.label}>
                 <title>
-                  {point.label}: {formatNumber(point.value)}
+                  {point.label}: {formatNumber(point.value, locale)}
                 </title>
                 {showPointMarkers ? (
                   <circle
@@ -353,7 +358,7 @@ export function LineTrendChart({
                       x={point.x}
                       y={Math.max(16, point.y - 10)}
                     >
-                      {formatNumber(point.value)}
+                      {formatNumber(point.value, locale)}
                     </text>
                     <text
                       fill="hsl(var(--muted-foreground))"
@@ -451,6 +456,7 @@ export function MultiLineTrendChart({
   maxAxisLabels?: number;
   showPointMarkers?: boolean;
 }) {
+  const t = useTranslations("statistics.visual");
   const width = 760;
   const height = 260;
   const padding = 38;
@@ -518,7 +524,7 @@ export function MultiLineTrendChart({
           ))}
         </div>
         <svg
-          aria-label={`${title}. 결측 구간은 선을 연결하지 않습니다.`}
+          aria-label={t("lineWithGapsAria", { title })}
           className="h-[260px] w-full"
           preserveAspectRatio="none"
           role="img"
@@ -626,6 +632,7 @@ export function ColumnChart({
   groups: StatisticsGroup[];
   total: number;
 }) {
+  const locale = useLocale();
   const visibleGroups = groups.filter((group) => group.count > 0);
   const maxValue = Math.max(1, ...visibleGroups.map((group) => group.count));
 
@@ -642,7 +649,7 @@ export function ColumnChart({
                 className="flex min-w-0 flex-1 flex-col items-center gap-2"
               >
                 <div className="text-xs font-semibold tabular-nums">
-                  {formatNumber(group.count)}
+                  {formatNumber(group.count, locale)}
                 </div>
                 <div
                   className="w-full rounded-t"
@@ -692,6 +699,8 @@ export function DonutChart({
   groups: StatisticsGroup[];
   total: number;
 }) {
+  const t = useTranslations("statistics.metric");
+  const locale = useLocale();
   let cursor = 0;
   const gradient = groups.length
     ? `conic-gradient(${groups
@@ -720,9 +729,11 @@ export function DonutChart({
             <div className="absolute inset-7 grid place-items-center rounded-full bg-background text-center">
               <div>
                 <div className="text-lg font-semibold tabular-nums">
-                  {formatNumber(total)}
+                  {formatNumber(total, locale)}
                 </div>
-                <div className="text-[11px] text-muted-foreground">건</div>
+                <div className="text-[11px] text-muted-foreground">
+                  {t("unit")}
+                </div>
               </div>
             </div>
           </div>
@@ -745,7 +756,7 @@ export function DonutChart({
                   <span className="truncate">{group.label}</span>
                 </div>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {formatNumber(group.count)} /{" "}
+                  {formatNumber(group.count, locale)} /{" "}
                   {groupPercent(group.count, total)}%
                 </span>
               </div>

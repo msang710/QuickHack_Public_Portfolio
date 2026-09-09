@@ -326,7 +326,7 @@ export async function consumePackingConfirmedSupplies(
     if (newPrepackRule) {
       throw publicConflict(
         "SUPPLY_PREPACK_RULE_SET_CHANGED",
-        `선포장 이후 새 비품 소모 규칙이 적용되었습니다. 포장 상태를 다시 점검해 주세요: ${newPrepackRule.supplies.supply_name}`
+        "SUPPLY_PREPACK_RULE_SET_CHANGED"
       );
     }
   }
@@ -352,7 +352,7 @@ export async function consumePackingConfirmedSupplies(
     if (claimed.count !== prepackEvents.length) {
       throw publicConflict(
         "SUPPLY_PREPACK_BUNDLE_ALREADY_CLAIMED",
-        "선포장 비품 묶음이 다른 출고 작업에서 이미 사용됐습니다."
+        "SUPPLY_PREPACK_BUNDLE_ALREADY_CLAIMED"
       );
     }
     claimedCount = claimed.count;

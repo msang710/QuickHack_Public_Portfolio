@@ -203,7 +203,7 @@ function parsePositiveInt(
   const parsed = Number(normalized);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new ShipmentDeliverySearchValidationError(
-      `${label}이(가) 올바르지 않습니다.`
+      "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
     );
   }
   return Math.min(parsed, max);
@@ -229,7 +229,7 @@ function parseDate(value: unknown, label: string) {
   const normalized = text(value);
   if (normalized && !validDateText(normalized)) {
     throw new ShipmentDeliverySearchValidationError(
-      `${label}은 YYYY-MM-DD 형식이어야 합니다.`
+      "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
     );
   }
   return normalized;
@@ -260,27 +260,27 @@ function parseSearchInput(input: {
 
   if (!VALID_DATE_BASES.has(dateBasis)) {
     throw new ShipmentDeliverySearchValidationError(
-      "조회 기간 기준이 올바르지 않습니다."
+      "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
     );
   }
   if (from && to && from > to) {
     throw new ShipmentDeliverySearchValidationError(
-      "조회 시작일은 종료일보다 늦을 수 없습니다."
+      "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
     );
   }
   if (stage !== ALL_FILTER && !VALID_STAGES.has(stage)) {
     throw new ShipmentDeliverySearchValidationError(
-      "배송 상태 필터가 올바르지 않습니다."
+      "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
     );
   }
   if (!VALID_PACKING_FILTERS.has(packing)) {
     throw new ShipmentDeliverySearchValidationError(
-      "포장 유형 필터가 올바르지 않습니다."
+      "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
     );
   }
   if (!VALID_REVIEW_FILTERS.has(review)) {
     throw new ShipmentDeliverySearchValidationError(
-      "확인 필요 필터가 올바르지 않습니다."
+      "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
     );
   }
 
@@ -1004,7 +1004,7 @@ export async function searchShipmentDeliveryPackages(input: {
   } catch (error) {
     if (error instanceof KeysetCursorError) {
       throw new ShipmentDeliverySearchValidationError(
-        "배송 조회 cursor가 현재 검색 조건과 일치하지 않습니다."
+        "SHIPMENT_DELIVERY_SEARCH_INPUT_INVALID"
       );
     }
     throw error;
@@ -1190,7 +1190,6 @@ function detailWorkflows(row: DeliveryPackageDetailRow) {
     workflows.push(
       {
         key: "INVOICE_ISSUE",
-        label: "송장 채번",
         status: issueBatch.batch_status,
         occurredAt: apiDateTime(
           issueBatch.completed_at ?? issueBatch.started_at
@@ -1201,7 +1200,6 @@ function detailWorkflows(row: DeliveryPackageDetailRow) {
       },
       {
         key: "LABEL_PRINT",
-        label: "송장 출력",
         status: issueBatch.label_print_status,
         occurredAt: apiDateTime(
           issueBatch.label_confirmed_at ?? issueBatch.label_last_spooled_at
@@ -1215,7 +1213,6 @@ function detailWorkflows(row: DeliveryPackageDetailRow) {
   if (latestWrite) {
     workflows.push({
       key: "CHANNEL_WRITE",
-      label: "쿠팡 송장 등록",
       status: latestWrite.request_status,
       occurredAt: apiDateTime(
         latestWrite.completed_at ?? latestWrite.requested_at
@@ -1228,7 +1225,6 @@ function detailWorkflows(row: DeliveryPackageDetailRow) {
   if (registration) {
     workflows.push({
       key: "CARRIER_REGISTRATION",
-      label: "로젠 주문 등록",
       status: registration.work_status,
       occurredAt: apiDateTime(
         registration.registered_at ?? registration.prepared_at
@@ -1241,7 +1237,6 @@ function detailWorkflows(row: DeliveryPackageDetailRow) {
   if (replacement) {
     workflows.push({
       key: "INVOICE_REPLACEMENT",
-      label: "송장 재발급",
       status: replacement.work_status,
       occurredAt: apiDateTime(
         replacement.completed_at ??
@@ -1271,7 +1266,7 @@ export async function getShipmentDeliveryPackageDetail(input: {
   });
   if (!row) {
     throw new ShipmentDeliverySearchNotFoundError(
-      "배송 건을 찾을 수 없습니다."
+      "SHIPMENT_DELIVERY_NOT_FOUND"
     );
   }
 

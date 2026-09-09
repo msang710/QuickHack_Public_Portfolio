@@ -106,7 +106,7 @@ function requiredPositiveId(value: unknown, label: string) {
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new CarrierInvoiceIssueError(
       "INVALID_ID",
-      `${label} must be a positive integer.`
+      "INVALID_ID"
     );
   }
   return parsed;
@@ -227,7 +227,7 @@ export async function getCarrierInvoiceIssueBatch(input: {
   if (!batch) {
     throw new CarrierInvoiceIssueError(
       "ISSUE_BATCH_NOT_FOUND",
-      "Carrier invoice issue batch was not found."
+      "ISSUE_BATCH_NOT_FOUND"
     );
   }
   return toIssueBatchDto(batch);
@@ -333,25 +333,25 @@ async function prepareIssue(input: {
       if (!printBatch) {
         throw new CarrierInvoiceIssueError(
           "SHIPMENT_PRINT_BATCH_NOT_FOUND",
-          "The confirmed shipment print batch was not found."
+          "SHIPMENT_PRINT_BATCH_NOT_FOUND"
         );
       }
       if (printBatch.batch_status !== CONFIRMED_BATCH_STATUS) {
         throw new CarrierInvoiceIssueError(
           "SHIPMENT_PRINT_BATCH_NOT_CONFIRMED",
-          "Tracking numbers can only be allocated to a confirmed shipment print batch."
+          "SHIPMENT_PRINT_BATCH_NOT_CONFIRMED"
         );
       }
       if (printBatch.items.length === 0) {
         throw new CarrierInvoiceIssueError(
           "SHIPMENT_PRINT_BATCH_EMPTY",
-          "The shipment print batch has no package groups."
+          "SHIPMENT_PRINT_BATCH_EMPTY"
         );
       }
       if (printBatch.items.some((item) => item.package_group_id == null)) {
         throw new CarrierInvoiceIssueError(
           "PACKAGE_GROUP_SNAPSHOT_MISSING",
-          "A shipment print item is missing its package-group snapshot."
+          "PACKAGE_GROUP_SNAPSHOT_MISSING"
         );
       }
 
@@ -372,7 +372,7 @@ async function prepareIssue(input: {
       ) {
         throw new CarrierInvoiceIssueError(
           "PACKAGE_GROUP_COUNT_MISMATCH",
-          "The shipment print batch package-group count does not match its snapshot."
+          "PACKAGE_GROUP_COUNT_MISMATCH"
         );
       }
 
@@ -387,7 +387,7 @@ async function prepareIssue(input: {
       if (selectedGroupIds.length === 0) {
         throw new CarrierInvoiceIssueError(
           "PACKAGE_GROUP_SELECTION_EMPTY",
-          "At least one package group is required for reissue."
+          "PACKAGE_GROUP_SELECTION_EMPTY"
         );
       }
       if (
@@ -396,7 +396,7 @@ async function prepareIssue(input: {
       ) {
         throw new CarrierInvoiceIssueError(
           "PACKAGE_GROUP_NOT_IN_PRINT_BATCH",
-          "A selected package group does not belong to the shipment print batch."
+          "PACKAGE_GROUP_NOT_IN_PRINT_BATCH"
         );
       }
 
@@ -420,7 +420,7 @@ async function prepareIssue(input: {
       if (groups.length !== selectedGroupIds.length) {
         throw new CarrierInvoiceIssueError(
           "PACKAGE_GROUP_NOT_FOUND",
-          "A selected package group was not found."
+          "PACKAGE_GROUP_NOT_FOUND"
         );
       }
 
@@ -433,7 +433,7 @@ async function prepareIssue(input: {
         if (!group || !firstItem) {
           throw new CarrierInvoiceIssueError(
             "PACKAGE_GROUP_NOT_FOUND",
-            "A selected package group was not found."
+            "PACKAGE_GROUP_NOT_FOUND"
           );
         }
         const allowedGroupStatus =
@@ -444,7 +444,7 @@ async function prepareIssue(input: {
         if (!allowedGroupStatus) {
           throw new CarrierInvoiceIssueError(
             "PACKAGE_GROUP_NOT_FROZEN",
-            `Package group ${packageGroupId} is not eligible for invoice allocation.`
+            "PACKAGE_GROUP_NOT_FROZEN"
           );
         }
 
@@ -464,7 +464,7 @@ async function prepareIssue(input: {
         ) {
           throw new CarrierInvoiceIssueError(
             "PACKAGE_GROUP_MEMBERSHIP_CHANGED",
-            `Package group ${packageGroupId} no longer matches the confirmed print snapshot.`
+            "PACKAGE_GROUP_MEMBERSHIP_CHANGED"
           );
         }
 
@@ -472,13 +472,13 @@ async function prepareIssue(input: {
         if (input.issueType === "INITIAL" && currentShipment) {
           throw new CarrierInvoiceIssueError(
             "PACKAGE_GROUP_ALREADY_ALLOCATED",
-            `Package group ${packageGroupId} already has a current tracking number.`
+            "PACKAGE_GROUP_ALREADY_ALLOCATED"
           );
         }
         if (input.issueType === "REISSUE" && !currentShipment) {
           throw new CarrierInvoiceIssueError(
             "PACKAGE_GROUP_HAS_NO_CURRENT_INVOICE",
-            `Package group ${packageGroupId} has no tracking number to replace.`
+            "PACKAGE_GROUP_HAS_NO_CURRENT_INVOICE"
           );
         }
         if (
@@ -489,7 +489,7 @@ async function prepareIssue(input: {
         ) {
           throw new CarrierInvoiceIssueError(
             "CURRENT_INVOICE_NOT_REPLACEABLE",
-            `Package group ${packageGroupId} current invoice is not replaceable.`
+            "CURRENT_INVOICE_NOT_REPLACEABLE"
           );
         }
 
@@ -677,7 +677,7 @@ async function finalizeAllocation(
         if (!group) {
           throw new CarrierInvoiceIssueError(
             "ISSUE_ITEM_SEQUENCE_MISMATCH",
-            "The persisted issue item order no longer matches the prepared package groups."
+            "ISSUE_ITEM_SEQUENCE_MISMATCH"
           );
         }
 
@@ -836,7 +836,7 @@ async function finalizeAllocation(
           if (error instanceof CarrierShipmentStateConflictError) {
             throw new CarrierInvoiceIssueError(
               "CURRENT_INVOICE_STATE_CHANGED",
-              `Package group ${group.packageGroupId} current invoice state changed during allocation.`
+              "CURRENT_INVOICE_STATE_CHANGED"
             );
           }
           if (
@@ -1114,7 +1114,7 @@ export async function reissueCarrierInvoicesForPackageGroups(
   if (!suppliedRequestKey) {
     throw new CarrierInvoiceIssueError(
       "REISSUE_REQUEST_KEY_REQUIRED",
-      "A caller-generated idempotency key is required for reissue."
+      "REISSUE_REQUEST_KEY_REQUIRED"
     );
   }
 
@@ -1151,7 +1151,7 @@ export async function allocateCarrierInvoiceReplacementCandidate(
   if (!suppliedRequestKey) {
     throw new CarrierInvoiceIssueError(
       "REISSUE_REQUEST_KEY_REQUIRED",
-      "A durable idempotency key is required for replacement allocation."
+      "REISSUE_REQUEST_KEY_REQUIRED"
     );
   }
 
@@ -1186,7 +1186,7 @@ export async function retryFailedCarrierInvoiceIssueBatch(
   if (!batch) {
     throw new CarrierInvoiceIssueError(
       "ISSUE_BATCH_NOT_FOUND",
-      "송장 발급 작업을 찾지 못했습니다."
+      "ISSUE_BATCH_NOT_FOUND"
     );
   }
   if (
@@ -1203,7 +1203,7 @@ export async function retryFailedCarrierInvoiceIssueBatch(
   ) {
     throw new CarrierInvoiceIssueError(
       "ISSUE_BATCH_NOT_RETRYABLE",
-      "외부 반영 결과가 확실하게 실패한 최초 송장 발급 작업만 다시 시도할 수 있습니다."
+      "ISSUE_BATCH_NOT_RETRYABLE"
     );
   }
   return executeIssue(

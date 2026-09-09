@@ -16,6 +16,7 @@ import {
 import { assertPackageFlavor } from "../quickhack_shared/core/package-flavor-contract.mjs";
 import { composeOperatorPlatform } from "./platform/compose-operator-platform.mjs";
 import { getQuickHackTlsStatus, initializeQuickHackTls } from "./server-console-tls.mjs";
+import { formatServerConsoleMessage, resolveServerConsoleLocale, serverConsoleActionMessages, serverConsoleMessages } from "./server-console-i18n.mjs";
 import {
   cancelQhkeyReplacement,
   getQhkeyConsoleStatus,
@@ -286,19 +287,21 @@ function tlsHostSelection() {
   });
 }
 
-function consolePage({ flavor, actionToken, integrationHtml }) {
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QuickHack 서버 콘솔</title><style>
+function consolePage({ flavor, actionToken, integrationHtml, locale }) {
+  const t = serverConsoleMessages(locale);
+  const actionMessages = serverConsoleActionMessages(locale);
+  return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t.title}</title><style>
 body{font-family:system-ui,sans-serif;margin:0;background:#0b1220;color:#e5e7eb}main{max-width:1000px;margin:auto;padding:24px}.card{background:#111827;border:1px solid #334155;border-radius:14px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap}button,a,input{border:0;border-radius:9px;padding:10px 14px}button,a{background:#2563eb;color:white;text-decoration:none;cursor:pointer}.danger{background:#b91c1c}.muted{color:#94a3b8}pre{white-space:pre-wrap}code{color:#93c5fd}form{display:grid;gap:10px;max-width:520px}input{background:#1f2937;color:#fff}</style></head><body><main>
-<h1>QuickHack 서버 콘솔</h1><p class="muted">설치 flavor <code>${flavor}</code>. 이 콘솔 프로세스가 본서버와 HTTPS gateway를 소유합니다.</p>
-<section class="card"><h2>본서버</h2><div class="row"><button id="quickhack-start" data-action="/api/quickhack/start">시작</button><button id="quickhack-stop" class="danger" data-action="/api/quickhack/stop">중지</button><a href="https://127.0.0.1:${DEFAULT_PORTS.gateway}" target="_blank" rel="noreferrer">열기</a></div><pre id="status">확인 중</pre></section>
-<section class="card"><h2>HTTPS 신뢰</h2><div class="row"><button data-action="/api/tls/initialize">인증서 갱신</button><button data-action="/api/tls/rotate">CA 회전 시작</button><button data-action="/api/tls/finalize-rotation">CA 회전 종료</button></div><p class="muted">CA 회전 시작 후 모든 PC와 Android를 새 client-config로 갱신·재등록한 다음 회전을 종료하세요.</p></section>
-<section class="card"><h2>런타임 설정</h2><div class="row"><button id="runtime-environment-toggle" data-action="/api/runtime/toggle-environment">개발/운영 모드</button><button id="coupang-write-api-toggle" data-action="/api/runtime/toggle-coupang-write-api">Coupang 쓰기</button><button id="logen-write-api-toggle" data-action="/api/runtime/toggle-logen-write-api">Logen 쓰기</button></div><p class="muted">런타임 환경은 설치 flavor를 변경하지 않습니다.</p></section>
-<section class="card"><h2>백업</h2><button data-action="/api/operator/backup">지금 실행</button></section>
-<section class="card"><h2>OTP 보안 복구</h2><p class="muted">이 화면은 OTP 키나 암호를 입력받지 않습니다.</p><form id="otp-security-form"><input id="otp-security-confirm" name="confirmText" autocomplete="off" placeholder="확인 문구"><button id="otp-security-recover" type="submit">OTP 전체 초기화</button></form><pre id="otp-security-state">상태는 본서버에서 확인합니다.</pre></section>
-<section class="card"><h2>QHKEY 상태</h2><p class="muted">API 키 교체는 콘솔에서 요청하며 Linux에서는 transaction당 OS 관리자 인증이 한 번 필요할 수 있습니다.</p><pre id="qhkey-state">확인 중</pre></section>
+<h1>${t.title}</h1><p class="muted">${formatServerConsoleMessage(t.ownership, { flavor: `<code>${flavor}</code>` })}</p>
+<section class="card"><h2>${t.server}</h2><div class="row"><button id="quickhack-start" data-action="/api/quickhack/start">${t.start}</button><button id="quickhack-stop" class="danger" data-action="/api/quickhack/stop">${t.stop}</button><a href="https://127.0.0.1:${DEFAULT_PORTS.gateway}" target="_blank" rel="noreferrer">${t.open}</a></div><pre id="status">${t.checking}</pre></section>
+<section class="card"><h2>${t.tls}</h2><div class="row"><button data-action="/api/tls/initialize">${t.renew}</button><button data-action="/api/tls/rotate">${t.rotate}</button><button data-action="/api/tls/finalize-rotation">${t.finalize}</button></div><p class="muted">${t.rotationHelp}</p></section>
+<section class="card"><h2>${t.runtime}</h2><div class="row"><button id="runtime-environment-toggle" data-action="/api/runtime/toggle-environment">${t.environment}</button><button id="coupang-write-api-toggle" data-action="/api/runtime/toggle-coupang-write-api">${t.coupangWrite}</button><button id="logen-write-api-toggle" data-action="/api/runtime/toggle-logen-write-api">${t.logenWrite}</button></div><p class="muted">${t.runtimeHelp}</p></section>
+<section class="card"><h2>${t.backup}</h2><button data-action="/api/operator/backup">${t.runNow}</button></section>
+<section class="card"><h2>${t.otp}</h2><p class="muted">${t.otpHelp}</p><form id="otp-security-form"><input id="otp-security-confirm" name="confirmText" autocomplete="off" placeholder="${t.confirmation}"><button id="otp-security-recover" type="submit">${t.resetOtp}</button></form><pre id="otp-security-state">${t.serverState}</pre></section>
+<section class="card"><h2>${t.qhkey}</h2><p class="muted">${t.qhkeyHelp}</p><pre id="qhkey-state">${t.checking}</pre></section>
 ${integrationHtml}
-<section class="card"><h2>관리자 작업</h2><p class="muted">migration, restore, 최초 책임자, DB credential 변경은 설치된 operator launcher가 별도 권한으로 실행합니다.</p></section>
-<p id="message"></p><script>const token=${JSON.stringify(actionToken)};const headers={'X-QuickHack-Console-Token':token};async function refresh(){const r=await fetch('/api/status',{cache:'no-store'});const p=await r.json();document.getElementById('status').textContent=JSON.stringify(p,null,2);document.getElementById('qhkey-state').textContent=JSON.stringify(p.qhkey||{},null,2);document.getElementById('otp-security-state').textContent=JSON.stringify(p.totpSecurity||{},null,2)}async function post(url,body){const r=await fetch(url,{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify(body||{})});const p=await r.json();document.getElementById('message').textContent=p.message||p.code||'';await refresh();return p}document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post(b.dataset.action)}finally{b.disabled=false}});document.getElementById('otp-security-form').onsubmit=async(e)=>{e.preventDefault();await post('/api/totp-security/recover',{confirmText:new FormData(e.currentTarget).get('confirmText')})};window.quickHackConsolePost=post;setInterval(refresh,2000);refresh()</script></main></body></html>`;
+<section class="card"><h2>${t.operator}</h2><p class="muted">${t.operatorHelp}</p></section>
+<p id="message"></p><script>const token=${JSON.stringify(actionToken)};const actionMessages=${JSON.stringify(actionMessages)};const headers={'X-QuickHack-Console-Token':token};async function refresh(){const r=await fetch('/api/status',{cache:'no-store'});const p=await r.json();document.getElementById('status').textContent=JSON.stringify(p,null,2);document.getElementById('qhkey-state').textContent=JSON.stringify(p.qhkey||{},null,2);document.getElementById('otp-security-state').textContent=JSON.stringify(p.totpSecurity||{},null,2)}async function post(url,body){const r=await fetch(url,{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify(body||{})});const p=await r.json();document.getElementById('message').textContent=actionMessages[p.messageCode]||p.message||p.code||'';await refresh();return p}document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post(b.dataset.action)}finally{b.disabled=false}});document.getElementById('otp-security-form').onsubmit=async(e)=>{e.preventDefault();await post('/api/totp-security/recover',{confirmText:new FormData(e.currentTarget).get('confirmText')})};window.quickHackConsolePost=post;setInterval(refresh,2000);refresh()</script></main></body></html>`;
 }
 
 export function createServerConsole(input) {
@@ -638,18 +641,21 @@ export function createServerConsole(input) {
       throw failure;
     }
     if (wasRunning) await start();
-    const labels = {
-      INITIALIZE: "HTTPS leaf certificate renewed.",
-      ROTATE: "CA rotation window started.",
-      FINALIZE_ROTATION: "CA rotation window finalized.",
+    const messageCodes = {
+      INITIALIZE: "TLS_CERTIFICATE_RENEWED",
+      ROTATE: "TLS_CA_ROTATION_STARTED",
+      FINALIZE_ROTATION: "TLS_CA_ROTATION_FINALIZED",
     };
-    return { ok: true, restarted: wasRunning, message: labels[mode] };
+    return { ok: true, restarted: wasRunning, messageCode: messageCodes[mode] };
   }
 
   const server = createServer(async (request, response) => {
     try {
       const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
-      if (request.method === "GET" && requestUrl.pathname === "/") return html(response, consolePage({ flavor, actionToken, integrationHtml: integration.renderHtml() }));
+      if (request.method === "GET" && requestUrl.pathname === "/") {
+        const locale = resolveServerConsoleLocale(request.headers["accept-language"]);
+        return html(response, consolePage({ flavor, actionToken, locale, integrationHtml: integration.renderHtml(serverConsoleMessages(locale)) }));
+      }
       if (request.method === "GET" && requestUrl.pathname === "/api/status") return json(response, 200, await status());
       if (request.method === "GET" && requestUrl.pathname === "/api/qhkey/status") {
         const runtimeConfig = config();

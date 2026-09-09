@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import { RefreshCw } from "lucide-react";
 import {
   InventoryQuantityDetailSheet,
@@ -11,6 +13,7 @@ import {
   type InboundReconciliationDetailSelection,
 } from "@/quickhack_client/components/inventory/inbound-reconciliation-detail-sheet";
 import { InventoryQuantityMatrixTable } from "@/quickhack_client/components/inventory/inventory-quantity-matrix-table";
+import { statusLabel } from "@/quickhack_client/components/shared/device-detail-sheet";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { FeedbackBanner } from "@/quickhack_client/components/ui/feedback-banner";
 import { SearchInput } from "@/quickhack_client/components/ui/search-input";
@@ -40,8 +43,8 @@ const PRESET_ORDER: readonly InventoryQuantityMatrixPreset[] = [
   "ALL",
 ];
 
-function quantityText(value: number | null) {
-  return value === null ? "–" : value.toLocaleString("ko-KR");
+function quantityText(value: number | null, locale: string) {
+  return value === null ? "–" : value.toLocaleString(locale);
 }
 
 function SummaryCard({
@@ -53,11 +56,12 @@ function SummaryCard({
   value: number | null;
   description: string;
 }) {
+  const locale = useLocale();
   return (
     <div className="min-w-0 rounded-md border bg-popover px-3 py-2">
       <div className="truncate text-xs text-muted-foreground">{label}</div>
       <div className="mt-0.5 text-xl font-semibold tabular-nums">
-        {quantityText(value)}
+        {quantityText(value, locale)}
       </div>
       <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
         {description}
@@ -71,6 +75,7 @@ function AvailabilityBanner({
 }: {
   availability: InventoryLedgerAvailability;
 }) {
+  const t = useTranslations("inventory.quantityLedger.availability");
   if (availability === "READY") {
     return null;
   }
@@ -78,17 +83,14 @@ function AvailabilityBanner({
   if (availability === "EMPTY") {
     return (
       <FeedbackBanner tone="info">
-        등록된 재고가 없습니다. 재고가 생성되면 기종별 수불 현황이 이
-        화면에 표시됩니다.
+        {t("empty")}
       </FeedbackBanner>
     );
   }
 
   return (
     <FeedbackBanner tone="danger">
-      재고 원장과 실제 재고 사이에 일부 불일치가 발견되었습니다. 원장
-      기반 수량은 확정 전까지 –로 표시하며, 매입 전 수량과 입고 대조
-      지표는 계속 제공합니다.
+      {t("mismatch")}
     </FeedbackBanner>
   );
 }
@@ -102,15 +104,20 @@ function ReconciliationMetricButton({
   value: number;
   onClick: () => void;
 }) {
+  const t = useTranslations("inventory.quantityLedger");
+  const locale = useLocale();
   return (
     <button
       type="button"
       className="inline-flex items-center gap-1 rounded px-1.5 py-1 transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={`${label} ${quantityText(value)} 상세 보기`}
+      aria-label={t("detailAria", {
+        label,
+        quantity: quantityText(value, locale),
+      })}
       onClick={onClick}
     >
       <span>{label}</span>
-      <strong className="tabular-nums">{quantityText(value)}</strong>
+      <strong className="tabular-nums">{quantityText(value, locale)}</strong>
     </button>
   );
 }
@@ -120,6 +127,8 @@ export function InventoryQuantityLedgerView({
 }: {
   onOpenInventoryEdit: (pgNo: string) => void;
 }) {
+  const t = useTranslations("inventory.quantityLedger");
+  const detailT = useTranslations("common.deviceDetail");
   const [data, setData] =
     React.useState<InventoryQuantityMatrixPayload | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -160,7 +169,7 @@ export function InventoryQuantityLedgerView({
 
       if (!response.ok || !payload?.ok || !payload.data) {
         throw new Error(
-          payload?.message || "재고 수불 현황을 불러오지 못했습니다."
+          legacyApiMessage(payload, t("fallback.loadFailed"))
         );
       }
 
@@ -183,7 +192,7 @@ export function InventoryQuantityLedgerView({
         setLoading(false);
       }
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     queueMicrotask(() => void load());
@@ -205,7 +214,23 @@ export function InventoryQuantityLedgerView({
     () => new Set(filtered.autoExpandedGroupKeys),
     [filtered.autoExpandedGroupKeys]
   );
-  const presetDefinition = INVENTORY_QUANTITY_MATRIX_PRESETS[preset];
+  const localizedPreset = React.useCallback((presetKey: InventoryQuantityMatrixPreset) => {
+    const source = INVENTORY_QUANTITY_MATRIX_PRESETS[presetKey];
+    const presetName = presetKey === "SUMMARY" ? "summary" : presetKey === "OUTBOUND" ? "outbound" : presetKey === "EXCEPTIONS" ? "exceptions" : "all";
+    return {
+      label: t(`presets.${presetName}.label`),
+      description: t(`presets.${presetName}.description`),
+      columns: source.columns.map((column) => {
+        if (column.kind === "STATUS") {
+          const label = statusLabel(column.inventoryStatus, detailT);
+          return { ...column, label, shortLabel: label };
+        }
+        const key = column.kind === "SELLABLE" ? "sellable" : column.kind === "TODAY_ORDER" ? "todayOrder" : column.kind === "PRE_PURCHASE" ? "prePurchase" : "total";
+        return { ...column, label: t(`matrixColumns.${key}.label`), shortLabel: t(`matrixColumns.${key}.short`) };
+      }),
+    };
+  }, [detailT, t]);
+  const presetDefinition = localizedPreset(preset);
 
   const toggleGroup = React.useCallback((groupKey: string) => {
     setExpandedGroupKeys((current) => {
@@ -225,24 +250,24 @@ export function InventoryQuantityLedgerView({
     <WorkspacePageFrame className="gap-3 px-5 py-4">
       <div className="grid shrink-0 grid-cols-2 gap-2 xl:grid-cols-4">
         <SummaryCard
-          label="판매가능"
+          label={t("summary.sellable")}
           value={data?.summary.sellableQuantity ?? null}
-          description="즉시 판매 가능한 재고"
+          description={t("summary.sellableDescription")}
         />
         <SummaryCard
-          label="오늘 주문 전체 수량"
+          label={t("summary.todayOrder")}
           value={data?.summary.todayOrderQuantity ?? null}
-          description="주문확인 + 포장중 + 포장완료 + 배송지시"
+          description={t("summary.todayOrderDescription")}
         />
         <SummaryCard
-          label="매입 전"
+          label={t("summary.prePurchase")}
           value={data?.summary.prePurchaseQuantity ?? null}
-          description="검수 중 + 검수 완료"
+          description={t("summary.prePurchaseDescription")}
         />
         <SummaryCard
-          label="총합계"
+          label={t("summary.total")}
           value={data?.summary.primaryTotalQuantity ?? null}
-          description="판매가능 + 오늘 주문 + 매입 전"
+          description={t("summary.totalDescription")}
         />
       </div>
 
@@ -256,7 +281,7 @@ export function InventoryQuantityLedgerView({
             <span>
               {error}
               {data
-                ? " 이전에 불러온 현황은 그대로 유지합니다."
+                ? t("staleSuffix")
                 : ""}
             </span>
             <Button
@@ -267,7 +292,7 @@ export function InventoryQuantityLedgerView({
               onClick={() => void load()}
             >
               <RefreshCw className={loading ? "animate-spin" : ""} />
-              다시 시도
+              {t("actions.retry")}
             </Button>
           </div>
         </FeedbackBanner>
@@ -276,10 +301,10 @@ export function InventoryQuantityLedgerView({
       {data ? (
         <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-md border bg-muted/25 px-3 py-2 text-xs">
           <span className="font-semibold">
-            입고 대조 · {data.reconciliation.businessDate}
+            {t("reconciliation.title", { date: data.reconciliation.businessDate })}
           </span>
           <ReconciliationMetricButton
-            label="미지정 PG"
+            label={t("reconciliation.unassigned")}
             value={data.reconciliation.unassignedPgQuantity}
             onClick={() =>
               setReconciliationSelection({
@@ -289,7 +314,7 @@ export function InventoryQuantityLedgerView({
             }
           />
           <ReconciliationMetricButton
-            label="불일치 차수"
+            label={t("reconciliation.mismatched")}
             value={data.reconciliation.mismatchedBatchQuantity}
             onClick={() =>
               setReconciliationSelection({
@@ -299,7 +324,7 @@ export function InventoryQuantityLedgerView({
             }
           />
           <ReconciliationMetricButton
-            label="부족"
+            label={t("reconciliation.shortage")}
             value={data.reconciliation.shortageQuantity}
             onClick={() =>
               setReconciliationSelection({
@@ -309,7 +334,7 @@ export function InventoryQuantityLedgerView({
             }
           />
           <ReconciliationMetricButton
-            label="초과"
+            label={t("reconciliation.excess")}
             value={data.reconciliation.excessQuantity}
             onClick={() =>
               setReconciliationSelection({
@@ -319,7 +344,7 @@ export function InventoryQuantityLedgerView({
             }
           />
           <span className="text-muted-foreground">
-            숫자를 누르면 현재 상세를 다시 조회합니다.
+            {t("reconciliation.hint")}
           </span>
         </div>
       ) : null}
@@ -327,11 +352,10 @@ export function InventoryQuantityLedgerView({
       <div className="flex shrink-0 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
         <div
           className="inline-flex w-fit rounded-md border bg-muted/35 p-1"
-          aria-label="재고 수불 현황 열 구성"
+          aria-label={t("search.columnsAria")}
         >
           {PRESET_ORDER.map((presetKey) => {
-            const definition =
-              INVENTORY_QUANTITY_MATRIX_PRESETS[presetKey];
+            const definition = localizedPreset(presetKey);
 
             return (
               <button
@@ -356,8 +380,8 @@ export function InventoryQuantityLedgerView({
           <SearchInput
             value={search}
             onValueChange={setSearch}
-            label="재고 수불 현황 검색"
-            placeholder="기종, SKU, 용량, 색상, 등급, 매입 전 PG 검색"
+            label={t("search.label")}
+            placeholder={t("search.placeholder")}
             wrapperClassName="min-w-0 flex-1 xl:w-[410px]"
           />
           <Button
@@ -367,7 +391,7 @@ export function InventoryQuantityLedgerView({
             onClick={() => void load()}
           >
             <RefreshCw className={loading ? "animate-spin" : ""} />
-            새로고침
+            {t("actions.refresh")}
           </Button>
         </div>
       </div>
@@ -375,10 +399,13 @@ export function InventoryQuantityLedgerView({
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex shrink-0 items-center justify-between text-xs text-muted-foreground">
           <span>
-            기종 {filtered.groups.length.toLocaleString("ko-KR")}개 · 구성{" "}
-            {filtered.groups
-              .reduce((sum, group) => sum + group.rows.length, 0)
-              .toLocaleString("ko-KR")}개
+            {t("search.result", {
+              configurations: filtered.groups.reduce(
+                (sum, group) => sum + group.rows.length,
+                0
+              ),
+              models: filtered.groups.length,
+            })}
           </span>
           <span>{presetDefinition.description}</span>
         </div>
@@ -392,10 +419,10 @@ export function InventoryQuantityLedgerView({
           onSelect={setSelection}
           emptyMessage={
             loading && !data
-              ? "재고 수불 현황을 불러오는 중입니다."
+              ? t("empty.loading")
               : search.trim()
-                ? "검색 조건에 맞는 재고 구성이 없습니다."
-                : "표시할 재고 구성이 없습니다."
+                ? t("empty.search")
+                : t("empty.default")
           }
         />
       </div>

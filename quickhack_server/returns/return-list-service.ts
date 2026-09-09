@@ -49,12 +49,6 @@ const RETURN_RECEIVE_CONFIRM_STATUSES = [
 
 const RETURN_APPROVAL_STATUSES = ["VENDOR_WAREHOUSE_CONFIRM"] as const;
 
-const RETURN_ACTION_LABELS = {
-  stopShipment: "출고중지완료",
-  receiveConfirm: "입고 확인",
-  approve: "반품 완료",
-} satisfies Record<ReturnNextAction, string>;
-
 function normalizePhase(value: unknown): ReturnListPhase {
   return String(value ?? "").trim() === "after" ? "after" : "before";
 }
@@ -510,9 +504,6 @@ function buildReturnWorkRow(
     reason2: reasonParts.reason2,
     reason3: reasonParts.reason3,
     nextReturnAction,
-    nextReturnActionLabel: nextReturnAction
-      ? RETURN_ACTION_LABELS[nextReturnAction]
-      : null,
   };
 }
 

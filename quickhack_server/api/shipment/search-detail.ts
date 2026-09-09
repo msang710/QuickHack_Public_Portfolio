@@ -44,13 +44,13 @@ export async function GET(
       const user = await getAuthUserFromRequest(request);
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "로그인이 필요합니다." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
       if (!canAccessRole(user.role, "STAFF")) {
         return NextResponse.json(
-          { ok: false, message: "배송 건 상세 조회 권한이 없습니다." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
@@ -76,7 +76,6 @@ export async function GET(
           return apiFailureResponse({
             status: 400,
             code: "INVALID_SHIPMENT_SEARCH_DETAIL",
-            message: error.message,
             cause: error,
           });
         }
@@ -84,7 +83,6 @@ export async function GET(
           return apiFailureResponse({
             status: 404,
             code: "SHIPMENT_PACKAGE_NOT_FOUND",
-            message: error.message,
             cause: error,
           });
         }

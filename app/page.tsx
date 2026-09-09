@@ -9,7 +9,7 @@ import {
 } from "@/quickhack_shared/core/runtime";
 import {
   fetchServerJson,
-  getServerProxyErrorMessage,
+  getServerProxyErrorCode,
 } from "@/quickhack_shared/core/server-proxy";
 import { cookies } from "next/headers";
 import { DesktopAdbWindow } from "@/quickhack_client/components/desktop/desktop-adb-window";
@@ -38,15 +38,17 @@ async function tryFetchServerJson<T>(pathname: string, cookieHeader?: string) {
     if (!data) {
       return {
         data: null,
-        error: "중앙 서버 응답이 올바르지 않습니다.",
+        error: "",
+        errorCode: "INVALID_SERVER_RESPONSE" as const,
       };
     }
 
-    return { data, error: "" };
+    return { data, error: "", errorCode: null };
   } catch (error) {
     return {
       data: null,
-      error: getServerProxyErrorMessage(error),
+      error: "",
+      errorCode: getServerProxyErrorCode(error),
     };
   }
 }
@@ -65,10 +67,11 @@ export default async function Home({ searchParams }: { searchParams?: Promise<Re
     ? authResult?.data?.user ?? null
     : await getLocalAuthUser(token);
 
-  if (clientRuntime && authResult?.error) {
+  if (clientRuntime && (authResult?.error || authResult?.errorCode)) {
     return (
       <LoginScreen
         initialError={authResult.error}
+        initialErrorCode={authResult.errorCode ?? undefined}
         showTestCredentials={showTestCredentials}
       />
     );

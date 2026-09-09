@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { ArrowUpDown, ChevronDown, Search, X } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import { Input } from "@/quickhack_client/components/ui/input";
 import { cn } from "@/quickhack_shared/core/utils";
 
@@ -57,6 +58,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
   onFilterChange,
   onSortChange,
 }: DataGridColumnHeaderProps<TRow, TKey>) {
+  const t = useTranslations("common.dataGrid");
   const [open, setOpen] = React.useState(false);
   const [draftFilterState, setDraftFilterState] = React.useState(() => ({
     sourceFilter: filter,
@@ -163,7 +165,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
               return nextOpen;
             });
           }}
-          title={`${column.label} 정렬/검색`}
+          title={t("menuTitle", { column: column.label })}
         >
           <ChevronDown className="size-3" />
         </button>
@@ -185,7 +187,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
                 onClick={() => setSort("asc")}
               >
                 <ArrowUpDown className="size-3.5" />
-                텍스트 오름차순 정렬
+                {t("ascending")}
               </button>
               <button
                 type="button"
@@ -193,7 +195,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
                 onClick={() => setSort("desc")}
               >
                 <ArrowUpDown className="size-3.5" />
-                텍스트 내림차순 정렬
+                {t("descending")}
               </button>
               <button
                 type="button"
@@ -205,7 +207,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
                 }}
               >
                 <X className="size-3.5" />
-                정렬 해제
+                {t("clearSort")}
               </button>
             </>
           ) : null}
@@ -217,7 +219,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
                 <Input
                   className="h-8 pl-7 text-xs font-normal"
                   value={draftFilter}
-                  placeholder={column.placeholder ?? `${column.label} 검색`}
+                  placeholder={column.placeholder ?? t("searchPlaceholder", { column: column.label })}
                   autoFocus
                   onChange={(event) => setDraftFilter(event.target.value)}
                   onKeyDown={(event) => {
@@ -228,7 +230,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
                 />
               </div>
               <p className="mt-1 px-1 text-[11px] text-muted-foreground">
-                Enter로 검색 적용
+                {t("applyHint")}
               </p>
               <button
                 type="button"
@@ -237,7 +239,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
                 onClick={clearFilter}
               >
                 <X className="size-3.5" />
-                필터 해제
+                {t("clearFilter")}
               </button>
             </div>
           ) : null}
@@ -247,7 +249,7 @@ function DataGridColumnHeader<TRow, TKey extends string>({
   );
 }
 
-function compareDataGridValues(left: DataGridCellValue, right: DataGridCellValue) {
+function compareDataGridValues(left: DataGridCellValue, right: DataGridCellValue, locale: string) {
   const leftEmpty = left === null || left === undefined || left === "";
   const rightEmpty = right === null || right === undefined || right === "";
 
@@ -267,7 +269,7 @@ function compareDataGridValues(left: DataGridCellValue, right: DataGridCellValue
     return left - right;
   }
 
-  return String(left).localeCompare(String(right), "ko-KR", {
+  return String(left).localeCompare(String(right), locale, {
     numeric: true,
     sensitivity: "base",
   });
@@ -315,6 +317,7 @@ export function VirtualizedDataGrid<TRow, TKey extends string>({
   headerHeight = 36,
   overscan = 8,
 }: VirtualizedDataGridProps<TRow, TKey>) {
+  const locale = useLocale();
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const [virtualState, setVirtualState] = React.useState({
     scrollTop: 0,
@@ -399,7 +402,7 @@ export function VirtualizedDataGrid<TRow, TKey extends string>({
     }
 
     return [...filteredRows].sort((left, right) => {
-      const result = compareDataGridValues(valueForSort(left), valueForSort(right));
+      const result = compareDataGridValues(valueForSort(left), valueForSort(right), locale);
 
       return effectiveSort.direction === "asc" ? result : -result;
     });
@@ -407,6 +410,7 @@ export function VirtualizedDataGrid<TRow, TKey extends string>({
     columns,
     effectiveFilters,
     effectiveSort,
+    locale,
     onFilterChange,
     onSortChange,
     rows,

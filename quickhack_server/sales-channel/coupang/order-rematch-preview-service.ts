@@ -50,20 +50,6 @@ export const COUPANG_ORDER_REMATCH_EXCLUSION = {
 export type CoupangOrderRematchExclusionCode =
   (typeof COUPANG_ORDER_REMATCH_EXCLUSION)[keyof typeof COUPANG_ORDER_REMATCH_EXCLUSION];
 
-const EXCLUSION_LABELS: Record<CoupangOrderRematchExclusionCode, string> = {
-  SHIPMENT_NOT_FULLY_MATCHED: "출고 건 전체가 매칭 완료 상태가 아님",
-  CURRENT_MAPPING_UNAVAILABLE: "현재 적용할 상품 기본 매핑이 없음",
-  ALLOCATION_QUANTITY_MISMATCH: "주문 수량과 활성 PG 배정 수량이 다름",
-  ALLOCATION_NOT_REVERSIBLE: "이미 출력 확정된 PG 배정이 있음",
-  INVENTORY_NOT_RESERVED: "PG 재고가 주문확인 상태가 아님",
-  OUTBOUND_HANDOFF_STARTED: "출력 차수 또는 합포장 작업이 시작됨",
-  WRITE_REQUEST_PENDING: "외부 API 처리 또는 확인이 진행 중임",
-  RETURN_FLOW_EXISTS: "반품 처리가 진행 중이거나 연결된 이력이 있음",
-  SALES_RECORD_EXISTS: "매출 원장이 이미 생성됨",
-  ORDER_STATUS_NOT_REVERSIBLE: "쿠팡 주문이 재매칭 가능 단계를 지남",
-  SNAPSHOT_INCONSISTENT: "주문·오퍼·PG 배정 스냅샷이 서로 다름",
-};
-
 const offerInclude = {
   model_option: true,
   storage_option: true,
@@ -257,7 +243,7 @@ function addReason(
 }
 
 function reasonDto(code: CoupangOrderRematchExclusionCode) {
-  return { code, label: EXCLUSION_LABELS[code] };
+  return { code };
 }
 
 function allocationPreview(allocation: AllocationRow) {

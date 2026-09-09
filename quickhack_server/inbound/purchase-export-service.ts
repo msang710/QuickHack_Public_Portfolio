@@ -100,7 +100,7 @@ function optionalInteger(value: unknown, minimum: number, label: string) {
   if (!Number.isSafeInteger(parsed) || parsed < minimum) {
     throw publicBadRequest(
       "PURCHASE_EXPORT_RATE_EVIDENCE_INVALID",
-      `${label}이(가) 올바르지 않습니다.`
+      "PURCHASE_EXPORT_RATE_EVIDENCE_INVALID"
     );
   }
 
@@ -158,7 +158,7 @@ function parseItems(input: PurchaseExportInput): PurchaseExportItem[] {
     if (item.expectedInboundId <= 0 || item.expectedInboundRevision < 0) {
       throw publicBadRequest(
         "PURCHASE_EXPORT_TARGET_INVALID",
-        `PG ${item.pgNo}의 입고 ID와 revision이 필요합니다.`
+        "PURCHASE_EXPORT_TARGET_INVALID"
       );
     }
     if (
@@ -167,7 +167,7 @@ function parseItems(input: PurchaseExportInput): PurchaseExportItem[] {
     ) {
       throw publicBadRequest(
         "PURCHASE_EXPORT_RATE_EVIDENCE_INVALID",
-        "매입가 기준 ID와 revision은 함께 제출해야 합니다."
+        "PURCHASE_EXPORT_RATE_EVIDENCE_INVALID"
       );
     }
   }
@@ -182,7 +182,7 @@ function parseKind(value: unknown): PurchaseExportKind {
 
   throw publicBadRequest(
     "PURCHASE_EXPORT_INPUT_INVALID",
-    "지원하지 않는 내보내기 양식입니다."
+    "PURCHASE_EXPORT_INPUT_INVALID"
   );
 }
 
@@ -195,7 +195,7 @@ function normalizeDate(value: unknown) {
 
   throw publicBadRequest(
     "PURCHASE_EXPORT_DATE_INVALID",
-    "내보내기 매입일은 YYYY-MM-DD 형식이어야 합니다."
+    "PURCHASE_EXPORT_DATE_INVALID"
   );
 }
 
@@ -749,7 +749,7 @@ async function loadExportRows(
   if (missingPgNos.length > 0) {
     throw publicConflict(
       "PURCHASE_EXPORT_TARGET_CHANGED",
-      `기기를 찾을 수 없습니다. (${missingPgNos.join(", ")})`
+      "PURCHASE_EXPORT_TARGET_CHANGED"
     );
   }
 
@@ -765,7 +765,7 @@ async function loadExportRows(
     ) {
       throw publicConflict(
         "PURCHASE_EXPORT_TARGET_CHANGED",
-        `PG ${device.pg_no}의 매입 대상 입고 회차가 변경되었습니다. 목록을 새로 고쳐 주세요.`
+        "PURCHASE_EXPORT_TARGET_CHANGED"
       );
     }
   }
@@ -814,7 +814,7 @@ async function loadExportRows(
     ) {
       throw publicConflict(
         "PURCHASE_EXPORT_RATE_STALE",
-        `PG ${device.pg_no}의 매입가 기준이 변경되었습니다. 매입가 목록을 새로 고친 뒤 다시 내보내 주세요.`
+        "PURCHASE_EXPORT_RATE_STALE"
       );
     }
   }
@@ -901,7 +901,7 @@ export async function buildPurchaseExportWorkbook(
   if (items.length === 0) {
     throw publicBadRequest(
       "PURCHASE_EXPORT_INPUT_INVALID",
-      "내보낼 기기가 없습니다."
+      "PURCHASE_EXPORT_INPUT_INVALID"
     );
   }
 

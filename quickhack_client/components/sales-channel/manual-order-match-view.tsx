@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { canAccessRole, type AuthUser } from "@/quickhack_shared/auth/auth-constants";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { Input } from "@/quickhack_client/components/ui/input";
@@ -17,33 +19,30 @@ import {
   manualOrderMatchCommandDraftReducer,
   type ManualOrderMatchPreview,
 } from "@/quickhack_client/components/sales-channel/manual-order-match-command-draft";
+import { allocationStatusLabel } from "@/quickhack_client/components/sales-channel/allocation-status-presentation";
 
 type Allocation = { allocationId: number; pgNo: string; status: string; reasonCodes: string[] };
 type WorkItem = { workItemId: number; externalOrderId: string; externalShipmentId: string; itemName: string | null; matchableQuantity: number; workStatus: string; recoveryStatus: string; recoveryReason: string | null; allocations: Allocation[] };
 type Candidate = { pgNo: string; model: string; storage: string | null; color: string | null; saleGrade: string | null; warranty: string | null; selectionReceiptId: string };
 
-const reasonLabels: Record<string, string> = {
-  ALLOCATION_NOT_FOUND: "현재 배정을 찾을 수 없습니다.",
-  ALLOCATION_NOT_REVERSIBLE: "현재 단계에서는 배정을 변경할 수 없습니다.",
-  SHIPMENT_LIST_PRINTED: "출고 목록이 이미 출력됐습니다.",
-  ACTIVE_PACKAGE_GROUP: "활성 포장 그룹에 포함돼 있습니다.",
-  SALES_RECORDED: "매출이 이미 확정됐습니다.",
-  RETURN_STARTED: "반품 처리가 시작됐습니다.",
-  CHANNEL_WRITE_PENDING: "판매채널 쓰기가 진행 중입니다.",
-  CARRIER_SHIPMENT_EXISTS: "택배 송장 또는 배송 처리가 이미 시작됐습니다.",
-  CARRIER_OPERATION_ACTIVE: "택배 송장 발급·등록·교체 작업이 진행 중입니다.",
-  SHIPMENT_ADDRESS_CHANGE_ACTIVE: "배송지 변경 요청 처리가 진행 중입니다.",
-  MATCH_QUANTITY_CONFLICT: "주문 필요 수량이 이미 모두 배정됐습니다.",
-  PG_NOT_SELLABLE: "선택한 PG가 판매 가능 상태가 아닙니다.",
-  PG_ALREADY_ALLOCATED: "선택한 PG가 이미 이 주문에 배정돼 있습니다.",
-  PG_NOT_FOUND: "선택한 PG를 찾을 수 없습니다.",
-  ORDER_STATE_NOT_ELIGIBLE: "현재 판매채널 주문 상태에서는 PG를 변경할 수 없습니다.",
-  PG_SELECTION_REQUIRED: "현재 주문에서 검색 결과의 PG를 다시 선택해 주세요.",
-  ORDER_ITEM_CANCELED: "취소된 주문 품목에는 PG를 배정하거나 교체할 수 없습니다.",
-  MANUAL_REASSIGNMENT_REQUIRED: "PG 재배정이 끝날 때까지 출고가 차단됩니다.",
-};
+const REASON_MESSAGE_KEYS = { ALLOCATION_NOT_FOUND: "allocationNotFound", ALLOCATION_NOT_REVERSIBLE: "allocationNotReversible", SHIPMENT_LIST_PRINTED: "shipmentListPrinted", ACTIVE_PACKAGE_GROUP: "activePackageGroup", SALES_RECORDED: "salesRecorded", RETURN_STARTED: "returnStarted", CHANNEL_WRITE_PENDING: "channelWritePending", CARRIER_SHIPMENT_EXISTS: "carrierShipmentExists", CARRIER_OPERATION_ACTIVE: "carrierOperationActive", SHIPMENT_ADDRESS_CHANGE_ACTIVE: "shipmentAddressChangeActive", MATCH_QUANTITY_CONFLICT: "matchQuantityConflict", PG_NOT_SELLABLE: "pgNotSellable", PG_ALREADY_ALLOCATED: "pgAlreadyAllocated", PG_NOT_FOUND: "pgNotFound", ORDER_STATE_NOT_ELIGIBLE: "orderStateNotEligible", PG_SELECTION_REQUIRED: "pgSelectionRequired", ORDER_ITEM_CANCELED: "orderItemCanceled", MANUAL_REASSIGNMENT_REQUIRED: "manualReassignmentRequired" } as const;
 
 export function ManualOrderMatchView({ user }: { user: AuthUser }) {
+  const t = useTranslations("salesChannel.manualMatch");
+  const reasonLabel = React.useCallback((code: string | null | undefined) => {
+    const normalized = code ?? "";
+    if (normalized === "MANUAL_ORDER_MATCH_OPERATION_INVALID") {
+      return t("reason.allocationNotReversible");
+    }
+    const key = REASON_MESSAGE_KEYS[normalized as keyof typeof REASON_MESSAGE_KEYS];
+    return key ? t(`reason.${key}`) : normalized;
+  }, [t]);
+  const workStatusLabel = React.useCallback((status: string) => {
+    const known = ["UNMATCHED", "MATCHED", "PARTIAL", "FAILED", "SKIPPED", "EXPIRED"];
+    return known.includes(status)
+      ? t(`workStatus.${status}` as never)
+      : t("workStatus.unknown", { code: status });
+  }, [t]);
   const [search, setSearch] = React.useState("");
   const [items, setItems] = React.useState<WorkItem[]>([]);
   const [selected, setSelected] = React.useState<WorkItem | null>(null);
@@ -77,7 +76,7 @@ export function ManualOrderMatchView({ user }: { user: AuthUser }) {
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || "PG 후보를 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.candidatesLoadFailed")));
       }
       const candidates = payload.data.items as Candidate[];
       setCandidateOptions(
@@ -97,7 +96,7 @@ export function ManualOrderMatchView({ user }: { user: AuthUser }) {
       setCandidateOptions([]);
       setMessage(error instanceof Error ? error.message : String(error));
     }
-  }, [draft.operation, selected]);
+  }, [draft.operation, selected, t]);
 
   const candidateSearchTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchCandidates = React.useCallback((query: string) => {
@@ -114,13 +113,13 @@ export function ManualOrderMatchView({ user }: { user: AuthUser }) {
     try {
       const response = await fetch(`/api/coupang/manual-order-matches?search=${encodeURIComponent(search)}`, { cache: "no-store" });
       const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.message || "목록을 불러오지 못했습니다.");
+      if (!response.ok || !payload.ok) throw new Error(legacyApiMessage(payload, t("message.listLoadFailed")));
       setItems(payload.data.items);
       setMutationEnabled(payload.data.capabilities?.mutationEnabled === true);
       if (selected) setSelected(payload.data.items.find((item: WorkItem) => item.workItemId === selected.workItemId) ?? null);
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
-  }, [search, selected]);
+  }, [search, selected, t]);
 
   async function previewChange() {
     if (!selected) return;
@@ -133,7 +132,7 @@ export function ManualOrderMatchView({ user }: { user: AuthUser }) {
     try {
       const response = await fetch("/api/coupang/manual-order-matches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody) });
       const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.message || "변경 영향을 확인하지 못했습니다.");
+      if (!response.ok || !payload.ok) throw new Error(legacyApiMessage(payload, t("message.previewFailed")));
       dispatchDraft({ type: "PREVIEW_SUCCEEDED", preview: payload.data as ManualOrderMatchPreview, commandKey: crypto.randomUUID() });
     } catch (error) { dispatchDraft({ type: "PREVIEW_FAILED" }); setMessage(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
@@ -150,15 +149,15 @@ export function ManualOrderMatchView({ user }: { user: AuthUser }) {
     try {
       const response = await fetch("/api/coupang/manual-order-matches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody) });
       const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.message || "PG 변경을 실행하지 못했습니다.");
+      if (!response.ok || !payload.ok) throw new Error(legacyApiMessage(payload, t("message.executeFailed")));
       const postCycle = payload.data?.postCycle;
       dispatchDraft({ type: "EXECUTE_FINISHED" });
       setMessage(
         postCycle?.status === "FAILED"
-          ? postCycle.message
+          ? t("message.postCycleFailed")
           : postCycle?.status === "PENDING"
-            ? "PG 변경은 반영됐고 판매채널 후속 처리는 진행 중입니다."
-            : "주문 PG 변경과 후속 처리를 반영했습니다."
+            ? t("message.postCyclePending")
+            : t("message.executeComplete")
       );
       await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
@@ -167,26 +166,26 @@ export function ManualOrderMatchView({ user }: { user: AuthUser }) {
 
   return <section className="grid h-full min-h-0 grid-cols-[minmax(420px,1fr)_minmax(420px,520px)] gap-4 overflow-hidden p-5">
     <div className="flex min-h-0 flex-col gap-3 rounded-md border bg-card p-4">
-      <div><h2 className="font-semibold">주문 변경 요청</h2><p className="text-sm text-muted-foreground">판매채널에 이미 접수된 주문만 처리합니다. 독립 출고는 재고 수정에서 상태를 보류로 변경하세요.</p></div>
-      <div className="flex gap-2"><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="주문번호, 출고번호, 상품명" onKeyDown={(e) => { if (e.key === "Enter") void load(); }} /><Button onClick={() => void load()} disabled={busy}>검색</Button></div>
+      <div><h2 className="font-semibold">{t("title")}</h2><p className="text-sm text-muted-foreground">{t("description")}</p></div>
+      <div className="flex gap-2"><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("searchPlaceholder")} onKeyDown={(e) => { if (e.key === "Enter") void load(); }} /><Button onClick={() => void load()} disabled={busy}>{t("search")}</Button></div>
       <div className="min-h-0 overflow-auto rounded border">
-        {items.length === 0 ? <p className="p-4 text-sm text-muted-foreground">조회된 판매채널 주문이 없습니다.</p> : items.map((item) => <button key={item.workItemId} className={`block w-full border-b p-3 text-left text-sm hover:bg-muted ${selected?.workItemId === item.workItemId ? "bg-muted" : ""}`} onClick={() => { setSelected(item); dispatchDraft({ type: "ORDER_SELECTED", allocationId: item.allocations[0]?.allocationId ?? null }); setCandidateOptions([]); }}>
-          <div className="font-medium">{item.externalOrderId} · {item.itemName ?? item.externalShipmentId}</div><div className="text-muted-foreground">{item.workStatus} · {item.allocations.length}/{item.matchableQuantity} · {item.allocations.map((a) => a.pgNo).join(", ") || "PG 없음"}</div>{item.recoveryStatus !== "NONE" && <div className="mt-1 text-amber-700">복구 필요: {reasonLabels[item.recoveryReason ?? ""] ?? item.recoveryReason ?? item.recoveryStatus}</div>}
+        {items.length === 0 ? <p className="p-4 text-sm text-muted-foreground">{t("empty")}</p> : items.map((item) => <button key={item.workItemId} className={`block w-full border-b p-3 text-left text-sm hover:bg-muted ${selected?.workItemId === item.workItemId ? "bg-muted" : ""}`} onClick={() => { setSelected(item); dispatchDraft({ type: "ORDER_SELECTED", allocationId: item.allocations[0]?.allocationId ?? null }); setCandidateOptions([]); }}>
+          <div className="font-medium">{item.externalOrderId} · {item.itemName ?? item.externalShipmentId}</div><div className="text-muted-foreground">{workStatusLabel(item.workStatus)} · {item.allocations.length}/{item.matchableQuantity} · {item.allocations.map((a) => a.pgNo).join(", ") || t("noPg")}</div>{item.recoveryStatus !== "NONE" && <div className="mt-1 text-amber-700">{t("recovery", { reason: reasonLabel(item.recoveryReason) || t("recoveryStatus.reassignmentRequired") })}</div>}
         </button>)}
       </div>
     </div>
     <div className="min-h-0 overflow-auto rounded-md border bg-card p-4">
-      {!selected ? <p className="text-sm text-muted-foreground">변경할 주문 품목을 선택하세요.</p> : <div className="grid gap-4">
-        <div><h3 className="font-semibold">{selected.externalOrderId}</h3><p className="text-sm text-muted-foreground">출고 {selected.externalShipmentId} · {selected.itemName}</p></div>
-        <label className="grid gap-1 text-sm">작업<select className="h-9 rounded-md border bg-background px-3" value={draft.operation} onChange={(e) => { const next = e.target.value as typeof draft.operation; dispatchDraft({ type: "OPERATION_CHANGED", operation: next, allocationId: selected.allocations[0]?.allocationId ?? null }); setCandidateOptions([]); }}><option value="ASSIGN">PG 배정</option><option value="REPLACE">PG 교체</option><option value="RELEASE">PG 해제</option></select></label>
-        {(draft.operation === "REPLACE" || draft.operation === "RELEASE") && <label className="grid gap-1 text-sm">현재 PG<select className="h-9 rounded-md border bg-background px-3" value={draft.allocationId ?? ""} onChange={(e) => dispatchDraft({ type: "ALLOCATION_CHANGED", allocationId: Number(e.target.value) })}>{selected.allocations.map((a) => <option key={a.allocationId} value={a.allocationId}>{a.pgNo} · {a.status}</option>)}</select></label>}
-        {draft.operation !== "RELEASE" && <SearchSelect label="새 PG" value={draft.pgNo} options={candidateOptions} placeholder="판매 가능 PG 검색" allowEmpty={false} selectionMode="explicit-option" onSearchChange={searchCandidates} onSelectionInvalidated={resetCandidate} onValueChange={(value) => dispatchDraft({ type: "CANDIDATE_SELECTED", pgNo: value, selectionReceiptId: candidateOptions.find((option) => option.value === value)?.receiptId ?? "" })} />}
-        <label className="grid gap-1 text-sm">요청 접수 경로<select className="h-9 rounded-md border bg-background px-3" value={draft.requestChannel} onChange={(e) => dispatchDraft({ type: "REQUEST_CHANNEL_CHANGED", requestChannel: e.target.value })}><option value="COUPANG_INQUIRY">쿠팡 문의</option><option value="PHONE">유선 문의</option><option value="OTHER">기타</option></select></label>
-        <label className="grid gap-1 text-sm">변경 사유<Input value={draft.reason} onChange={(e) => dispatchDraft({ type: "REASON_CHANGED", reason: e.target.value })} maxLength={500} /></label>
-        {!canWrite && <FeedbackBanner tone="warning">STAFF는 조회만 가능하며 MANAGER와 OTP 인증이 변경에 필요합니다.</FeedbackBanner>}
-        {canWrite && !mutationEnabled && <FeedbackBanner tone="warning">주문 PG 변경 기능이 운영 설정에서 비활성화되어 있습니다. 영향 확인만 가능합니다.</FeedbackBanner>}
-        <Button onClick={() => void previewChange()} disabled={busy || !canPreviewManualOrderMatch(draft, Boolean(selected))}>변경 영향 확인</Button>
-        {draft.preview && <div className="grid gap-2 rounded-md border p-3 text-sm"><div className="font-medium">{draft.preview.eligible ? "변경 가능" : "변경 불가"}</div>{draft.preview.candidate && <div>선택 PG {draft.preview.candidate.pgNo} · {draft.preview.candidate.model} {draft.preview.candidate.storage} {draft.preview.candidate.color}</div>}{draft.preview.candidate?.differences.map((d) => <div key={d.field} className="text-amber-700">{d.field}: 주문 {d.required} → 출고 {d.actual}</div>)}{draft.preview.reasonCodes.map((code) => <div key={code} className="text-red-700">{reasonLabels[code] ?? code}</div>)}{canWrite ? <SensitiveMenuGate item={{ id: "sales-channel-manual-order-match", label: "주문 PG 변경 확정" }}><Button onClick={() => void executeChange()} disabled={busy || !draft.preview.eligible || !mutationEnabled}>확정 실행</Button></SensitiveMenuGate> : <Button disabled>확정 실행</Button>}</div>}
+      {!selected ? <p className="text-sm text-muted-foreground">{t("selectOrder")}</p> : <div className="grid gap-4">
+        <div><h3 className="font-semibold">{selected.externalOrderId}</h3><p className="text-sm text-muted-foreground">{t("shipment", { id: selected.externalShipmentId, item: selected.itemName ?? "" })}</p></div>
+        <label className="grid gap-1 text-sm">{t("form.operation")}<select className="h-9 rounded-md border bg-background px-3" value={draft.operation} onChange={(e) => { const next = e.target.value as typeof draft.operation; dispatchDraft({ type: "OPERATION_CHANGED", operation: next, allocationId: selected.allocations[0]?.allocationId ?? null }); setCandidateOptions([]); }}><option value="ASSIGN">{t("form.assign")}</option><option value="REPLACE">{t("form.replace")}</option><option value="RELEASE">{t("form.release")}</option></select></label>
+        {(draft.operation === "REPLACE" || draft.operation === "RELEASE") && <label className="grid gap-1 text-sm">{t("form.currentPg")}<select className="h-9 rounded-md border bg-background px-3" value={draft.allocationId ?? ""} onChange={(e) => dispatchDraft({ type: "ALLOCATION_CHANGED", allocationId: Number(e.target.value) })}>{selected.allocations.map((a) => <option key={a.allocationId} value={a.allocationId}>{a.pgNo} · {allocationStatusLabel(a.status, t)}</option>)}</select></label>}
+        {draft.operation !== "RELEASE" && <SearchSelect label={t("form.newPg")} value={draft.pgNo} options={candidateOptions} placeholder={t("form.pgSearch")} allowEmpty={false} selectionMode="explicit-option" onSearchChange={searchCandidates} onSelectionInvalidated={resetCandidate} onValueChange={(value) => dispatchDraft({ type: "CANDIDATE_SELECTED", pgNo: value, selectionReceiptId: candidateOptions.find((option) => option.value === value)?.receiptId ?? "" })} />}
+        <label className="grid gap-1 text-sm">{t("form.requestChannel")}<select className="h-9 rounded-md border bg-background px-3" value={draft.requestChannel} onChange={(e) => dispatchDraft({ type: "REQUEST_CHANNEL_CHANGED", requestChannel: e.target.value })}><option value="COUPANG_INQUIRY">{t("form.coupang")}</option><option value="PHONE">{t("form.phone")}</option><option value="OTHER">{t("form.other")}</option></select></label>
+        <label className="grid gap-1 text-sm">{t("form.reason")}<Input value={draft.reason} onChange={(e) => dispatchDraft({ type: "REASON_CHANGED", reason: e.target.value })} maxLength={500} /></label>
+        {!canWrite && <FeedbackBanner tone="warning">{t("permission.readOnly")}</FeedbackBanner>}
+        {canWrite && !mutationEnabled && <FeedbackBanner tone="warning">{t("permission.disabled")}</FeedbackBanner>}
+        <Button onClick={() => void previewChange()} disabled={busy || !canPreviewManualOrderMatch(draft, Boolean(selected))}>{t("preview.action")}</Button>
+        {draft.preview && <div className="grid gap-2 rounded-md border p-3 text-sm"><div className="font-medium">{draft.preview.eligible ? t("preview.eligible") : t("preview.ineligible")}</div>{draft.preview.candidate && <div>{t("preview.selected", { pg: draft.preview.candidate.pgNo, model: draft.preview.candidate.model, storage: draft.preview.candidate.storage ?? "", color: draft.preview.candidate.color ?? "" })}</div>}{draft.preview.candidate?.differences.map((d) => <div key={d.field} className="text-amber-700">{t("preview.difference", { field: d.field, required: d.required, actual: d.actual })}</div>)}{draft.preview.reasonCodes.map((code) => <div key={code} className="text-red-700">{reasonLabel(code)}</div>)}{canWrite ? <SensitiveMenuGate item={{ id: "sales-channel-manual-order-match", label: t("preview.confirmLabel") }}><Button onClick={() => void executeChange()} disabled={busy || !draft.preview.eligible || !mutationEnabled}>{t("preview.execute")}</Button></SensitiveMenuGate> : <Button disabled>{t("preview.execute")}</Button>}</div>}
         {message && <FeedbackBanner tone="warning">{message}</FeedbackBanner>}
       </div>}
     </div>

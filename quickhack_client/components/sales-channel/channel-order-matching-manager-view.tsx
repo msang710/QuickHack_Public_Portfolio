@@ -2,6 +2,9 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import type { InventoryCandidateWarning } from "@/quickhack_shared/catalog/inventory-candidate-warning";
+import { useTranslations } from "next-intl";
 import {
   AlertTriangle,
   CheckCheck,
@@ -52,7 +55,9 @@ import {
 import {
   DetailRow,
   formatDate,
+  statusLabel,
 } from "@/quickhack_client/components/shared/device-detail-sheet";
+import { allocationStatusLabel } from "@/quickhack_client/components/sales-channel/allocation-status-presentation";
 import {
   useUnsavedChanges,
   useUnsavedForm,
@@ -153,7 +158,7 @@ type CoupangInventoryCandidatesApiResponse = {
     requiredColor: string | null;
     requiredWarrantyGroup?: string | null;
     candidates: CoupangInventoryCandidateDto[];
-    warnings: string[];
+    warnings: InventoryCandidateWarning[];
   };
 };
 
@@ -176,15 +181,15 @@ function mappingFormFromItem(item: CoupangProductMappingDto | null): MappingForm
   };
 }
 
-function offerDisplayLabel(offer: SalesOfferDto | null | undefined) {
+function offerDisplayLabel(offer: SalesOfferDto | null | undefined, allStorage: string, allColor: string) {
   if (!offer) {
     return "-";
   }
 
   const conditions = [
     offer.model,
-    offer.requiredStorage || "전체 용량",
-    offer.requiredColor || "전체 색상",
+    offer.requiredStorage || allStorage,
+    offer.requiredColor || allColor,
     offer.warrantyLabel || warrantyGroupLabel(offer.warrantyGroup),
   ];
   return conditions.join(" / ");
@@ -212,28 +217,39 @@ function coupangMappingSearchText(item: CoupangProductMappingDto) {
     .toLowerCase();
 }
 
-function mappingStatusBadge(status: string) {
+function mappingStatusBadge(status: string, mapped: string, unmapped: string) {
   if (status === "MAPPED") {
-    return <Badge variant="success">매핑됨</Badge>;
+    return <Badge variant="success">{mapped}</Badge>;
   }
 
-  return <Badge variant="warning">미매핑</Badge>;
+  return <Badge variant="warning">{unmapped}</Badge>;
 }
 
-function rematchOfferLabel(offer: CoupangOrderRematchOfferPreview | null) {
+function rematchOfferLabel(offer: CoupangOrderRematchOfferPreview | null, noMapping: string, allStorage: string, allColor: string) {
   if (!offer) {
-    return "매핑 없음";
+    return noMapping;
   }
 
   return [
     offer.model,
-    offer.storage || "전체 용량",
-    offer.color || "전체 색상",
+    offer.storage || allStorage,
+    offer.color || allColor,
     offer.warrantyLabel || offer.warrantyGroup,
   ].join(" / ");
 }
 
+function rematchExclusionLabel(
+  code: string,
+  t: ReturnType<typeof useTranslations<"salesChannel.orderMatching">>
+) {
+  return t(`rematchExclusion.${code}` as never);
+}
+
 export function ChannelOrderMatchingManagerView() {
+  const t = useTranslations("salesChannel.orderMatching");
+  const detailT = useTranslations("common.deviceDetail");
+  const manualMatchT = useTranslations("salesChannel.manualMatch");
+  const sensitiveT = useTranslations("common.sensitiveRequest");
   const { runGuardedAction } = useUnsavedChanges();
   const [mappings, setMappings] = React.useState<CoupangProductMappingDto[]>([]);
   const [offers, setOffers] = React.useState<SalesOfferDto[]>([]);
@@ -246,7 +262,7 @@ export function ChannelOrderMatchingManagerView() {
   const [candidates, setCandidates] = React.useState<
     CoupangInventoryCandidateDto[]
   >([]);
-  const [candidateWarnings, setCandidateWarnings] = React.useState<string[]>([]);
+  const [candidateWarnings, setCandidateWarnings] = React.useState<InventoryCandidateWarning[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = React.useState(false);
@@ -277,7 +293,7 @@ export function ChannelOrderMatchingManagerView() {
     () =>
       activeOffers.map((offer) => ({
         value: String(offer.id),
-        label: offerDisplayLabel(offer),
+        label: offerDisplayLabel(offer, t("common.allStorage"), t("common.allColor")),
         description: offer.offerCode,
         searchText: [
           offer.offerCode,
@@ -291,7 +307,7 @@ export function ChannelOrderMatchingManagerView() {
           .join(" ")
           .toLowerCase(),
       })),
-    [activeOffers]
+    [activeOffers, t]
   );
   const selectedMapping = React.useMemo(
     () =>
@@ -314,8 +330,8 @@ export function ChannelOrderMatchingManagerView() {
   useUnsavedForm({
     id: CHANNEL_PRODUCT_MAPPING_FORM_ID,
     label: selectedMapping
-      ? `${selectedMapping.externalVendorItemId} 채널 주문 매핑`
-      : "채널 주문 매핑",
+      ? `${selectedMapping.externalVendorItemId} · ${t("detail.title")}`
+      : t("detail.title"),
     enabled: selectedMapping !== null,
     isDirty:
       selectedMapping !== null &&
@@ -365,9 +381,9 @@ export function ChannelOrderMatchingManagerView() {
       },
       {
         key: "externalOptionName",
-        label: "쿠팡 옵션",
+        label: t("columns.option"),
         width: "minmax(260px,1fr)",
-        placeholder: "상품/옵션",
+        placeholder: t("columns.productOption"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (mapping) => (
           <>
@@ -399,9 +415,9 @@ export function ChannelOrderMatchingManagerView() {
       },
       {
         key: "salesOfferCode",
-        label: "판매 오퍼",
+        label: t("columns.offer"),
         width: "240px",
-        placeholder: "기종/조건/보증",
+        placeholder: t("columns.offerCondition"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (mapping) => {
           const offer = mapping.salesOfferId
@@ -411,7 +427,7 @@ export function ChannelOrderMatchingManagerView() {
           return (
             <>
               <div className="truncate font-medium">
-                {offerDisplayLabel(offer) || "-"}
+                {offerDisplayLabel(offer, t("common.allStorage"), t("common.allColor")) || "-"}
               </div>
               <div className="truncate font-mono text-[11px] text-muted-foreground">
                 {mapping.salesOfferCode || "-"}
@@ -438,36 +454,36 @@ export function ChannelOrderMatchingManagerView() {
       },
       {
         key: "requiredStorage",
-        label: "용량 조건",
+        label: t("columns.storageCondition"),
         width: "110px",
-        placeholder: "용량",
+        placeholder: t("columns.storage"),
         cellClassName: "flex items-center px-3",
         render: (mapping) => mapping.requiredStorage || "-",
         text: (mapping) => mapping.requiredStorage || "",
       },
       {
         key: "requiredColor",
-        label: "색상 조건",
+        label: t("columns.colorCondition"),
         width: "130px",
-        placeholder: "색상",
+        placeholder: t("columns.color"),
         cellClassName: "flex items-center px-3",
         render: (mapping) => mapping.requiredColor || "-",
         text: (mapping) => mapping.requiredColor || "",
       },
       {
         key: "mappingStatus",
-        label: "상태",
+        label: t("columns.status"),
         width: "90px",
-        placeholder: "상태",
+        placeholder: t("columns.status"),
         cellClassName: "flex items-center px-3",
-        render: (mapping) => mappingStatusBadge(mapping.mappingStatus),
+        render: (mapping) => mappingStatusBadge(mapping.mappingStatus, t("common.mapped"), t("common.unmapped")),
         text: (mapping) => mapping.mappingStatus,
       },
       {
         key: "orderItemCount",
-        label: "주문",
+        label: t("columns.orders"),
         width: "90px",
-        placeholder: "주문 수",
+        placeholder: t("columns.orderCount"),
         headerClassName: "justify-end",
         cellClassName: "flex items-center justify-end px-3 tabular-nums",
         render: (mapping) => mapping.orderItemCount,
@@ -475,7 +491,7 @@ export function ChannelOrderMatchingManagerView() {
         sortValue: (mapping) => mapping.orderItemCount,
       },
     ],
-    [offerById]
+    [offerById, t]
   );
   const mappedCount = mappings.filter(
     (mapping) => mapping.mappingStatus === "MAPPED"
@@ -499,13 +515,13 @@ export function ChannelOrderMatchingManagerView() {
 
       if (!mappingResponse.ok || !mappingPayload?.ok) {
         throw new Error(
-          mappingPayload?.message || "쿠팡 상품 매핑 목록을 불러오지 못했습니다."
+          mappingPayload?.message || t("message.mappingLoadFailed")
         );
       }
 
       if (!offerResponse.ok || !offerPayload?.ok) {
         throw new Error(
-          offerPayload?.message || "판매 오퍼 목록을 불러오지 못했습니다."
+          offerPayload?.message || t("message.offerLoadFailed")
         );
       }
 
@@ -537,7 +553,7 @@ export function ChannelOrderMatchingManagerView() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -570,7 +586,7 @@ export function ChannelOrderMatchingManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [CHANNEL_PRODUCT_MAPPING_FORM_ID],
-      targetLabel: `${mapping.externalVendorItemId} 매핑 열기`,
+      targetLabel: `${mapping.externalVendorItemId} · ${t("detail.title")}`,
       action: () => applySelectedMapping(mapping),
     });
   }
@@ -579,7 +595,7 @@ export function ChannelOrderMatchingManagerView() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [CHANNEL_PRODUCT_MAPPING_FORM_ID],
-      targetLabel: "채널 주문 매핑 새로고침",
+      targetLabel: t("toolbar.refresh"),
       action: () => {
         void loadData();
       },
@@ -599,6 +615,7 @@ export function ChannelOrderMatchingManagerView() {
         const data = await fetchCoupangOrderRematchPreview({
           cursor,
           limit: 100,
+          fallbackMessage: t("fallback.rematchPreviewFailed"),
         });
 
         if (
@@ -606,11 +623,14 @@ export function ChannelOrderMatchingManagerView() {
           rematchPreview &&
           rematchPreview.manifestToken !== data.manifestToken
         ) {
-          const refreshed = await fetchCoupangOrderRematchPreview({ limit: 100 });
+          const refreshed = await fetchCoupangOrderRematchPreview({
+            limit: 100,
+            fallbackMessage: t("fallback.rematchPreviewFailed"),
+          });
           setRematchPreview(refreshed);
           setRematchPreviewItems(refreshed.items);
           setRematchPreviewError(
-            "목록을 확인하는 동안 주문 상태가 변경되어 첫 페이지부터 다시 표시했습니다."
+            t("rematch.refreshed")
           );
           return;
         }
@@ -627,14 +647,14 @@ export function ChannelOrderMatchingManagerView() {
         setIsRematchPreviewLoading(false);
       }
     },
-    [isRematchPreviewLoading, rematchPreview]
+    [isRematchPreviewLoading, rematchPreview, t]
   );
 
   function requestRematchPreview() {
     runGuardedAction({
       intent: "internal-change",
       formIds: [CHANNEL_PRODUCT_MAPPING_FORM_ID],
-      targetLabel: "기존 주문 재매칭 대상 확인",
+      targetLabel: t("rematch.title"),
       action: () => {
         setIsRematchPreviewOpen(true);
         setIsRematchConfirmOpen(false);
@@ -656,7 +676,13 @@ export function ChannelOrderMatchingManagerView() {
 
     try {
       const result = await executeCoupangOrderRematch(
-        rematchPreview.manifestToken
+        rematchPreview.manifestToken,
+        t("fallback.rematchExecuteFailed"),
+        {
+          authRequired: sensitiveT("authRequired"),
+          requestFailed: sensitiveT("requestFailed"),
+          verifyFailed: sensitiveT("verifyFailed"),
+        }
       );
       setIsRematchConfirmOpen(false);
       setIsRematchPreviewOpen(false);
@@ -664,7 +690,7 @@ export function ChannelOrderMatchingManagerView() {
       setRematchPreviewItems([]);
 
       if (result.rematch.status === "FAILED") {
-        setMessage(result.rematch.message);
+        setMessage(t("message.rematchAfterResetFailed"));
         setMessageTone("warning");
         return;
       }
@@ -675,10 +701,13 @@ export function ChannelOrderMatchingManagerView() {
         summary.failedItemCount > 0 ||
         summary.conflictCount > 0 ||
         summary.deferredItemCount > 0;
-      setMessage(
-        `기존 배정 ${result.reset.allocationCount}건을 해제하고 주문 ${result.reset.shipmentCount}건을 다시 매칭했습니다. ` +
-          `완료 ${summary.fullyMatchedItemCount}건, 부분 ${summary.partialItemCount}건, 실패 ${summary.failedItemCount}건입니다.`
-      );
+      setMessage(t("message.rematchComplete", {
+        allocations: result.reset.allocationCount,
+        shipments: result.reset.shipmentCount,
+        completed: summary.fullyMatchedItemCount,
+        partial: summary.partialItemCount,
+        failed: summary.failedItemCount,
+      }));
       setMessageTone(hasIncompleteResult ? "warning" : "success");
     } catch (error) {
       setIsRematchConfirmOpen(false);
@@ -715,14 +744,14 @@ export function ChannelOrderMatchingManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok || !payload.item) {
-        throw new Error(payload?.message || "매칭 기준을 저장하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.saveFailed")));
       }
 
       const feedback = !payload.item.mappingChanged
-        ? "동일한 매칭 기준입니다. 저장된 데이터는 변경하지 않았습니다."
+        ? t("message.unchanged")
         : payload.item.protectedOrderItemCount
-          ? `매칭 기준을 저장했습니다. 변경 가능한 주문 ${payload.item.updatedOrderItemCount ?? 0}건에 반영했고, 진행 또는 완료 이력이 있는 주문 ${payload.item.protectedOrderItemCount}건은 기존 매핑을 유지했습니다.`
-          : `매칭 기준을 저장했습니다. 변경 가능한 주문 ${payload.item.updatedOrderItemCount ?? 0}건에 반영했습니다.`;
+          ? t("message.savedWithProtected", { updated: payload.item.updatedOrderItemCount ?? 0, protected: payload.item.protectedOrderItemCount })
+          : t("message.saved", { updated: payload.item.updatedOrderItemCount ?? 0 });
       await loadData();
       setMessage(feedback);
       setMessageTone("success");
@@ -766,15 +795,13 @@ export function ChannelOrderMatchingManagerView() {
         | null;
 
       if (!response.ok || !payload?.ok || !payload.data) {
-        throw new Error(payload?.message || "재고 후보를 조회하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.candidateLoadFailed")));
       }
 
       setCandidates(payload.data.candidates ?? []);
       setCandidateWarnings(payload.data.warnings ?? []);
-    } catch (error) {
-      setCandidateWarnings([
-        error instanceof Error ? error.message : String(error),
-      ]);
+    } catch {
+      setCandidateWarnings([{ code: "CANDIDATE_LOAD_FAILED" }]);
     } finally {
       setIsPreviewLoading(false);
     }
@@ -788,16 +815,16 @@ export function ChannelOrderMatchingManagerView() {
     >
       <div className="flex min-h-0 flex-col gap-4">
         <SummaryStrip className="grid-cols-4">
-          <SummaryCell icon={Store} label="쿠팡 옵션" value={mappings.length} />
-          <SummaryCell icon={CheckCheck} label="매핑됨" value={mappedCount} />
-          <SummaryCell icon={ListChecks} label="미매핑" value={unmappedCount} />
-          <SummaryCell icon={Database} label="활성 오퍼" value={activeOffers.length} />
+          <SummaryCell icon={Store} label={t("summary.options")} value={mappings.length} />
+          <SummaryCell icon={CheckCheck} label={t("summary.mapped")} value={mappedCount} />
+          <SummaryCell icon={ListChecks} label={t("summary.unmapped")} value={unmappedCount} />
+          <SummaryCell icon={Database} label={t("summary.offers")} value={activeOffers.length} />
         </SummaryStrip>
 
         <WorkspacePanel className="flex-1">
           <PanelToolbar className="xl:grid-cols-[320px_160px_auto_auto]">
             <SearchInput
-              placeholder="vendorItemId, 상품명, 기종, 보증, 용량, 색상 검색"
+              placeholder={t("toolbar.search")}
               value={query}
               onValueChange={setQuery}
             />
@@ -812,15 +839,15 @@ export function ChannelOrderMatchingManagerView() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">전체</SelectItem>
-                <SelectItem value="MAPPED">매핑됨</SelectItem>
-                <SelectItem value="UNMAPPED">미매핑</SelectItem>
+                <SelectItem value="ALL">{t("common.all")}</SelectItem>
+                <SelectItem value="MAPPED">{t("common.mapped")}</SelectItem>
+                <SelectItem value="UNMAPPED">{t("common.unmapped")}</SelectItem>
               </SelectContent>
             </Select>
 
             <Button variant="outline" onClick={requestMappingReload}>
               <RefreshCcw className={cn("size-4", isLoading && "animate-spin")} />
-              새로고침
+              {t("toolbar.refresh")}
             </Button>
 
             <Button
@@ -830,7 +857,7 @@ export function ChannelOrderMatchingManagerView() {
               disabled={isRematchPreviewLoading}
             >
               <RotateCcw className="size-4" />
-              재매칭 대상 확인
+              {t("toolbar.preview")}
             </Button>
           </PanelToolbar>
 
@@ -840,8 +867,8 @@ export function ChannelOrderMatchingManagerView() {
             rowKey={(mapping) => mapping.externalVendorItemId}
             emptyMessage={
               isLoading
-                ? "쿠팡 상품 매핑 목록을 불러오는 중입니다."
-                : "표시할 쿠팡 상품 매핑이 없습니다."
+                ? t("grid.loading")
+                : t("grid.empty")
             }
             selectedRowKey={selectedVendorItemId}
             onRowClick={selectMapping}
@@ -854,9 +881,9 @@ export function ChannelOrderMatchingManagerView() {
 
       <aside className="min-h-0 overflow-auto rounded-md border bg-popover p-4">
         <div className="mb-4">
-          <h2 className="text-sm font-semibold">채널 주문 매칭 기준</h2>
+          <h2 className="text-sm font-semibold">{t("detail.title")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            쿠팡 vendorItemId를 QuickHack의 기종/보증조건 조합과 용량/색상 조건에 연결합니다.
+            {t("detail.subtitle")}
           </p>
         </div>
 
@@ -877,7 +904,7 @@ export function ChannelOrderMatchingManagerView() {
                 value={selectedMapping.externalVendorItemId}
               />
               <DetailRow
-                label="쿠팡 옵션"
+                label={t("detail.option")}
                 value={
                   selectedMapping.externalOptionName ||
                   selectedMapping.sample?.sellerProductItemName ||
@@ -885,37 +912,37 @@ export function ChannelOrderMatchingManagerView() {
                 }
               />
               <DetailRow
-                label="상품명"
+                label={t("detail.productName")}
                 value={selectedMapping.sample?.sellerProductName}
               />
               <DetailRow
-                label="최근 수정"
+                label={t("detail.updated")}
                 value={formatDate(selectedMapping.updatedAt)}
               />
             </div>
 
             <SearchSelect
-              label="판매 오퍼"
+              label={t("detail.offer")}
               value={form.salesOfferId}
               options={activeOfferOptions}
-              placeholder="기종, 용량, 색상 또는 보증조건 검색"
+              placeholder={t("detail.offerSearch")}
               allowEmpty
               onValueChange={(value) => updateForm("salesOfferId", value)}
             />
 
             {selectedOffer ? (
               <div className="rounded-md border bg-background px-3 py-2 text-sm">
-                <DetailRow label="오퍼 코드" value={selectedOffer.offerCode} />
-                <DetailRow label="기종" value={selectedOffer.model} />
-                <DetailRow label="용량" value={selectedOffer.requiredStorage || "전체"} />
-                <DetailRow label="색상" value={selectedOffer.requiredColor || "전체"} />
+                <DetailRow label={t("detail.offerCode")} value={selectedOffer.offerCode} />
+                <DetailRow label={t("detail.model")} value={selectedOffer.model} />
+                <DetailRow label={t("detail.storage")} value={selectedOffer.requiredStorage || t("common.allValue")} />
+                <DetailRow label={t("detail.color")} value={selectedOffer.requiredColor || t("common.allValue")} />
                 <DetailRow
-                  label="보증조건"
+                  label={t("detail.warranty")}
                   value={selectedOffer.warrantyLabel || warrantyGroupLabel(selectedOffer.warrantyGroup)}
                 />
                 <DetailRow
-                  label="오퍼 상태"
-                  value={selectedOffer.isActive ? "활성" : "비활성"}
+                  label={t("detail.offerStatus")}
+                  value={selectedOffer.isActive ? t("common.active") : t("common.inactive")}
                 />
               </div>
             ) : null}
@@ -923,7 +950,7 @@ export function ChannelOrderMatchingManagerView() {
             <div className="grid grid-cols-2 gap-2">
               <Button onClick={saveMapping} disabled={isSaving}>
                 <Save className="size-4" />
-                {isSaving ? "저장중" : "매칭 저장"}
+                {isSaving ? t("detail.saving") : t("detail.save")}
               </Button>
               <Button
                 type="button"
@@ -932,7 +959,7 @@ export function ChannelOrderMatchingManagerView() {
                 disabled={isSaving}
               >
                 <X className="size-4" />
-                매핑 해제
+                {t("detail.clear")}
               </Button>
             </div>
 
@@ -943,23 +970,25 @@ export function ChannelOrderMatchingManagerView() {
               disabled={isPreviewLoading || selectedMapping.mappingStatus !== "MAPPED"}
             >
               <Search className="size-4" />
-              {isPreviewLoading ? "조회중" : "재고 후보 미리보기"}
+              {isPreviewLoading ? t("detail.previewing") : t("detail.inventoryPreview")}
             </Button>
 
             {candidateWarnings.length > 0 ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                {candidateWarnings.join(" / ")}
+                {candidateWarnings.map((warning) =>
+                  t(`candidateWarning.${warning.code}` as never, warning.args as never)
+                ).join(" / ")}
               </div>
             ) : null}
 
             <div className="rounded-md border bg-background">
               <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
-                재고 후보 {candidates.length}건
+                {t("detail.candidates", { count: candidates.length })}
               </div>
               <div className="max-h-80 overflow-auto">
                 {candidates.length === 0 ? (
                   <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    조회된 재고 후보가 없습니다.
+                    {t("detail.noCandidates")}
                   </div>
                 ) : (
                   <div className="divide-y">
@@ -987,7 +1016,7 @@ export function ChannelOrderMatchingManagerView() {
                           ) : null}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {candidate.inventoryStatus || "-"} / {candidate.location || "위치 없음"}
+                          {statusLabel(candidate.inventoryStatus || "", detailT)} / {candidate.location || t("common.noLocation")}
                         </div>
                       </div>
                     ))}
@@ -998,7 +1027,7 @@ export function ChannelOrderMatchingManagerView() {
           </div>
         ) : (
           <div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-            왼쪽 표에서 쿠팡 옵션을 선택하세요.
+            {t("detail.select")}
           </div>
         )}
       </aside>
@@ -1017,8 +1046,8 @@ export function ChannelOrderMatchingManagerView() {
           setIsRematchConfirmOpen(false);
         }
       }}
-      title="기존 주문 재매칭 대상 확인"
-      description="매칭 완료 후 아직 출고 작업에 전달되지 않은 출고 건을 확인합니다. 전체 목록을 확인한 뒤 별도 확인 단계에서 재매칭할 수 있습니다."
+      title={t("rematch.title")}
+      description={t("rematch.subtitle")}
       icon={<AlertTriangle className="mt-0.5 size-5 text-amber-600" />}
       contentClassName="w-[min(1120px,calc(100vw-32px))]"
       bodyClassName="grid gap-4"
@@ -1026,8 +1055,8 @@ export function ChannelOrderMatchingManagerView() {
         <div className="flex w-full items-center justify-between gap-3">
           <span className="text-xs text-muted-foreground">
             {rematchPreview?.hasMore
-              ? "모든 페이지를 확인해야 재매칭을 실행할 수 있습니다."
-              : "실행 시점에 재매칭 대상만 다시 잠금·검증합니다."}
+              ? t("rematch.allPages")
+              : t("rematch.revalidate")}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -1036,7 +1065,7 @@ export function ChannelOrderMatchingManagerView() {
               onClick={() => setIsRematchPreviewOpen(false)}
               disabled={isRematchExecuting}
             >
-              닫기
+              {t("rematch.close")}
             </Button>
             <Button
               type="button"
@@ -1052,7 +1081,7 @@ export function ChannelOrderMatchingManagerView() {
               }
             >
               <RotateCcw className="size-4" />
-              대상 {rematchPreview?.summary.eligibleShipmentCount ?? 0}건 재매칭
+              {t("rematch.executeCount", { count: rematchPreview?.summary.eligibleShipmentCount ?? 0 })}
             </Button>
           </div>
         </div>
@@ -1066,25 +1095,25 @@ export function ChannelOrderMatchingManagerView() {
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-md border bg-background px-3 py-2">
-              <div className="text-xs text-muted-foreground">검토 출고 건</div>
+              <div className="text-xs text-muted-foreground">{t("rematch.reviewed")}</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">
                 {rematchPreview.summary.candidateShipmentCount}
               </div>
             </div>
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <div className="text-xs text-emerald-700">재매칭 대상</div>
+              <div className="text-xs text-emerald-700">{t("rematch.eligible")}</div>
               <div className="mt-1 text-lg font-semibold text-emerald-800 tabular-nums">
                 {rematchPreview.summary.eligibleShipmentCount}
               </div>
             </div>
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-              <div className="text-xs text-amber-700">제외</div>
+              <div className="text-xs text-amber-700">{t("rematch.excluded")}</div>
               <div className="mt-1 text-lg font-semibold text-amber-800 tabular-nums">
                 {rematchPreview.summary.excludedShipmentCount}
               </div>
             </div>
             <div className="rounded-md border bg-background px-3 py-2">
-              <div className="text-xs text-muted-foreground">대상 PG</div>
+              <div className="text-xs text-muted-foreground">{t("rematch.targetPg")}</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">
                 {rematchPreview.summary.eligibleAllocationCount}
               </div>
@@ -1093,11 +1122,11 @@ export function ChannelOrderMatchingManagerView() {
 
           {rematchPreview.summary.exclusionReasonCounts.length > 0 ? (
             <div className="rounded-md border bg-muted/30 px-3 py-2">
-              <div className="mb-2 text-xs font-semibold">제외 사유</div>
+              <div className="mb-2 text-xs font-semibold">{t("rematch.reasons")}</div>
               <div className="flex flex-wrap gap-2">
                 {rematchPreview.summary.exclusionReasonCounts.map((reason) => (
                   <Badge key={reason.code} variant="warning">
-                    {reason.label} {reason.count}건
+                    {rematchExclusionLabel(reason.code, t)} {t("common.count", { count: reason.count })}
                   </Badge>
                 ))}
               </div>
@@ -1106,17 +1135,17 @@ export function ChannelOrderMatchingManagerView() {
 
           <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
             <span>
-              주문번호와 배송번호 단위로 전체 품목을 판정합니다. 수취인·주소·전화번호는 조회하지 않습니다.
+              {t("rematch.privacy")}
             </span>
             <span className="shrink-0">
-              기준 {formatDate(rematchPreview.generatedAt)}
+              {t("rematch.basis", { date: formatDate(rematchPreview.generatedAt) })}
             </span>
           </div>
 
           <div className="grid gap-3">
             {rematchPreviewItems.length === 0 ? (
               <div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-                확인할 매칭 완료 출고 건이 없습니다.
+                {t("rematch.empty")}
               </div>
             ) : (
               rematchPreviewItems.map((shipment) => (
@@ -1133,24 +1162,24 @@ export function ChannelOrderMatchingManagerView() {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-xs font-semibold">
-                          주문 {shipment.externalOrderId}
+                          {t("rematch.order", { id: shipment.externalOrderId })}
                         </span>
                         <span className="font-mono text-xs text-muted-foreground">
-                          배송 {shipment.externalShipmentId}
+                          {t("rematch.shipment", { id: shipment.externalShipmentId })}
                         </span>
                         <Badge variant={shipment.eligible ? "success" : "warning"}>
-                          {shipment.eligible ? "재매칭 대상" : "제외"}
+                          {shipment.eligible ? t("rematch.eligible") : t("rematch.excluded")}
                         </Badge>
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        쿠팡 {shipment.externalOrderStatus || "상태 없음"} · 품목 {shipment.itemCount}건 · PG {shipment.allocationCount}대
+                        {t("rematch.shipmentSummary", { status: shipment.externalOrderStatus || t("common.noStatus"), items: shipment.itemCount, allocations: shipment.allocationCount })}
                       </div>
                     </div>
                     {!shipment.eligible ? (
                       <div className="flex max-w-xl flex-wrap justify-end gap-1">
                         {shipment.exclusionReasons.map((reason) => (
                           <Badge key={reason.code} variant="warning">
-                            {reason.label}
+                            {rematchExclusionLabel(reason.code, t)}
                           </Badge>
                         ))}
                       </div>
@@ -1166,29 +1195,29 @@ export function ChannelOrderMatchingManagerView() {
                               {item.vendorItemName || item.externalVendorItemId}
                             </div>
                             <div className="font-mono text-[11px] text-muted-foreground">
-                              vendorItemId {item.externalVendorItemId} · 수량 {item.matchableQuantity}
+                              {t("rematch.quantity", { id: item.externalVendorItemId, quantity: item.matchableQuantity })}
                             </div>
                           </div>
                           <div className="flex flex-wrap justify-end gap-1">
                             {item.allocations.map((allocation) => (
                               <Badge key={allocation.allocationId} variant="neutral">
-                                {allocation.pgNo} · {allocation.allocationStatus} · {allocation.inventoryStatus || "재고 없음"}
+                                {allocation.pgNo} · {allocationStatusLabel(allocation.allocationStatus, manualMatchT)} · {allocation.inventoryStatus ? statusLabel(allocation.inventoryStatus, detailT) : t("common.noInventory")}
                               </Badge>
                             ))}
                           </div>
                         </div>
                         <div className="grid gap-2 text-xs sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                           <div className="rounded bg-muted/40 px-2 py-1.5">
-                            <div className="text-[11px] text-muted-foreground">기존 주문 스냅샷</div>
-                            <div className="mt-0.5">{rematchOfferLabel(item.matchedOffer)}</div>
+                            <div className="text-[11px] text-muted-foreground">{t("rematch.snapshot")}</div>
+                            <div className="mt-0.5">{rematchOfferLabel(item.matchedOffer, t("common.noMapping"), t("common.allStorage"), t("common.allColor"))}</div>
                             <div className="font-mono text-[10px] text-muted-foreground">
                               {item.matchedOffer?.offerCode || "-"}
                             </div>
                           </div>
                           <span className="hidden text-muted-foreground sm:inline">→</span>
                           <div className="rounded bg-muted/40 px-2 py-1.5">
-                            <div className="text-[11px] text-muted-foreground">현재 기본 매핑</div>
-                            <div className="mt-0.5">{rematchOfferLabel(item.currentDefaultOffer)}</div>
+                            <div className="text-[11px] text-muted-foreground">{t("rematch.current")}</div>
+                            <div className="mt-0.5">{rematchOfferLabel(item.currentDefaultOffer, t("common.noMapping"), t("common.allStorage"), t("common.allColor"))}</div>
                             <div className="font-mono text-[10px] text-muted-foreground">
                               {item.currentDefaultOffer?.offerCode || "-"}
                             </div>
@@ -1214,7 +1243,7 @@ export function ChannelOrderMatchingManagerView() {
               disabled={isRematchPreviewLoading}
             >
               <RefreshCcw className={cn("size-4", isRematchPreviewLoading && "animate-spin")} />
-              다시 판정
+              {t("rematch.retry")}
             </Button>
             {rematchPreview.hasMore && rematchPreview.nextCursor ? (
               <Button
@@ -1228,7 +1257,7 @@ export function ChannelOrderMatchingManagerView() {
                 {isRematchPreviewLoading ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : null}
-                다음 대상 더 보기
+                {t("rematch.more")}
               </Button>
             ) : null}
           </div>
@@ -1236,30 +1265,28 @@ export function ChannelOrderMatchingManagerView() {
       ) : isRematchPreviewLoading ? (
         <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-muted-foreground">
           <Loader2 className="size-5 animate-spin" />
-          재매칭 대상과 제외 사유를 판정하는 중입니다.
+          {t("rematch.loading")}
         </div>
       ) : null}
     </DialogFrame>
     <DangerousConfirmDialog
       open={isRematchConfirmOpen}
-      title="기존 미포장 주문을 다시 매칭합니다"
-      description="표시된 모든 대상의 기존 PG 배정을 해제하고 현재 기본 상품 매핑으로 다시 매칭합니다. 표시 후 상태가 바뀌었다면 전체 작업을 중단합니다."
+      title={t("rematch.confirmTitle")}
+      description={t("rematch.confirmDescription")}
       detail={
         rematchPreview ? (
           <div className="grid gap-1">
             <div>
-              출고 건 {rematchPreview.summary.eligibleShipmentCount}건 · 주문 항목{" "}
-              {rematchPreview.summary.eligibleWorkItemCount}건 · PG{" "}
-              {rematchPreview.summary.eligibleAllocationCount}대
+              {t("rematch.confirmSummary", { shipments: rematchPreview.summary.eligibleShipmentCount, items: rematchPreview.summary.eligibleWorkItemCount, allocations: rematchPreview.summary.eligibleAllocationCount })}
             </div>
             <div className="text-xs font-normal">
-              대상 목록의 주문번호·배송번호·PG를 다시 확인한 뒤 실행하세요.
+              {t("rematch.confirmNote")}
             </div>
           </div>
         ) : null
       }
-      confirmLabel="배정 해제 후 재매칭"
-      busyLabel="재매칭 중"
+      confirmLabel={t("rematch.confirm")}
+      busyLabel={t("rematch.busy")}
       isBusy={isRematchExecuting}
       onCancel={() => setIsRematchConfirmOpen(false)}
       onConfirm={() => void executeRematch()}

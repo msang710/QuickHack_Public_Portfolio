@@ -60,7 +60,7 @@ async function requireStaff(request: NextRequest) {
       response: apiFailureResponse({
         status: 401,
         code: "AUTHENTICATION_REQUIRED",
-        message: "로그인이 필요합니다.",
+
       }),
     };
   }
@@ -70,7 +70,7 @@ async function requireStaff(request: NextRequest) {
       response: apiFailureResponse({
         status: 403,
         code: "PERMISSION_DENIED",
-        message: "차수 지정 권한이 없습니다.",
+
       }),
     };
   }
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
 
@@ -187,7 +187,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `${batch.batchDate} ${batch.batchNo}차 입고 계획을 저장했습니다.`,
+      resultCode: "INBOUND_BATCH_CREATED",
+      messageArguments: { batchDate: batch.batchDate, batchNo: batch.batchNo },
       batch,
       ...(refresh.completed ? { batches: refresh.value } : {}),
       receipt: refresh.receipt,
@@ -233,7 +234,7 @@ export async function PATCH(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INBOUND_BATCH_INPUT_INVALID",
-      message: "수정할 차수 ID가 올바르지 않습니다.",
+
     });
   }
 
@@ -266,7 +267,8 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `${batch.batchDate} ${batch.batchNo}차 입고 계획을 수정했습니다.`,
+      resultCode: "INBOUND_BATCH_UPDATED",
+      messageArguments: { batchDate: batch.batchDate, batchNo: batch.batchNo },
       batch,
       ...(refresh.completed ? { batches: refresh.value } : {}),
       receipt: refresh.receipt,
@@ -312,7 +314,7 @@ export async function DELETE(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INBOUND_BATCH_INPUT_INVALID",
-      message: "삭제할 차수 ID가 올바르지 않습니다.",
+
     });
   }
 
@@ -345,7 +347,8 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `${batch.batchDate} ${batch.batchNo}차 입고 계획을 삭제했습니다.`,
+      resultCode: "INBOUND_BATCH_DELETED",
+      messageArguments: { batchDate: batch.batchDate, batchNo: batch.batchNo },
       batch,
       ...(refresh.completed ? { batches: refresh.value } : {}),
       receipt: refresh.receipt,

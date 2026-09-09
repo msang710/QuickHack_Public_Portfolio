@@ -24,7 +24,7 @@ async function auth(request: NextRequest) {
   if (!session) {
     return {
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
   const body = parseJsonObject(bodyText);
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문이 올바르지 않습니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
         },
         authResult.securityContext
       );
-      return NextResponse.json({ ok: true, message: "USB 기기 등록 요청을 시작했습니다.", ...result });
+      return NextResponse.json({ ok: true, resultCode: "MOBILE_DEVICE_PROVISION_STARTED", ...result });
     }
     if (action === "cancelProvisioning") {
       const item = await cancelMobileDeviceProvisioning(
@@ -123,10 +123,10 @@ export async function POST(request: NextRequest) {
         },
         authResult.securityContext
       );
-      return NextResponse.json({ ok: true, message: "모바일 기기 등록을 폐기했습니다.", item });
+      return NextResponse.json({ ok: true, resultCode: "MOBILE_DEVICE_REVOKED", item });
     }
     return NextResponse.json(
-      { ok: false, message: "지원하지 않는 모바일 기기 작업입니다." },
+      { ok: false, code: "ACTION_UNSUPPORTED" },
       { status: 400 }
     );
   } catch (error) {

@@ -7,6 +7,7 @@ import type {
   StatisticsGroup,
   StatisticsPoint,
 } from "@/quickhack_shared/statistics/statistics";
+import { STATISTICS_UNAVAILABLE_REASON_CODES } from "@/quickhack_shared/statistics/statistics";
 import {
   booleanSchema,
   finiteNumberSchema,
@@ -96,6 +97,8 @@ export const rateMetricSchema = objectSchema<SalesRateMetric>({
   numerator: finiteNumberSchema,
   denominator: finiteNumberSchema,
   unavailableReason: optionalSchema(stringSchema),
+  unavailableReasonCode: optionalSchema(oneOfSchema(...STATISTICS_UNAVAILABLE_REASON_CODES)),
+  unavailableReasonDays: optionalSchema(finiteNumberSchema),
 });
 
 export const amountMetricSchema = objectSchema<SalesAmountMetric>({

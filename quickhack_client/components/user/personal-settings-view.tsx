@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import {
   Bell,
   ChevronDown,
@@ -32,10 +33,6 @@ import {
 } from "@/quickhack_client/components/ui/tabs";
 import { cn } from "@/quickhack_shared/core/utils";
 import {
-  ROLE_LABELS,
-  type Role,
-} from "@/quickhack_shared/auth/auth-constants";
-import {
   AccountFieldLabel,
   AccountInformationFields,
   type EditableAccountInformation,
@@ -47,8 +44,8 @@ import {
 import { AccountMobileAppPanel } from "@/quickhack_client/components/user/account-mobile-app-panel";
 import { AccountPasswordPanel } from "@/quickhack_client/components/user/account-password-panel";
 import {
-  SHORTCUT_ACTION_LABELS,
-  SHORTCUT_MODIFIER_LABELS,
+  SHORTCUT_ACTION_MESSAGE_KEYS,
+  SHORTCUT_MODIFIER_MESSAGE_KEYS,
 } from "@/quickhack_client/components/user/shortcut-presenter";
 import {
   COMMON_SHORTCUT_ACTION_CODES,
@@ -66,6 +63,10 @@ import {
   type UserShortcutBinding,
 } from "@/quickhack_shared/user/personal-settings";
 import { DesktopAppearanceSettings } from "@/quickhack_client/components/desktop/desktop-appearance-settings";
+import {
+  ENGLISH_UI_READY,
+  type QuickHackLocale,
+} from "@/quickhack_shared/i18n/locales";
 
 type ShortcutBindingChange = Partial<
   Pick<UserShortcutBinding, "modifier" | "keyCode">
@@ -98,6 +99,7 @@ type PersonalSettingsViewProps = {
   error?: string;
   errorActionCode?: ShortcutActionCode;
   onPreferenceChange: (key: UserPreferenceKey, checked: boolean) => void;
+  onLocaleChange: (locale: QuickHackLocale) => void;
   onShortcutChange: (
     actionCode: ShortcutActionCode,
     change: ShortcutBindingChange
@@ -152,7 +154,10 @@ function PreferenceSwitch({
   );
 }
 
-function bindingErrors(bindings: UserShortcutBinding[]) {
+function bindingErrors(
+  bindings: UserShortcutBinding[],
+  messages: { unsupported: string; reserved: string; duplicate: string }
+) {
   const errors = new Map<ShortcutActionCode, string>();
   const combinationActions = new Map<string, ShortcutActionCode[]>();
 
@@ -162,14 +167,14 @@ function bindingErrors(bindings: UserShortcutBinding[]) {
     }
 
     if (!isSupportedShortcutKeyCode(binding.keyCode)) {
-      errors.set(binding.actionCode, "지원하지 않는 키입니다.");
+      errors.set(binding.actionCode, messages.unsupported);
       continue;
     }
 
     if (isReservedShortcut(binding.modifier, binding.keyCode)) {
       errors.set(
         binding.actionCode,
-        "Windows 또는 브라우저의 기본 동작과 충돌합니다."
+        messages.reserved
       );
       continue;
     }
@@ -188,7 +193,7 @@ function bindingErrors(bindings: UserShortcutBinding[]) {
       continue;
     }
     for (const actionCode of actions) {
-      errors.set(actionCode, "다른 동작과 같은 단축키가 지정되어 있습니다.");
+      errors.set(actionCode, messages.duplicate);
     }
   }
 
@@ -210,6 +215,10 @@ function ShortcutBindingRow({
   onCapturingChange: (capturing: boolean) => void;
   onChange: (change: ShortcutBindingChange) => void;
 }) {
+  const t = useTranslations("settings.personal.shortcuts");
+  const actionLabel = t(
+    `action.${SHORTCUT_ACTION_MESSAGE_KEYS[binding.actionCode]}`
+  );
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   function captureKey(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -242,7 +251,7 @@ function ShortcutBindingRow({
           <Keyboard className="size-4 shrink-0 text-muted-foreground" />
         )}
         <span className="min-w-0 text-sm font-medium">
-          {SHORTCUT_ACTION_LABELS[binding.actionCode]}
+          {actionLabel}
         </span>
       </div>
 
@@ -256,14 +265,14 @@ function ShortcutBindingRow({
         }}
       >
         <SelectTrigger
-          aria-label={`${SHORTCUT_ACTION_LABELS[binding.actionCode]} 보조키`}
+          aria-label={t("modifier", { action: actionLabel })}
         >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {SHORTCUT_MODIFIERS.map((modifier) => (
             <SelectItem key={modifier} value={modifier}>
-              {SHORTCUT_MODIFIER_LABELS[modifier]}
+              {t(`modifiers.${SHORTCUT_MODIFIER_MESSAGE_KEYS[modifier]}`)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -275,8 +284,8 @@ function ShortcutBindingRow({
           type="text"
           readOnly
           value={capturing ? "" : formatShortcutKeyCode(binding.keyCode)}
-          placeholder={capturing ? "키를 누르세요" : "미지정"}
-          aria-label={`${SHORTCUT_ACTION_LABELS[binding.actionCode]} 키`}
+          placeholder={capturing ? t("press") : t("unset")}
+          aria-label={t("key", { action: actionLabel })}
           data-quickhack-shortcut-capture="true"
           disabled={disabled}
           className={cn(
@@ -296,8 +305,8 @@ function ShortcutBindingRow({
         type="button"
         size="icon"
         variant="outline"
-        title="단축키 지우기"
-        aria-label={`${SHORTCUT_ACTION_LABELS[binding.actionCode]} 단축키 지우기`}
+        title={t("clear")}
+        aria-label={`${actionLabel} ${t("clear")}`}
         disabled={disabled || binding.keyCode === null}
         onClick={() => onChange({ keyCode: null })}
       >
@@ -327,19 +336,26 @@ export function PersonalSettingsView({
   error = "",
   errorActionCode,
   onPreferenceChange,
+  onLocaleChange,
   onShortcutChange,
   onCancel,
   onResetDefaults,
   onSave,
 }: PersonalSettingsViewProps) {
+  const language = useTranslations("settings.language");
+  const t = useTranslations("settings.personal");
   const [activeSettingsTab, setActiveSettingsTab] = React.useState("account");
   const [capturingAction, setCapturingAction] =
     React.useState<ShortcutActionCode | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(true);
   const [notificationsOpen, setNotificationsOpen] = React.useState(true);
   const shortcutErrors = React.useMemo(
-    () => bindingErrors(settings.shortcutBindings),
-    [settings.shortcutBindings]
+    () => bindingErrors(settings.shortcutBindings, {
+      unsupported: t("shortcuts.error.unsupported"),
+      reserved: t("shortcuts.error.reserved"),
+      duplicate: t("shortcuts.error.duplicate"),
+    }),
+    [settings.shortcutBindings, t]
   );
 
   if (errorActionCode && error) {
@@ -376,7 +392,10 @@ export function PersonalSettingsView({
   }
 
   const accountRoleLabel = account
-    ? ROLE_LABELS[account.role as Role] ?? account.role
+    ? account.role === "LEADER" ? t("role.leader")
+      : account.role === "MANAGER" ? t("role.manager")
+        : account.role === "STAFF" ? t("role.staff")
+          : account.role === "VIEWER" ? t("role.viewer") : account.role
     : "-";
   const accountCreatedAt = account?.createdAt
     ? account.createdAt.replace("T", " ").slice(0, 19)
@@ -390,9 +409,9 @@ export function PersonalSettingsView({
     >
       <div className="shrink-0 border-b bg-background px-5 py-3">
         <TabsList>
-          <TabsTrigger value="account">계정 설정</TabsTrigger>
-          <TabsTrigger value="personal">개인 설정</TabsTrigger>
-          <TabsTrigger value="appearance">화면</TabsTrigger>
+          <TabsTrigger value="account">{t("tabs.account")}</TabsTrigger>
+          <TabsTrigger value="personal">{t("tabs.personal")}</TabsTrigger>
+          <TabsTrigger value="appearance">{t("tabs.appearance")}</TabsTrigger>
         </TabsList>
       </div>
 
@@ -404,7 +423,7 @@ export function PersonalSettingsView({
           <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4">
             {!accountLoaded ? (
               <div className="border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-                계정 정보를 불러오는 중입니다.
+                {t("account.loading")}
               </div>
             ) : null}
 
@@ -422,8 +441,8 @@ export function PersonalSettingsView({
 
             <section className="grid gap-3 rounded-md border bg-popover p-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">기본 정보</h2>
-                <Badge variant="neutral">내 계정</Badge>
+                <h2 className="text-sm font-semibold">{t("account.basic")}</h2>
+                <Badge variant="neutral">{t("account.mine")}</Badge>
               </div>
 
               {account ? (
@@ -435,7 +454,7 @@ export function PersonalSettingsView({
                   />
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <AccountFieldLabel label="권한">
+                    <AccountFieldLabel label={t("account.role")}>
                       <Input
                         value={accountRoleLabel}
                         readOnly
@@ -444,7 +463,7 @@ export function PersonalSettingsView({
                       />
                     </AccountFieldLabel>
 
-                    <AccountFieldLabel label="계정 생성일">
+                    <AccountFieldLabel label={t("account.createdAt")}>
                       <Input
                         value={accountCreatedAt}
                         readOnly
@@ -473,8 +492,8 @@ export function PersonalSettingsView({
         <FormActionBar
           status={
             accountDirty
-              ? "저장하지 않은 계정 정보 변경사항이 있습니다."
-              : "저장된 상태입니다."
+              ? t("account.dirty")
+              : t("account.saved")
           }
         >
           <Button
@@ -483,7 +502,7 @@ export function PersonalSettingsView({
             disabled={!accountDirty || accountSaving}
             onClick={onAccountCancel}
           >
-            변경 취소
+            {t("account.cancel")}
           </Button>
           <Button
             type="button"
@@ -491,7 +510,7 @@ export function PersonalSettingsView({
             onClick={onAccountSave}
           >
             <Save className="size-4" />
-            {accountSaving ? "저장 중" : "계정 저장"}
+            {accountSaving ? t("account.saving") : t("account.save")}
           </Button>
         </FormActionBar>
       </TabsContent>
@@ -509,7 +528,7 @@ export function PersonalSettingsView({
         <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4">
         {!loaded ? (
           <div className="border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-            개인 설정을 불러오는 중입니다.
+            {t("loading")}
           </div>
         ) : null}
 
@@ -524,6 +543,39 @@ export function PersonalSettingsView({
             {message}
           </div>
         ) : null}
+
+          <section className="rounded-md border bg-popover p-4">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-end">
+              <div>
+                <h2 className="text-sm font-semibold">{language("title")}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {language("description")}
+                </p>
+              </div>
+              <label className="grid gap-1.5 text-sm font-medium">
+                {language("label")}
+                <Select
+                  value={settings.locale}
+                  disabled={!loaded || saving}
+                  onValueChange={(value) => {
+                    if (value === "ko" || value === "en") {
+                      onLocaleChange(value);
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label={language("label")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ko">{language("korean")}</SelectItem>
+                    {ENGLISH_UI_READY ? (
+                      <SelectItem value="en">{language("english")}</SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+          </section>
 
           <section className="overflow-hidden rounded-md border bg-popover">
             <button
@@ -542,7 +594,7 @@ export function PersonalSettingsView({
               }}
             >
               <Keyboard className="size-4 text-muted-foreground" />
-              <h2 className="min-w-0 flex-1 text-sm font-semibold">단축키</h2>
+              <h2 className="min-w-0 flex-1 text-sm font-semibold">{t("shortcuts.title")}</h2>
               <ChevronDown
                 className={cn(
                   "size-4 text-muted-foreground transition-transform",
@@ -555,7 +607,7 @@ export function PersonalSettingsView({
               <div id="personal-settings-shortcuts-panel">
                 <PreferenceSwitch
                   icon={Keyboard}
-                  label="단축키 사용"
+                  label={t("shortcuts.enabled")}
                   checked={settings.preferences.keyboardShortcutsEnabled}
                   disabled={!loaded || saving}
                   onCheckedChange={(checked) =>
@@ -565,9 +617,9 @@ export function PersonalSettingsView({
                 <div className="border-t bg-secondary/15 p-3">
                   <Tabs defaultValue="top-level">
                     <TabsList>
-                      <TabsTrigger value="top-level">상위 메뉴 이동</TabsTrigger>
+                      <TabsTrigger value="top-level">{t("shortcuts.top")}</TabsTrigger>
                       <TabsTrigger value="current-group">
-                        현재 메뉴 내부
+                        {t("shortcuts.current")}
                       </TabsTrigger>
                     </TabsList>
                     <TabsContent
@@ -587,7 +639,7 @@ export function PersonalSettingsView({
                   {commonBindings.length ? (
                     <div className="mt-3 overflow-hidden rounded-md border bg-background">
                       <div className="border-b px-4 py-2 text-xs font-semibold text-muted-foreground">
-                        공통 작업
+                        {t("shortcuts.common")}
                       </div>
                       <div className="divide-y">
                         {commonBindings.map(renderBinding)}
@@ -611,7 +663,7 @@ export function PersonalSettingsView({
               onClick={() => setNotificationsOpen((current) => !current)}
             >
               <Bell className="size-4 text-muted-foreground" />
-              <h2 className="min-w-0 flex-1 text-sm font-semibold">알림</h2>
+              <h2 className="min-w-0 flex-1 text-sm font-semibold">{t("notifications.title")}</h2>
               <ChevronDown
                 className={cn(
                   "size-4 text-muted-foreground transition-transform",
@@ -627,7 +679,7 @@ export function PersonalSettingsView({
               >
                 <PreferenceSwitch
                   icon={Bell}
-                  label="윈도우 알림"
+                  label={t("notifications.windows")}
                   checked={settings.preferences.windowsNotificationsEnabled}
                   disabled={!loaded || saving}
                   onCheckedChange={(checked) =>
@@ -637,7 +689,7 @@ export function PersonalSettingsView({
                 <div className="divide-y bg-secondary/25 pl-6">
                   <PreferenceSwitch
                     icon={PackageCheck}
-                    label="검수 완료"
+                    label={t("notifications.inspection")}
                     checked={
                       settings.preferences
                         .inspectionCompleteNotificationEnabled
@@ -656,7 +708,7 @@ export function PersonalSettingsView({
                   />
                   <PreferenceSwitch
                     icon={PanelRightOpen}
-                    label="배송정보 변경"
+                    label={t("notifications.shipment")}
                     checked={
                       settings.preferences.shipmentChangeNotificationEnabled
                     }
@@ -674,7 +726,7 @@ export function PersonalSettingsView({
                   />
                   <PreferenceSwitch
                     icon={Undo2}
-                    label="반품 접수"
+                    label={t("notifications.returns")}
                     checked={settings.preferences.returnNotificationEnabled}
                     disabled={
                       !loaded ||
@@ -695,8 +747,8 @@ export function PersonalSettingsView({
       <FormActionBar
         status={
           dirty
-            ? "저장하지 않은 변경사항이 있습니다."
-            : "저장된 상태입니다."
+            ? t("status.dirty")
+            : t("status.saved")
         }
       >
         <Button
@@ -706,7 +758,7 @@ export function PersonalSettingsView({
           onClick={onResetDefaults}
         >
           <RotateCcw className="size-4" />
-          기본값
+          {t("actions.defaults")}
         </Button>
         <Button
           type="button"
@@ -714,7 +766,7 @@ export function PersonalSettingsView({
           disabled={!dirty || saving}
           onClick={onCancel}
         >
-          변경 취소
+          {t("actions.cancel")}
         </Button>
         <Button
           type="button"
@@ -722,7 +774,7 @@ export function PersonalSettingsView({
           onClick={onSave}
         >
           <Save className="size-4" />
-          {saving ? "저장 중" : "저장"}
+          {saving ? t("actions.saving") : t("actions.save")}
         </Button>
       </FormActionBar>
       </div>

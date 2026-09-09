@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
 
   if (!session) {
     return NextResponse.json(
-      { ok: false, message: "Login is required." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   const user = toAuthUser(session.users);
   if (!user.mobilePackingEnabled) {
     return NextResponse.json(
-      { ok: false, message: "Packing check permission is required." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "Request body must be a JSON object." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -105,7 +105,6 @@ export async function POST(request: NextRequest) {
       return apiFailureResponse({
         status: 403,
         code: "MOBILE_DEVICE_AUTH_FAILED",
-        message: error.message,
         cause: error,
       });
     }

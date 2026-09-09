@@ -57,34 +57,6 @@ export const SALES_CHANNEL_WRITE_REVIEW_STATUSES = [
   SALES_CHANNEL_WRITE_REQUEST_STATUS.localPending,
 ] as const;
 
-export const SALES_CHANNEL_WRITE_REQUEST_LABELS: Record<
-  SalesChannelWriteRequestType,
-  string
-> = {
-  COUPANG_INVOICE_UPLOAD: "쿠팡 송장 등록",
-  COUPANG_INVOICE_UPDATE: "쿠팡 송장번호 변경",
-  ORDER_STATUS_INSTRUCT: "상품준비중 처리",
-  RETURN_STOPPED_SHIPMENT: "출고중지 완료",
-  RETURN_RECEIVE_CONFIRMATION: "반품 입고 확인",
-  RETURN_APPROVAL: "반품 완료",
-  COUPANG_INVENTORY_QUANTITY_UPDATE: "쿠팡 재고수량 복구",
-};
-
-export const SALES_CHANNEL_WRITE_STATUS_LABELS: Record<
-  SalesChannelWriteRequestStatus,
-  string
-> = {
-  PENDING: "전송 대기",
-  SENDING: "전송 중",
-  VERIFYING: "채널 반영 확인 중",
-  LOCAL_PENDING: "내부 확정 필요",
-  COMPLETED: "처리 완료",
-  PARTIALLY_COMPLETED: "일부 처리 완료",
-  REVIEW_REQUIRED: "직접 확인 필요",
-  NOT_APPLIED: "채널 미반영 확인",
-  REJECTED: "요청 차단",
-};
-
 export const SALES_CHANNEL_WRITE_TARGET_EXTERNAL_STATUS = {
   pending: "PENDING",
   succeeded: "SUCCEEDED",

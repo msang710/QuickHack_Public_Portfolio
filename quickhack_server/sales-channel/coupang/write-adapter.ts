@@ -13,10 +13,7 @@ import {
 import {
   assertCoupangWriteAllowed,
 } from "@/quickhack_server/sales-channel/coupang/config";
-import {
-  SALES_CHANNEL_WRITE_REQUEST_LABELS,
-  type SalesChannelWriteCommand,
-} from "@/quickhack_shared/sales-channel/write-requests";
+import { type SalesChannelWriteCommand } from "@/quickhack_shared/sales-channel/write-requests";
 
 export const COUPANG_WRITE_ENDPOINTS = {
   ORDER_STATUS_INSTRUCT:
@@ -54,7 +51,7 @@ export function getSalesChannelWriteEndpoint(command: SalesChannelWriteCommand) 
 }
 
 export function assertSalesChannelWriteAllowed(command: SalesChannelWriteCommand) {
-  assertCoupangWriteAllowed(SALES_CHANNEL_WRITE_REQUEST_LABELS[command.requestType]);
+  assertCoupangWriteAllowed(command.requestType);
 }
 
 export async function executeSalesChannelWriteAdapter(

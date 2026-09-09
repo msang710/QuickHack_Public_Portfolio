@@ -6,6 +6,8 @@ const read = (file) => readFileSync(path.join(process.cwd(), file), "utf8");
 const service = read("quickhack_server/sales-channel/coupang/manual-order-match-service.ts");
 const api = read("quickhack_server/api/sales-channel/coupang/manual-order-matches.ts");
 const view = read("quickhack_client/components/sales-channel/manual-order-match-view.tsx");
+const koCatalog = read("quickhack_client/i18n/catalogs/ko/sales-channel.ts");
+const enCatalog = read("quickhack_client/i18n/catalogs/en/sales-channel.ts");
 const commandDraft = read("quickhack_client/components/sales-channel/manual-order-match-command-draft.ts");
 const shipmentSafety = read("quickhack_server/sales-channel/coupang/manual-order-match-shipment-safety.ts");
 const menu = read("quickhack_client/components/app-shell/device-workspace-menu.ts");
@@ -15,7 +17,7 @@ const aggregateLock = read("quickhack_server/inventory/device-aggregate-lock.ts"
 const quantityLedger = read("quickhack_server/inventory/inventory-quantity-ledger-service.ts");
 const rematchService = read("quickhack_server/sales-channel/coupang/order-rematch-service.ts");
 const auditTool = read("tools/audit-manual-order-match-readiness.mjs");
-const activeAllocationMigration = read("prisma/migrations/20260826143000_active_allocation_pg_unique/migration.sql");
+const baselineMigration = read("prisma/migrations/20260811010000_postgresql_baseline/migration.sql");
 const workerRegistry = read("quickhack_server/workers/registry.ts");
 const orderMatchingService = read("quickhack_server/sales-channel/coupang/order-matching-service.ts");
 
@@ -48,8 +50,13 @@ assert.doesNotMatch(service, /manual_orders\.create|orders\.create/);
 assert.match(api, /canAccessRole\(user\.role, "STAFF"\)/);
 assert.match(api, /canAccessRole\(user\.role, "MANAGER"\)/);
 assert.match(api, /SENSITIVE_ACTIONS\.channelOrderMatching/);
-assert.match(view, /독립 출고는 재고 수정에서 상태를 보류/);
-assert.match(view, /판매채널 후속 처리는 진행 중/);
+assert.match(view, /useTranslations\("salesChannel\.manualMatch"\)/);
+assert.match(view, /t\("description"\)/);
+assert.match(view, /t\("message\.postCyclePending"\)/);
+assert.match(koCatalog, /독립 출고는 재고 수정에서 상태를 보류/);
+assert.match(koCatalog, /판매채널 후속 처리는 진행 중/);
+assert.match(enCatalog, /already received through a sales channel/);
+assert.match(enCatalog, /sales-channel follow-up is in progress/);
 assert.match(view, /<SearchSelect[\s\S]{0,300}allowEmpty=\{false\}/);
 assert.match(view, /selectionMode="explicit-option"/);
 assert.match(view, /onSelectionInvalidated/);
@@ -85,7 +92,7 @@ assert.match(auditTool, /activeAllocationDuplicates/);
 assert.match(auditTool, /activeAllocationOrphans/);
 assert.match(service, /acquireManualOrderMatchIntent/);
 assert.match(service, /releaseManualOrderMatchIntent/);
-assert.match(activeAllocationMigration, /uq_match_worker_allocation_active_pg/);
+assert.match(baselineMigration, /uq_match_worker_allocation_active_pg/);
 const orderMatchingWorkerBlock = workerRegistry.match(
   /key: ORDER_MATCHING_WORKER_KEY,[\s\S]*?\n  },/
 )?.[0] ?? "";
@@ -94,7 +101,7 @@ assert.doesNotMatch(orderMatchingWorkerBlock, /defaultScheduleEnabled:\s*true/);
 assert.match(orderMatchingService, /recoverPendingOrderInstructLocalProjections/);
 assert.match(orderMatchingService, /loadAcknowledgementRecoveryShipments/);
 for (const status of ["ALLOCATED", "API_ACKED", "SHIPMENT_LIST_PRINTED"]) {
-  assert.match(activeAllocationMigration, new RegExp(`'${status}'`));
+  assert.match(baselineMigration, new RegExp(`'${status}'`));
 }
 
 console.log("Manual order match scope, authorization, and inventory contracts verified.");

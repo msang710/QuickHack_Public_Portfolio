@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import { RefreshCcw, Search, ShieldAlert } from "lucide-react";
 import { SalesChannelInventoryVerificationDetail } from "@/quickhack_client/components/admin/sales-channel-inventory-verification-detail";
 import {
@@ -12,11 +14,10 @@ import {
   formatSalesChannelInventoryOption,
   formatSalesChannelQuantity,
   formatSalesChannelSyncCheckDate,
-  formatSalesChannelSyncCheckResultCount,
   SALES_CHANNEL_SYNC_CHECK_KIND_OPTIONS,
-  salesChannelInventoryRecheckOutcomeMessage,
+  salesChannelInventoryRecheckOutcomeKey,
   salesChannelSyncCheckItemKey,
-  salesChannelSyncCheckStatusLabel,
+  salesChannelSyncCheckStatusKey,
   salesChannelSyncCheckStatusOptions,
   salesChannelSyncCheckStatusVariant,
 } from "@/quickhack_client/components/admin/sales-channel-sync-check-presentation";
@@ -37,7 +38,6 @@ import {
   mutationWakeDeferred,
   type MutationReceipt,
 } from "@/quickhack_shared/core/mutation-receipt";
-import { SALES_CHANNEL_WRITE_REQUEST_LABELS } from "@/quickhack_shared/sales-channel/write-requests";
 import {
   SALES_CHANNEL_SYNC_CHECK_KIND,
   type SalesChannelClaimIntegritySyncCheckItem,
@@ -73,62 +73,52 @@ type NoteDraft = {
   value: string;
 };
 
-function responseMessage(payload: unknown, fallback: string) {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "message" in payload &&
-    typeof payload.message === "string" &&
-    payload.message.trim()
-  ) {
-    return payload.message;
-  }
-
-  return fallback;
-}
-
-function syncCheckKindLabel(item: SalesChannelSyncCheckItem) {
-  if (item.kind === SALES_CHANNEL_SYNC_CHECK_KIND.writeRequest) return "쓰기 결과";
+function syncCheckKindKey(item: SalesChannelSyncCheckItem) {
+  if (item.kind === SALES_CHANNEL_SYNC_CHECK_KIND.writeRequest) return "writeRequest";
   if (item.kind === SALES_CHANNEL_SYNC_CHECK_KIND.inventoryVerification) {
-    return "재고 수량";
+    return "inventoryVerification";
   }
-  return "클레임 무결성";
+  return "claimIntegrity";
 }
 
-function inventoryRepairSuccessMessage(
+function inventoryRepairSuccessKey(
   status: SalesChannelInventoryVerificationSyncCheckItem["verificationStatus"]
 ) {
   switch (status) {
     case "MATCHED":
-      return "쿠팡 재고수량 복구가 완료되었습니다.";
+      return "matched";
     case "MISMATCH":
-      return "쿠팡 반영은 성공했지만 처리 중 기준 재고가 변경되어 새 불일치가 남았습니다.";
+      return "mismatch";
     case "CHECK_FAILED":
-      return "쿠팡 반영은 성공했지만 이후 재고 점검이 실패했습니다.";
+      return "checkFailed";
     default:
-      return "쿠팡 반영은 성공했지만 재고 점검 상태가 변경되었습니다.";
+      return "changed";
   }
 }
 
 function inventoryOptionSummary(
-  item: SalesChannelInventoryVerificationSyncCheckItem
+  item: SalesChannelInventoryVerificationSyncCheckItem,
+  labels: { storage: (value: string) => string; color: (value: string) => string; any: string; random: string; unknown: string },
+  locale: string
 ) {
   const parts = [item.offerCode, item.model].filter(Boolean);
 
   if (item.storageMatchMode || item.storage) {
     parts.push(
-      `용량 ${formatSalesChannelInventoryOption(
+      labels.storage(formatSalesChannelInventoryOption(
         item.storageMatchMode,
-        item.storage
-      )}`
+        item.storage,
+        { locale, unknownLabel: labels.unknown, anyLabel: labels.any, randomLabel: labels.random }
+      ))
     );
   }
   if (item.colorMatchMode || item.color) {
     parts.push(
-      `색상 ${formatSalesChannelInventoryOption(
+      labels.color(formatSalesChannelInventoryOption(
         item.colorMatchMode,
-        item.color
-      )}`
+        item.color,
+        { locale, unknownLabel: labels.unknown, anyLabel: labels.any, randomLabel: labels.random }
+      ))
     );
   }
 
@@ -136,14 +126,17 @@ function inventoryOptionSummary(
 }
 
 function WriteListCells({ item }: { item: SalesChannelWriteSyncCheckItem }) {
+  const t = useTranslations("admin.writeReview");
+  const requestTypeLabel = {
+    ORDER_STATUS_INSTRUCT: t("requestType.orderStatusInstruct"), COUPANG_INVOICE_UPLOAD: t("requestType.invoiceUpload"), COUPANG_INVOICE_UPDATE: t("requestType.invoiceUpdate"), RETURN_STOPPED_SHIPMENT: t("requestType.stoppedShipment"), RETURN_RECEIVE_CONFIRMATION: t("requestType.returnReceive"), RETURN_APPROVAL: t("requestType.returnApproval"), COUPANG_INVENTORY_QUANTITY_UPDATE: t("requestType.inventoryUpdate"),
+  }[item.requestType] ?? item.requestType;
   return (
     <>
       <td
         className="truncate px-3 py-2"
-        title={SALES_CHANNEL_WRITE_REQUEST_LABELS[item.requestType]}
+        title={requestTypeLabel}
       >
-        {SALES_CHANNEL_WRITE_REQUEST_LABELS[item.requestType] ??
-          item.requestType}
+        {requestTypeLabel}
       </td>
       <td
         className="truncate px-3 py-2 font-mono text-xs"
@@ -169,7 +162,12 @@ function InventoryListCells({
 }: {
   item: SalesChannelInventoryVerificationSyncCheckItem;
 }) {
-  const optionSummary = inventoryOptionSummary(item);
+  const t = useTranslations("admin.syncCheck");
+  const locale = useLocale();
+  const formatOptions = { locale, unknownLabel: t("format.unknown"), anyLabel: t("format.any"), randomLabel: t("format.random") };
+  const optionSummary = inventoryOptionSummary(item, {
+    storage: (value) => t("format.storage", { value }), color: (value) => t("format.color", { value }), any: t("format.any"), random: t("format.random"), unknown: t("format.unknown"),
+  }, locale);
 
   return (
     <>
@@ -184,8 +182,8 @@ function InventoryListCells({
       </td>
       <td className="px-3 py-2">
         <span className="whitespace-nowrap">
-          {formatSalesChannelQuantity(item.expectedChannelQuantity)} →{" "}
-          {formatSalesChannelQuantity(item.channelQuantity)}
+          {formatSalesChannelQuantity(item.expectedChannelQuantity, formatOptions)} →{" "}
+          {formatSalesChannelQuantity(item.channelQuantity, formatOptions)}
         </span>
         <span
           className={cn(
@@ -197,7 +195,7 @@ function InventoryListCells({
                 : "text-red-700"
           )}
         >
-          차이 {formatSalesChannelDifference(item.difference)}
+          {t("columns.difference", { value: formatSalesChannelDifference(item.difference, formatOptions) })}
         </span>
       </td>
       <td
@@ -215,6 +213,14 @@ function ClaimIntegrityListCells({
 }: {
   item: SalesChannelClaimIntegritySyncCheckItem;
 }) {
+  const t = useTranslations("admin.syncCheck.claim");
+  const message = t(`issue.${item.messageCode}`);
+  const integrityLabels: Record<string, string> = {
+    VALID: t("integrityStatus.valid"),
+    MISSING_IDENTITY: t("integrityStatus.missingIdentity"),
+    INVALID_QUANTITY: t("integrityStatus.invalidQuantity"),
+    COUNT_MISMATCH: t("integrityStatus.countMismatch"),
+  };
   return (
     <>
       <td className="truncate px-3 py-2 font-mono text-xs" title={item.externalClaimId}>
@@ -224,10 +230,11 @@ function ClaimIntegrityListCells({
         {item.externalOrderId || "-"}
       </td>
       <td className="truncate px-3 py-2" title={item.integrityStatus}>
-        {item.integrityStatus}
+        {integrityLabels[item.integrityStatus] ??
+          t("integrityStatus.unknown", { code: item.integrityStatus })}
       </td>
-      <td className="truncate px-3 py-2 text-red-700" title={item.message}>
-        {item.message}
+      <td className="truncate px-3 py-2 text-red-700" title={message}>
+        {message}
       </td>
     </>
   );
@@ -242,6 +249,10 @@ export function SalesChannelSyncCheckView({
   onOpenSourceMenu?: (menuId: string) => void;
   onUnresolvedCountChange?: (count: number) => void;
 }) {
+  const t = useTranslations("admin.syncCheck");
+  const writeT = useTranslations("admin.writeReview");
+  const claimT = useTranslations("admin.syncCheck.claim");
+  const locale = useLocale();
   const [items, setItems] = React.useState<SalesChannelSyncCheckItem[]>([]);
   const [controls, setControls] = React.useState<
     SalesChannelSyncCheckListResponseDto["controls"]
@@ -312,13 +323,16 @@ export function SalesChannelSyncCheckView({
   const guardedFormIds = selectedWriteRequiresReview
     ? [selectedWriteFormId]
     : [screenActionFormId];
-  const statusOptions = salesChannelSyncCheckStatusOptions(kind);
+  const statusOptions = salesChannelSyncCheckStatusOptions(kind).map((option) => ({
+    ...option,
+    label: t(`statusFilter.${option.labelKey}`),
+  }));
 
   useUnsavedForm({
     id: selectedWriteFormId,
     label: selectedWrite
-      ? `판매 채널 쓰기 요청 #${selectedWrite.id} 판단 근거`
-      : "판매 채널 쓰기 판단 근거",
+      ? writeT("unsaved.formRequest", { id: selectedWrite.id })
+      : writeT("unsaved.form"),
     enabled: Boolean(selectedWrite && selectedWriteRequiresReview),
     isDirty: !invoiceActionNoteSnapshotsEqual(
       createInvoiceActionNoteSnapshot(noteBaseline),
@@ -338,7 +352,7 @@ export function SalesChannelSyncCheckView({
 
   useUnsavedForm({
     id: screenActionFormId,
-    label: "판매 채널 동기화 점검 처리",
+    label: t("actionForm"),
     enabled: !selectedWriteRequiresReview,
     isDirty: false,
     isBusy: working,
@@ -373,12 +387,7 @@ export function SalesChannelSyncCheckView({
         | ApiFailure;
 
       if (!response.ok || !payload.ok || !("items" in payload)) {
-        throw new Error(
-          responseMessage(
-            payload,
-            "판매 채널 동기화 점검 목록을 불러오지 못했습니다."
-          )
-        );
+        throw new Error(legacyApiMessage(payload, t("state.loadFailed")));
       }
 
       const nextItems = payload.items ?? [];
@@ -442,7 +451,7 @@ export function SalesChannelSyncCheckView({
         setLoading(false);
       }
     }
-  }, [appliedSearch, kind, onUnresolvedCountChange, status]);
+  }, [appliedSearch, kind, onUnresolvedCountChange, status, t]);
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -470,14 +479,13 @@ export function SalesChannelSyncCheckView({
       const payload = (await response.json()) as WriteActionResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(responseMessage(payload, "쓰기 점검 처리에 실패했습니다."));
+        throw new Error(legacyApiMessage(payload, t("message.writeActionFailed")));
       }
 
-      const resultMessage =
-        payload.message || "쓰기 점검 결과를 저장했습니다.";
+      const resultMessage = t("message.writeActionSaved");
       setMessage(
         mutationWakeDeferred(payload.receipt)
-          ? `${resultMessage} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
+          ? t("message.backgroundDeferred", { message: resultMessage })
           : resultMessage
       );
       onAccepted?.();
@@ -498,7 +506,7 @@ export function SalesChannelSyncCheckView({
     if (!selectedWrite) return;
 
     if (!note.trim()) {
-      setError("채널에서 확인한 결과와 판단 근거를 입력하세요.");
+      setError(t("noteRequired"));
       return;
     }
 
@@ -541,12 +549,10 @@ export function SalesChannelSyncCheckView({
         | ApiFailure;
 
       if (!response.ok || !payload.ok || !("outcome" in payload)) {
-        throw new Error(
-          responseMessage(payload, "판매 채널 재고를 다시 점검하지 못했습니다.")
-        );
+        throw new Error(legacyApiMessage(payload, t("message.recheckFailed")));
       }
 
-      setMessage(salesChannelInventoryRecheckOutcomeMessage(payload.outcome));
+      setMessage(t(`recheckOutcome.${salesChannelInventoryRecheckOutcomeKey(payload.outcome)}`));
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -619,15 +625,13 @@ export function SalesChannelSyncCheckView({
           }
         }
 
-        throw new Error(
-          responseMessage(payload, "쿠팡 재고수량을 복구하지 못했습니다.")
-        );
+        throw new Error(legacyApiMessage(payload, t("message.repairFailed")));
       }
 
-      const repairMessage = inventoryRepairSuccessMessage(
-        payload.item.verificationStatus
+      const repairMessage = t(
+        `repairResult.${inventoryRepairSuccessKey(payload.item.verificationStatus)}`
       );
-      setMessage(`${repairMessage} 쓰기 요청 #${payload.writeRequestId}`);
+      setMessage(`${repairMessage} ${t("writeRequest", { id: payload.writeRequestId })}`);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -644,7 +648,7 @@ export function SalesChannelSyncCheckView({
     runGuardedAction({
       intent: "internal-change",
       formIds: guardedFormIds,
-      targetLabel: "다른 판매 채널 점검 항목",
+      targetLabel: t("unsaved.anotherItem"),
       action: () => setSelectedKey(nextKey),
     });
   }
@@ -656,7 +660,7 @@ export function SalesChannelSyncCheckView({
     runGuardedAction({
       intent: "internal-change",
       formIds: guardedFormIds,
-      targetLabel: "판매 채널 점검 종류 변경",
+      targetLabel: t("unsaved.changeKind"),
       action: () => {
         setKind(nextKind);
         setStatus("UNRESOLVED");
@@ -671,7 +675,7 @@ export function SalesChannelSyncCheckView({
     runGuardedAction({
       intent: "internal-change",
       formIds: guardedFormIds,
-      targetLabel: "판매 채널 점검 상태 변경",
+      targetLabel: t("unsaved.changeStatus"),
       action: () => setStatus(nextStatus),
     });
   }
@@ -681,7 +685,7 @@ export function SalesChannelSyncCheckView({
     runGuardedAction({
       intent: "internal-change",
       formIds: guardedFormIds,
-      targetLabel: "판매 채널 동기화 점검 목록 조회",
+      targetLabel: t("unsaved.reload"),
       action: () => {
         const nextSearch = search.trim();
         if (nextSearch === appliedSearch) {
@@ -713,19 +717,20 @@ export function SalesChannelSyncCheckView({
           <div className="mr-auto min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-semibold">
-                판매 채널 동기화 점검
+                {t("title")}
               </h2>
               <Badge variant={unresolvedCount > 0 ? "danger" : "secondary"}>
-                점검 필요 {unresolvedCount.toLocaleString("ko-KR")}
+                {t("unresolved", { count: unresolvedCount })}
               </Badge>
             </div>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              외부 채널 쓰기 결과와 재고 원장 기준 수량 차이를 한 곳에서
-              확인하고 필요한 건을 다시 점검합니다.
+              {t("description")}
             </p>
           </div>
           <span className="pt-1 text-xs text-muted-foreground">
-            {formatSalesChannelSyncCheckResultCount(resultCount, resultLimit)}
+            {resultCount >= resultLimit
+              ? t("format.resultLimit", { count: resultLimit })
+              : t("format.resultCount", { count: resultCount })}
           </span>
         </div>
 
@@ -733,7 +738,7 @@ export function SalesChannelSyncCheckView({
           <div
             className="flex flex-wrap items-center gap-1"
             role="group"
-            aria-label="판매 채널 점검 종류"
+            aria-label={t("filters.kind")}
           >
             {SALES_CHANNEL_SYNC_CHECK_KIND_OPTIONS.map((option) => (
               <Button
@@ -744,7 +749,7 @@ export function SalesChannelSyncCheckView({
                 disabled={working}
                 onClick={() => requestKindChange(option.value)}
               >
-                {option.label}
+                {t(`kind.${option.labelKey}`)}
                 <span
                   className={cn(
                     "ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-[10px]",
@@ -753,14 +758,14 @@ export function SalesChannelSyncCheckView({
                       : "bg-muted text-muted-foreground"
                   )}
                 >
-                  {unresolvedCountForKind(option.value).toLocaleString("ko-KR")}
+                  {unresolvedCountForKind(option.value).toLocaleString(locale)}
                 </span>
               </Button>
             ))}
           </div>
 
           <select
-            aria-label="판매 채널 점검 상태"
+            aria-label={t("filters.status")}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             value={status}
             disabled={working}
@@ -776,9 +781,9 @@ export function SalesChannelSyncCheckView({
           <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
-              aria-label="판매 채널 동기화 점검 검색"
+              aria-label={t("filters.search")}
               className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-              placeholder="주문번호, vendorItemId, 오퍼, 모델, 오류 검색"
+              placeholder={t("filters.placeholder")}
               value={search}
               disabled={working}
               onChange={(event) => setSearch(event.target.value)}
@@ -798,7 +803,7 @@ export function SalesChannelSyncCheckView({
             onClick={requestLoad}
           >
             <RefreshCcw className={cn("size-4", loading && "animate-spin")} />
-            새로고침
+            {t("filters.refresh")}
           </Button>
         </div>
       </div>
@@ -835,13 +840,13 @@ export function SalesChannelSyncCheckView({
           <table className="w-full min-w-[1120px] table-fixed text-sm">
             <thead className="sticky top-0 z-10 bg-muted text-left text-xs text-muted-foreground">
               <tr>
-                <th className="w-24 px-3 py-2 font-medium">종류</th>
-                <th className="w-36 px-3 py-2 font-medium">상태</th>
-                <th className="w-44 px-3 py-2 font-medium">대상</th>
-                <th className="w-56 px-3 py-2 font-medium">업무·옵션</th>
-                <th className="w-56 px-3 py-2 font-medium">기준 → 실제</th>
-                <th className="px-3 py-2 font-medium">오류</th>
-                <th className="w-36 px-3 py-2 font-medium">최근 변경</th>
+                <th className="w-24 px-3 py-2 font-medium">{t("columns.kind")}</th>
+                <th className="w-36 px-3 py-2 font-medium">{t("columns.status")}</th>
+                <th className="w-44 px-3 py-2 font-medium">{t("columns.target")}</th>
+                <th className="w-56 px-3 py-2 font-medium">{t("columns.work")}</th>
+                <th className="w-56 px-3 py-2 font-medium">{t("columns.quantities")}</th>
+                <th className="px-3 py-2 font-medium">{t("columns.error")}</th>
+                <th className="w-36 px-3 py-2 font-medium">{t("columns.updated")}</th>
               </tr>
             </thead>
             <tbody>
@@ -867,11 +872,11 @@ export function SalesChannelSyncCheckView({
                     }}
                   >
                     <td className="px-3 py-2 text-xs font-medium">
-                      {syncCheckKindLabel(item)}
+                      {t(`kind.${syncCheckKindKey(item)}`)}
                     </td>
                     <td className="px-3 py-2">
                       <Badge variant={salesChannelSyncCheckStatusVariant(item)}>
-                        {salesChannelSyncCheckStatusLabel(item)}
+                        {t(`statusFilter.${salesChannelSyncCheckStatusKey(item)}`)}
                       </Badge>
                     </td>
                     {item.kind === SALES_CHANNEL_SYNC_CHECK_KIND.writeRequest ? (
@@ -893,7 +898,7 @@ export function SalesChannelSyncCheckView({
                     colSpan={7}
                     className="h-40 px-3 text-center text-muted-foreground"
                   >
-                    현재 조건에 해당하는 점검 항목이 없습니다.
+                    {t("state.empty")}
                   </td>
                 </tr>
               ) : null}
@@ -903,7 +908,7 @@ export function SalesChannelSyncCheckView({
                     colSpan={7}
                     className="h-40 px-3 text-center text-muted-foreground"
                   >
-                    판매 채널 점검 목록을 불러오는 중입니다.
+                    {t("state.loading")}
                   </td>
                 </tr>
               ) : null}
@@ -917,7 +922,7 @@ export function SalesChannelSyncCheckView({
                 disabled={loading || working}
                 onClick={() => void load(nextCursor, true)}
               >
-                {loading ? "불러오는 중" : "다음 점검 항목 불러오기"}
+                {loading ? t("state.loadingMore") : t("state.loadMore")}
               </Button>
             </div>
           ) : null}
@@ -964,31 +969,41 @@ export function SalesChannelSyncCheckView({
           ) : selectedClaimIntegrity ? (
             <div className="space-y-4 p-5 text-sm">
               <div>
-                <h3 className="font-semibold">클레임 범위 확인 필요</h3>
+                <h3 className="font-semibold">{t("claim.title")}</h3>
                 <p className="mt-1 text-muted-foreground">
-                  식별자나 수량을 추측하지 않고 해당 클레임의 자동 처리를 차단했습니다.
+                  {t("claim.description")}
                 </p>
               </div>
               <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2">
-                <dt className="text-muted-foreground">종류</dt>
+                <dt className="text-muted-foreground">{t("claim.kind")}</dt>
                 <dd>{selectedClaimIntegrity.claimType}</dd>
-                <dt className="text-muted-foreground">클레임 ID</dt>
+                <dt className="text-muted-foreground">{t("claim.id")}</dt>
                 <dd className="font-mono">{selectedClaimIntegrity.externalClaimId}</dd>
-                <dt className="text-muted-foreground">주문 ID</dt>
+                <dt className="text-muted-foreground">{t("claim.order")}</dt>
                 <dd className="font-mono">{selectedClaimIntegrity.externalOrderId}</dd>
-                <dt className="text-muted-foreground">배송 ID</dt>
-                <dd className="font-mono">{selectedClaimIntegrity.externalShipmentId || "확인 불가"}</dd>
-                <dt className="text-muted-foreground">무결성 상태</dt>
-                <dd>{selectedClaimIntegrity.integrityStatus}</dd>
+                <dt className="text-muted-foreground">{t("claim.shipment")}</dt>
+                <dd className="font-mono">{selectedClaimIntegrity.externalShipmentId || t("claim.unknown")}</dd>
+                <dt className="text-muted-foreground">{t("claim.integrity")}</dt>
+                <dd>
+                  {{
+                    VALID: claimT("integrityStatus.valid"),
+                    MISSING_IDENTITY: claimT("integrityStatus.missingIdentity"),
+                    INVALID_QUANTITY: claimT("integrityStatus.invalidQuantity"),
+                    COUNT_MISMATCH: claimT("integrityStatus.countMismatch"),
+                  }[selectedClaimIntegrity.integrityStatus] ??
+                    claimT("integrityStatus.unknown", {
+                      code: selectedClaimIntegrity.integrityStatus,
+                    })}
+                </dd>
               </dl>
               <div className="border border-red-200 bg-red-50 p-3 text-red-900">
-                {selectedClaimIntegrity.message}
+                {t(`claim.issue.${selectedClaimIntegrity.messageCode}`)}
               </div>
             </div>
           ) : (
             <div className="flex h-full min-h-60 items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
               <ShieldAlert className="size-4" />
-              왼쪽 표에서 확인할 점검 항목을 선택하세요.
+              {t("state.select")}
             </div>
           )}
         </aside>

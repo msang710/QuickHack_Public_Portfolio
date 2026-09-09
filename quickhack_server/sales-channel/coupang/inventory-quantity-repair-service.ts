@@ -146,7 +146,7 @@ export async function repairCoupangInventoryQuantity(
   if (!initial) {
     throw publicNotFound(
       "INVENTORY_VERIFICATION_NOT_FOUND",
-      "재고 동기화 점검 상태를 찾을 수 없습니다."
+      "INVENTORY_VERIFICATION_NOT_FOUND"
     );
   }
 
@@ -171,7 +171,7 @@ export async function repairCoupangInventoryQuantity(
   if (!refreshed) {
     throw publicNotFound(
       "INVENTORY_VERIFICATION_NOT_FOUND",
-      "재고 동기화 점검 상태를 찾을 수 없습니다."
+      "INVENTORY_VERIFICATION_NOT_FOUND"
     );
   }
 
@@ -182,7 +182,7 @@ export async function repairCoupangInventoryQuantity(
   if (refreshResult.outcome === "MATCHED") {
     throw publicConflict(
       "INVENTORY_REPAIR_ALREADY_MATCHED",
-      "쿠팡 재고수량이 이미 최신 기대수량과 일치합니다.",
+      "INVENTORY_REPAIR_ALREADY_MATCHED",
       { latestItem }
     );
   }
@@ -190,7 +190,7 @@ export async function repairCoupangInventoryQuantity(
   if (refreshResult.outcome !== "MISMATCH") {
     throw publicConflict(
       `INVENTORY_REPAIR_${refreshResult.outcome}`,
-      "최신 재고 상태를 확정하지 못해 복구를 시작하지 않았습니다.",
+      `INVENTORY_REPAIR_${refreshResult.outcome}`,
       { latestItem }
     );
   }
@@ -206,7 +206,7 @@ export async function repairCoupangInventoryQuantity(
   if (!mismatchSince || !projectionBasisHash || observedChannelQuantity === null) {
     throw await changedPrecondition(
       input.verificationStateId,
-      "복구에 필요한 최신 재고 snapshot이 완전하지 않습니다. 다시 점검하세요."
+      "INVENTORY_REPAIR_SNAPSHOT_INCOMPLETE"
     );
   }
 
@@ -348,7 +348,7 @@ export async function repairCoupangInventoryQuantity(
 
     throw publicUnavailable(
       "INVENTORY_REPAIR_UNAVAILABLE",
-      "쿠팡 재고수량 복구를 완료하지 못했습니다. 잠시 후 상태를 다시 확인하세요."
+      "INVENTORY_REPAIR_UNAVAILABLE"
     );
   }
 }

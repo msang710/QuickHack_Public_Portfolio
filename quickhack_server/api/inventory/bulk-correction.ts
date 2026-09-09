@@ -78,7 +78,7 @@ export async function PATCH(request: NextRequest) {
     return apiFailureResponse({
       status: 401,
       code: "AUTHENTICATION_REQUIRED",
-      message: "로그인이 필요합니다.",
+
     });
   }
 
@@ -86,7 +86,7 @@ export async function PATCH(request: NextRequest) {
     return apiFailureResponse({
       status: 403,
       code: "PERMISSION_DENIED",
-      message: "기존 재고 일괄 수정 권한이 없습니다.",
+
     });
   }
   setOperationTraceUserId(user.userId);
@@ -100,7 +100,7 @@ export async function PATCH(request: NextRequest) {
     return apiFailureResponse({
       status: 403,
       code: "SENSITIVE_AUTH_REQUIRED",
-      message: "기존 재고 일괄 수정 작업은 2차 인증이 필요합니다.",
+
       extra: {
         sensitiveAuthRequired: true,
         sensitiveAction: SENSITIVE_ACTIONS.inventoryEdit,
@@ -114,7 +114,7 @@ export async function PATCH(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
 
@@ -126,7 +126,7 @@ export async function PATCH(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVENTORY_CORRECTION_INPUT_INVALID",
-      message: "수정 사유를 입력해야 저장할 수 있습니다.",
+
     });
   }
 
@@ -134,7 +134,7 @@ export async function PATCH(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVENTORY_CORRECTION_INPUT_INVALID",
-      message: "일괄 수정할 재고를 선택해야 합니다.",
+
     });
   }
 
@@ -159,7 +159,8 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `선택 재고 ${result.updatedCount}건의 수정 내역을 저장했습니다.`,
+      resultCode: "INVENTORY_BULK_CORRECTION_SAVED",
+      messageArguments: { updatedCount: result.updatedCount },
       updatedCount: result.updatedCount,
       pgNos: result.pgNos,
     });

@@ -182,7 +182,7 @@ export function createTotpSecurityRecoveryService(
     if (recoveryRunning) {
       throw new TotpSecurityRecoveryError(
         "TOTP_SECURITY_RECOVERY_RUNNING",
-        "OTP 보안 복구가 이미 진행 중입니다.",
+        "TOTP_SECURITY_RECOVERY_RUNNING",
         409
       );
     }
@@ -195,7 +195,7 @@ export function createTotpSecurityRecoveryService(
       if (before.key.configured) {
         throw new TotpSecurityRecoveryError(
           "TOTP_SECURITY_ALREADY_READY",
-          "OTP 보안 서비스가 정상 상태이므로 전역 초기화를 실행하지 않았습니다.",
+          "TOTP_SECURITY_ALREADY_READY",
           409
         );
       }
@@ -203,7 +203,7 @@ export function createTotpSecurityRecoveryService(
       if (!before.recovery.allowed) {
         throw new TotpSecurityRecoveryError(
           "TOTP_SECURITY_RECOVERY_UNAVAILABLE",
-          "현재 서버 환경에서는 OTP 보안 서비스를 복구할 수 없습니다.",
+          "TOTP_SECURITY_RECOVERY_UNAVAILABLE",
           503
         );
       }
@@ -215,7 +215,7 @@ export function createTotpSecurityRecoveryService(
       ) {
         throw new TotpSecurityRecoveryError(
           "TOTP_SECURITY_RESET_CONFIRMATION_REQUIRED",
-          `전역 OTP 초기화를 실행하려면 '${TOTP_SECURITY_RESET_CONFIRM_TEXT}'를 정확히 입력하세요.`,
+          "TOTP_SECURITY_RESET_CONFIRMATION_REQUIRED",
           400
         );
       }
@@ -248,13 +248,13 @@ export function createTotpSecurityRecoveryService(
         reset,
         key,
         registrationRequired: reset.credentialCount > 0,
-        message: key.configured
+        messageCode: key.configured
           ? reset.credentialCount > 0
-            ? "OTP 보안 정보를 초기화했습니다. 영향받은 사용자는 다시 로그인해 OTP를 재등록해야 합니다."
-            : "OTP 보안 키를 다시 점검하고 사용할 수 있는 상태로 복구했습니다."
+            ? "TOTP_SECURITY_RESET_COMPLETED"
+            : "TOTP_SECURITY_KEY_RECOVERED"
           : reset.credentialCount > 0
-            ? "OTP 등록 정보는 안전하게 초기화했지만 새 키를 만들지 못했습니다. 서버 콘솔에서 복구를 다시 시도하세요."
-            : "OTP 보안 키를 다시 만들지 못했습니다. 서버 환경을 확인한 뒤 복구를 다시 시도하세요.",
+            ? "TOTP_SECURITY_RESET_KEY_RECOVERY_FAILED"
+            : "TOTP_SECURITY_KEY_RECOVERY_FAILED",
       };
     } finally {
       recoveryRunning = false;

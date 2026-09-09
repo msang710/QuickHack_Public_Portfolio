@@ -9,7 +9,6 @@ import {
 } from "@/quickhack_server/core/database/keyset-page";
 import { maskPhone } from "@/quickhack_server/security/sensitive-data";
 import { formatModelSeqLabel } from "@/quickhack_shared/device/types";
-import { inventoryStatusLabel } from "@/quickhack_shared/inventory/inventory-status";
 
 const CURSOR_CONTRACT = "shipment-address-changes:v1";
 const DEFAULT_LIMIT = 100;
@@ -17,29 +16,7 @@ const MAX_LIMIT = 300;
 const ALL_STATUS = "ALL";
 const ACTION_REQUIRED_STATUS = "ACTION_REQUIRED";
 
-const CHANGE_STATUS_LABELS: Record<string, string> = {
-  PENDING: "확인 필요",
-  CONFIRMED: "확인 완료",
-  IGNORED: "무시",
-  FAILED: "처리 실패",
-};
-
-const STAGE_LABELS: Record<string, string> = {
-  AFTER_PRINT: "출고 목록 출력 후",
-  BEFORE_PRINT: "출고 목록 출력 전",
-  UNMATCHED: "매칭 없음",
-  UNKNOWN: "확인 필요",
-  AFTER_SHIPMENT: "집하·배송 시작 후",
-};
-
-const FIELD_LABELS: Record<string, string> = {
-  receiver_name: "수취인",
-  receiver_safe_number: "안심번호",
-  receiver_address_1: "주소 1",
-  receiver_address_2: "주소 2",
-  receiver_post_code: "우편번호",
-  shipping_memo: "배송메모",
-};
+const CHANGE_STATUSES = new Set(["PENDING", "CONFIRMED", "IGNORED", "FAILED"]);
 
 const addressChangeInclude = {
   fields: {
@@ -89,7 +66,7 @@ function normalizedStatus(value: unknown) {
   if (!status) return ACTION_REQUIRED_STATUS;
   if (status === ALL_STATUS || status === ACTION_REQUIRED_STATUS) return status;
 
-  return CHANGE_STATUS_LABELS[status] ? status : ALL_STATUS;
+  return CHANGE_STATUSES.has(status) ? status : ALL_STATUS;
 }
 
 function textOrNull(value: unknown) {
@@ -119,22 +96,6 @@ function displayFieldValue(fieldName: string, value: string | null) {
   return text;
 }
 
-function statusLabel(status: string | null | undefined) {
-  const text = String(status ?? "").trim();
-
-  return text ? CHANGE_STATUS_LABELS[text] ?? text : "-";
-}
-
-function stageLabel(stage: string | null | undefined) {
-  const text = String(stage ?? "").trim();
-
-  return text ? STAGE_LABELS[text] ?? text : "-";
-}
-
-function fieldLabel(fieldName: string) {
-  return FIELD_LABELS[fieldName] ?? fieldName;
-}
-
 function shipmentBatchText(row: AddressChangeWorkRow) {
   const allocation = row.allocation;
 
@@ -157,7 +118,6 @@ function toDto(row: AddressChangeWorkRow) {
   const inventoryStatus = device?.inventory?.inventory_status ?? null;
   const fields = row.fields.map((field) => ({
     fieldName: field.field_name,
-    fieldLabel: fieldLabel(field.field_name),
     beforeValue: displayFieldValue(field.field_name, field.before_value),
     afterValue: displayFieldValue(field.field_name, field.after_value),
   }));
@@ -179,9 +139,7 @@ function toDto(row: AddressChangeWorkRow) {
   return {
     id: row.shipment_address_change_work_id,
     changeStatus: row.change_status,
-    changeStatusLabel: statusLabel(row.change_status),
     shipmentStage: row.shipment_stage_at_detection,
-    shipmentStageLabel: stageLabel(row.shipment_stage_at_detection),
     allocationStatus: row.allocation_status_at_detection,
     externalOrderId: row.external_order_id,
     externalShipmentId: row.external_shipment_id,
@@ -201,7 +159,6 @@ function toDto(row: AddressChangeWorkRow) {
     color: device?.color ?? null,
     saleGrade: device?.sale_grade ?? null,
     inventoryStatus,
-    inventoryStatusLabel: inventoryStatusLabel(inventoryStatus),
     shipmentBatchText: shipmentBatchText(row),
     receiverName: row.order.receiver_name ?? "",
     receiverSafeNumber: maskPhone(row.order.receiver_safe_number, 4),
@@ -211,7 +168,6 @@ function toDto(row: AddressChangeWorkRow) {
       row.order.receiver_address_2,
     ]),
     shippingMemo: row.order.shipping_memo ?? "",
-    changedFieldsText: fields.map((field) => field.fieldLabel).join(", "),
     fields,
     apiCallLogId: row.api_call_log_id,
     apiName: row.api_call_log?.api_name ?? null,

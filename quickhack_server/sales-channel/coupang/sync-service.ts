@@ -1684,8 +1684,7 @@ async function upsertReturnRequest(
     sourceId: String(returnRow.coupang_return_raw_id),
     dedupeKey: `RETURN_REQUEST:${returnRequest.externalReceiptId}`,
     menuId: "return-after-shipment",
-    title: "반품 요청 접수",
-    body: "판매채널 반품 요청이 동기화되었습니다.",
+    messageKey: "returnRequest",
     occurredAt: context.observedAt,
   });
   if (returnShipmentIds.length === 0) {

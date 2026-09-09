@@ -199,7 +199,7 @@ export type SalesChannelClaimIntegritySyncCheckItem = {
   externalOrderId: string;
   externalShipmentId: string;
   integrityStatus: string;
-  message: string;
+  messageCode: "RETURN_ITEM_QUANTITY_MISMATCH" | "EXCHANGE_ORIGINAL_SHIPMENT_UNKNOWN";
 };
 
 export type SalesChannelSyncCheckItem =

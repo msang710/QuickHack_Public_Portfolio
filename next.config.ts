@@ -1,11 +1,15 @@
 // QuickHack note: QuickHack Next.js 앱의 빌드/런타임 설정을 정의합니다.
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 
 const configuredDistDir = String(
   process.env.QUICKHACK_NEXT_DIST_DIR || ""
 ).trim();
 
 const nextConfig: NextConfig = {
+  experimental: {
+    useTypeScriptCli: false,
+  },
   ...(configuredDistDir ? { distDir: configuredDistDir } : {}),
   output: "standalone",
   outputFileTracingIncludes: {
@@ -46,4 +50,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
+
+export default withNextIntl(nextConfig);

@@ -76,7 +76,7 @@ function normalizePriceDate(value: unknown) {
   const normalized = text(value);
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    throw inputError("매입가 적용일은 YYYY-MM-DD 형식이어야 합니다.");
+    throw inputError("PURCHASE_PRICE_INPUT_INVALID");
   }
 
   return normalized;
@@ -86,7 +86,7 @@ function positiveId(value: unknown, label: string) {
   const parsed = Number(value);
 
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw inputError(`${label} option ID가 올바르지 않습니다.`);
+    throw inputError("PURCHASE_PRICE_INPUT_INVALID");
   }
 
   return parsed;
@@ -100,7 +100,7 @@ function optionalRevision(value: unknown) {
   const parsed = Number(value);
 
   if (!Number.isInteger(parsed) || parsed < 0) {
-    throw inputError("매입가 revision이 올바르지 않습니다.");
+    throw inputError("PURCHASE_PRICE_INPUT_INVALID");
   }
 
   return parsed;
@@ -110,7 +110,7 @@ function normalizePurchasePrice(value: unknown) {
   const normalized = text(value).replace(/,/g, "");
 
   if (!/^\d+$/.test(normalized)) {
-    throw inputError("매입가는 0 이상의 숫자로 입력해야 합니다.");
+    throw inputError("PURCHASE_PRICE_INPUT_INVALID");
   }
 
   return Number.parseInt(normalized, 10);
@@ -136,7 +136,7 @@ function normalizeRateInputs(
   const rawRates = Array.isArray(input.rates) ? input.rates : [];
 
   if (rawRates.length === 0) {
-    throw inputError("저장할 매입가 기준이 없습니다.");
+    throw inputError("PURCHASE_PRICE_INPUT_INVALID");
   }
 
   const rates = rawRates.map((rawRate): NormalizedRateInput => {
@@ -159,7 +159,7 @@ function normalizeRateInputs(
   const identities = rates.map(rateIdentity);
 
   if (new Set(identities).size !== identities.length) {
-    throw inputError("같은 상품 기준값 조합이 한 요청에 두 번 포함되었습니다.");
+    throw inputError("PURCHASE_PRICE_INPUT_INVALID");
   }
 
   return { priceDate, note, rates };
@@ -260,7 +260,7 @@ async function validateCriteria(
     ) {
       throw publicConflict(
         "PURCHASE_PRICE_CRITERIA_CONFLICT",
-        "매입가 대상 상품 기준값이 없거나 비활성 상태입니다. 기준값을 새로 고친 뒤 다시 시도해 주세요."
+        "PURCHASE_PRICE_CRITERIA_CONFLICT"
       );
     }
   }
@@ -284,7 +284,7 @@ async function validateCriteria(
     if (!linked.has(`${rate.modelOptionId}:${rate.storageOptionId}`)) {
       throw publicConflict(
         "PURCHASE_PRICE_CRITERIA_CONFLICT",
-        "모델과 용량의 연결 기준값이 변경되었습니다. 기준값을 새로 고친 뒤 다시 시도해 주세요."
+        "PURCHASE_PRICE_CRITERIA_CONFLICT"
       );
     }
   }
@@ -347,7 +347,7 @@ export async function savePurchasePriceRates(
         if (before && rate.expectedRevision !== before.revision) {
           throw publicConflict(
             "PURCHASE_PRICE_RATE_CONFLICT",
-            "매입가 기준이 다른 작업에서 변경되었습니다. 현재 날짜와 조건을 새로 고친 뒤 다시 시도해 주세요.",
+            "PURCHASE_PRICE_RATE_CONFLICT",
             {
               rateId: before.purchase_price_rate_id,
               currentRevision: before.revision,
@@ -358,7 +358,7 @@ export async function savePurchasePriceRates(
         if (!before && rate.expectedRevision !== null) {
           throw publicConflict(
             "PURCHASE_PRICE_RATE_CONFLICT",
-            "기존 매입가 기준이 삭제되거나 변경되었습니다. 현재 날짜와 조건을 새로 고친 뒤 다시 시도해 주세요."
+            "PURCHASE_PRICE_RATE_CONFLICT"
           );
         }
 

@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import {
   mutationWakeDeferred,
   type MutationReceipt,
@@ -35,6 +37,7 @@ import type {
   InvoiceManualCandidate,
   InvoiceReplacement,
 } from "./invoice-operation-types";
+import { useInvoiceReplacementPresentation } from "./invoice-replacement-presentation";
 
 type ReplacementResponse = {
   ok: boolean;
@@ -52,6 +55,11 @@ type CandidateResponse = {
   partial?: boolean;
   requestIds?: number[];
   message?: string;
+  resultCode?:
+    | "INVOICE_ISSUE_COMPLETED"
+    | "INVOICE_ISSUE_REVIEW_REQUIRED"
+    | "INVOICE_ISSUE_ALLOCATING"
+    | "INVOICE_ISSUE_RESULT_SAVED";
   items?: InvoiceManualCandidate[];
   issueBatch?: { status: string; errorMessage?: string | null };
   nextCursor?: string | null;
@@ -83,6 +91,9 @@ export function InvoiceManualIssueView({
   onOpenShipmentOutput?: (focus: ShipmentOutputFocus) => void;
   onOpenWriteReview?: (requestId: number) => void;
 }) {
+  const t = useTranslations("shipment.manualInvoice");
+  const historyT = useTranslations("shipment.invoiceHistory");
+  const replacementPresentation = useInvoiceReplacementPresentation();
   const [replacements, setReplacements] = React.useState<
     InvoiceReplacement[]
   >([]);
@@ -118,7 +129,11 @@ export function InvoiceManualIssueView({
     ["COMPLETED", "FAILED", "CANCELED"].includes(replacement.status)
   );
   const selectedOutputFocus = selected
-    ? shipmentOutputFocusForReplacement(selected, "invoice-manual-issue")
+    ? shipmentOutputFocusForReplacement(
+        selected,
+        "invoice-manual-issue",
+        t("outputBatchLabel", { id: selected.shipmentListPrintBatchId ?? 0 })
+      )
     : null;
 
   const load = React.useCallback(async () => {
@@ -153,17 +168,17 @@ export function InvoiceManualIssueView({
         (await candidateResponse.json()) as CandidateResponse;
       if (!replacementResponse.ok || !replacementPayload.ok) {
         throw new Error(
-          replacementPayload.message || "송장 재발급 작업을 불러오지 못했습니다."
+          t("message.replacementsLoadFailed")
         );
       }
       if (!candidateResponse.ok || !candidatePayload.ok) {
         throw new Error(
-          candidatePayload.message || "수동 발급 후보를 불러오지 못했습니다."
+          t("message.candidatesLoadFailed")
         );
       }
       if (!historyResponse.ok || !historyPayload.ok) {
         throw new Error(
-          historyPayload.message || "송장 교체 완료 이력을 불러오지 못했습니다."
+          t("message.historyLoadFailed")
         );
       }
       const nextReplacements = [
@@ -205,7 +220,7 @@ export function InvoiceManualIssueView({
     } finally {
       setLoading(false);
     }
-  }, [appliedSearch]);
+  }, [appliedSearch, t]);
 
   const loadMoreReplacements = React.useCallback(async (
     scope: "OPEN" | "HISTORY",
@@ -224,7 +239,7 @@ export function InvoiceManualIssueView({
         | ReplacementResponse
         | null;
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "송장 교체 작업을 더 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.replacementsMoreFailed")));
       }
       setReplacements((current) => {
         const byId = new Map(
@@ -243,7 +258,7 @@ export function InvoiceManualIssueView({
     } finally {
       setLoading(false);
     }
-  }, [appliedSearch]);
+  }, [appliedSearch, t]);
 
   const loadMoreCandidates = React.useCallback(async () => {
     if (!candidateCursor) return;
@@ -260,7 +275,7 @@ export function InvoiceManualIssueView({
         | CandidateResponse
         | null;
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "수동 처리 후보를 더 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.candidatesMoreFailed")));
       }
       setCandidates((current) => [...current, ...(payload.items ?? [])]);
       setCandidateCursor(payload.hasMore ? payload.nextCursor ?? null : null);
@@ -269,7 +284,7 @@ export function InvoiceManualIssueView({
     } finally {
       setLoading(false);
     }
-  }, [appliedSearch, candidateCursor]);
+  }, [appliedSearch, candidateCursor, t]);
 
   const manualReplacementSnapshot =
     createManualInvoiceReplacementDraftSnapshot({
@@ -279,7 +294,7 @@ export function InvoiceManualIssueView({
 
   useUnsavedForm({
     id: "invoice.manual-replacement",
-    label: "관리자 요청 송장 재발급",
+    label: t("formLabel"),
     isDirty: manualInvoiceReplacementDraftIsDirty(
       manualReplacementSnapshot
     ),
@@ -327,11 +342,11 @@ export function InvoiceManualIssueView({
   async function startReplacement() {
     const parsedGroupId = Number(packageGroupId);
     if (!Number.isSafeInteger(parsedGroupId) || parsedGroupId <= 0) {
-      setError("합포장 그룹 ID를 올바르게 입력하세요.");
+      setError(t("invalidGroup"));
       return;
     }
     if (!reason.trim()) {
-      setError("재발급 사유를 입력하세요.");
+      setError(t("reasonRequired"));
       return;
     }
     setWorking(true);
@@ -351,11 +366,9 @@ export function InvoiceManualIssueView({
       });
       const payload = (await response.json()) as ReplacementResponse;
       if (!response.ok || !payload.ok || !payload.replacement) {
-        throw new Error(payload.message || "송장 재발급을 시작하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.startFailed")));
       }
-      setMessage(
-        "재발급을 시작했습니다. 아래 단계 표시에서 현재 처리 위치와 다음 할 일을 확인하세요."
-      );
+      setMessage(t("started"));
       setPackageGroupId("");
       setReason("");
       await load();
@@ -384,7 +397,7 @@ export function InvoiceManualIssueView({
       );
       const payload = (await response.json()) as ReplacementResponse;
       if (!response.ok || !payload.ok || !payload.replacement) {
-        throw new Error(payload.message || "재발급 작업을 진행하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.advanceFailed")));
       }
       setReplacements((current) =>
         current.map((item) =>
@@ -395,10 +408,10 @@ export function InvoiceManualIssueView({
       );
       setMessage(
         action === "confirmOldInvoiceHandling"
-          ? "기존 송장 처리 확인을 저장했습니다. 새 송장 채번과 쿠팡 반영을 계속합니다."
+          ? t("message.oldInvoiceConfirmed")
           : action === "cancel"
-            ? "송장 재발급을 취소하고 기존 송장을 유지했습니다."
-            : "안전하게 재개할 수 있는 단계부터 상태를 다시 확인했습니다."
+            ? t("message.canceled")
+            : t("message.resumed")
       );
       return true;
     } catch (caught) {
@@ -415,7 +428,11 @@ export function InvoiceManualIssueView({
     setError("");
     setMessage("");
     try {
-      setMessage(await recoverCarrierRegistration(selected));
+      setMessage(
+        await recoverCarrierRegistration(selected, (key) =>
+          t(`recovery.${key}`)
+        )
+      );
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -439,16 +456,18 @@ export function InvoiceManualIssueView({
       });
       const payload = (await response.json()) as CandidateResponse;
       if (!response.ok) {
-        throw new Error(payload.message || "송장 채번을 다시 시도하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.retryFailed")));
       }
       const resultMessage =
-        payload.message ??
+        (payload.resultCode
+          ? t(`message.issueResult.${payload.resultCode}`)
+          : undefined) ??
           (payload.issueBatch?.status === "ALLOCATED"
-            ? "송장번호를 다시 채번했습니다. 이어지는 쿠팡 등록 상태를 확인하세요."
-            : "재시도를 접수했습니다. 표시된 결과를 다시 확인하세요.");
+            ? t("message.reallocated")
+            : t("message.retryAccepted"));
       setMessage(
         mutationWakeDeferred(payload.receipt)
-          ? `${resultMessage} 백그라운드 작업은 다음 실행 주기에 계속됩니다.`
+          ? t("message.deferred", { message: resultMessage })
           : resultMessage
       );
       if (payload.reviewRequired && payload.requestIds?.[0]) {
@@ -468,7 +487,7 @@ export function InvoiceManualIssueView({
     runGuardedAction({
       intent: "internal-change",
       formIds: invoiceReplacementFormIds(selectedId),
-      targetLabel: "다른 송장 재발급 작업",
+      targetLabel: t("unsaved.otherReplacement"),
       action: () => setSelectedId(nextId),
     });
   }
@@ -477,7 +496,7 @@ export function InvoiceManualIssueView({
     runGuardedAction({
       intent: "internal-change",
       formIds: invoiceReplacementFormIds(selectedId),
-      targetLabel: "송장 재발급 목록 조회",
+      targetLabel: t("unsaved.refreshList"),
       action: () => {
         const nextSearch = search.trim();
         if (nextSearch === appliedSearch) {
@@ -498,10 +517,9 @@ export function InvoiceManualIssueView({
       <div className="border-b pb-3">
         <div className="flex flex-wrap items-start gap-3">
           <div className="mr-auto">
-            <h2 className="text-base font-semibold">수동 송장 발급</h2>
+            <h2 className="text-base font-semibold">{t("title")}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              실패한 자동 채번을 안전하게 재시도하거나, 현재 송장을 보존한 채
-              합포장 그룹 전체의 재발급을 시작합니다.
+              {t("description")}
             </p>
           </div>
           <div className="relative min-w-72">
@@ -516,7 +534,7 @@ export function InvoiceManualIssueView({
                   requestLoad();
                 }
               }}
-              placeholder="송장번호, 주문번호, PG 검색"
+              placeholder={t("search")}
             />
           </div>
           <Button
@@ -526,7 +544,7 @@ export function InvoiceManualIssueView({
             onClick={requestLoad}
           >
             <RefreshCcw className={cn("size-4", loading && "animate-spin")} />
-            새로고침
+            {t("refresh")}
           </Button>
         </div>
       </div>
@@ -547,23 +565,23 @@ export function InvoiceManualIssueView({
       <div className="rounded-md border bg-muted/20 p-3">
         <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
           <PackagePlus className="size-4" />
-          관리자 요청 재발급
+          {t("formTitle")}
         </div>
         <div className="grid gap-2 lg:grid-cols-[180px_minmax(260px,1fr)_auto]">
           <input
             className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
             value={packageGroupId}
             onChange={(event) => setPackageGroupId(event.target.value)}
-            placeholder="합포장 그룹 ID"
+            placeholder={t("groupPlaceholder")}
           />
           <input
             className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="재발급 사유 (주소는 쿠팡 최신 주문에서 다시 확인합니다)"
+            placeholder={t("reasonPlaceholder")}
           />
           <Button disabled={working} onClick={() => void startReplacement()}>
-            안전한 재발급 시작
+            {t("start")}
           </Button>
         </div>
       </div>
@@ -572,7 +590,7 @@ export function InvoiceManualIssueView({
         <div className="rounded-md border border-amber-200 bg-amber-50/60">
           <div className="flex items-center gap-2 border-b border-amber-200 px-3 py-2 text-sm font-semibold text-amber-900">
             <AlertTriangle className="size-4" />
-            자동 발급 확인 필요 {candidates.length} / {candidateTotal}건
+            {t("candidates", { visible: candidates.length, total: candidateTotal })}
           </div>
           <div className="max-h-44 overflow-auto">
             {candidates.map((candidate) => (
@@ -584,10 +602,16 @@ export function InvoiceManualIssueView({
                   {candidate.shipmentListPrintBatchLabel}
                 </span>
                 <Badge variant={statusVariant(candidate.status)}>
-                  {candidate.status}
+                  {candidate.status === "ALLOCATING"
+                    ? t("candidateStatus.allocating")
+                    : ["ALLOCATED", "FAILED", "REVIEW_REQUIRED"].includes(candidate.status)
+                      ? historyT(`statusCode.${candidate.status}` as never)
+                      : t("candidateStatus.unknown", { code: candidate.status })}
                 </Badge>
                 <span className="min-w-0 flex-1 truncate text-red-700">
-                  {candidate.errorMessage || candidate.errorCode || "처리 결과 확인 필요"}
+                  {candidate.errorCode
+                    ? t("candidateError", { code: candidate.errorCode })
+                    : t("candidateFallback")}
                 </span>
                 {candidate.nextAction.code === "RETRY_ALLOCATION" ? (
                   <Button
@@ -597,7 +621,7 @@ export function InvoiceManualIssueView({
                     onClick={() => void retryCandidate(candidate)}
                   >
                     <RotateCcw className="size-3.5" />
-                    {candidate.nextAction.label}
+                    {replacementPresentation.action(candidate.nextAction.code).label}
                   </Button>
                 ) : candidate.replacementWorkId ? (
                   <Button
@@ -607,11 +631,11 @@ export function InvoiceManualIssueView({
                       requestSelectReplacement(candidate.replacementWorkId)
                     }
                   >
-                    {candidate.nextAction.label}
+                    {replacementPresentation.action(candidate.nextAction.code).label}
                   </Button>
                 ) : (
                   <span className="text-amber-800">
-                    {candidate.nextAction.label}
+                    {replacementPresentation.action(candidate.nextAction.code).label}
                   </span>
                 )}
               </div>
@@ -624,7 +648,7 @@ export function InvoiceManualIssueView({
                   disabled={loading}
                   onClick={() => void loadMoreCandidates()}
                 >
-                  수동 처리 후보 더 보기
+                  {t("candidateMore")}
                 </Button>
               </div>
             ) : null}
@@ -635,7 +659,7 @@ export function InvoiceManualIssueView({
       <MasterDetailLayout className="gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
         <div className="min-h-48 overflow-auto rounded-md border bg-background">
           <div className="sticky top-0 z-10 border-b bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
-            처리 필요 {openReplacements.length} / {openTotal}건
+            {t("open", { visible: openReplacements.length, total: openTotal })}
           </div>
           {openReplacements.map((replacement) => (
             <button
@@ -651,18 +675,18 @@ export function InvoiceManualIssueView({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold">
-                  그룹 #{replacement.packageGroupId}
+                  {t("group", { id: String(replacement.packageGroupId) })}
                 </span>
                 <Badge variant={statusVariant(replacement.status)}>
-                  {replacement.statusLabel}
+                  {replacementPresentation.status(replacement.status)}
                 </Badge>
               </div>
               <div className="mt-1 font-mono">
                 {replacement.oldTrackingNumber} →{" "}
-                {replacement.candidateTrackingNumber ?? "채번 전"}
+                {replacement.candidateTrackingNumber ?? t("unallocated")}
               </div>
               <div className="mt-1 text-muted-foreground">
-                {replacement.stageLabel} · {formatDate(replacement.updatedAt)}
+                {replacementPresentation.stage(replacement.stage)} · {formatDate(replacement.updatedAt)}
               </div>
             </button>
           ))}
@@ -674,11 +698,11 @@ export function InvoiceManualIssueView({
               disabled={loading}
               onClick={() => void loadMoreReplacements("OPEN", openCursor)}
             >
-              처리 필요 더 보기
+              {t("openMore")}
             </Button>
           ) : null}
           <div className="border-y bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
-            완료 이력 {historyReplacements.length} / {historyTotal}건
+            {t("history", { visible: historyReplacements.length, total: historyTotal })}
           </div>
           {historyReplacements.map((replacement) => (
             <button
@@ -694,18 +718,18 @@ export function InvoiceManualIssueView({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold">
-                  그룹 #{replacement.packageGroupId}
+                  {t("group", { id: String(replacement.packageGroupId) })}
                 </span>
                 <Badge variant={statusVariant(replacement.status)}>
-                  {replacement.statusLabel}
+                  {replacementPresentation.status(replacement.status)}
                 </Badge>
               </div>
               <div className="mt-1 font-mono">
                 {replacement.oldTrackingNumber} →{" "}
-                {replacement.candidateTrackingNumber ?? "채번 전"}
+                {replacement.candidateTrackingNumber ?? t("unallocated")}
               </div>
               <div className="mt-1 text-muted-foreground">
-                {replacement.stageLabel} · {formatDate(replacement.updatedAt)}
+                {replacementPresentation.stage(replacement.stage)} · {formatDate(replacement.updatedAt)}
               </div>
             </button>
           ))}
@@ -717,12 +741,12 @@ export function InvoiceManualIssueView({
               disabled={loading}
               onClick={() => void loadMoreReplacements("HISTORY", historyCursor)}
             >
-              완료 이력 더 보기
+              {t("historyMore")}
             </Button>
           ) : null}
           {!loading && replacements.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              재발급 작업이 없습니다.
+              {t("empty")}
             </div>
           ) : null}
         </div>
@@ -758,7 +782,7 @@ export function InvoiceManualIssueView({
             </>
           ) : (
             <div className="flex h-full min-h-52 items-center justify-center text-sm text-muted-foreground">
-              왼쪽에서 재발급 작업을 선택하세요.
+              {t("select")}
             </div>
           )}
         </div>

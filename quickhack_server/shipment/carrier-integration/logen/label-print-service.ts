@@ -11,6 +11,7 @@ import {
   LOGEN_LABEL_PRINT_STATUS,
   LOGEN_LABEL_TEMPLATE,
   type LogenLabelBlocker,
+  type LogenLabelBlockerCode,
   type LogenLabelDto,
 } from "@/quickhack_shared/shipment/logen-label";
 
@@ -137,7 +138,7 @@ function hash(value: unknown) {
 }
 
 function blocker(
-  code: string,
+  code: LogenLabelBlockerCode,
   message: string,
   item?: LabelBatch["items"][number]
 ): LogenLabelBlocker {

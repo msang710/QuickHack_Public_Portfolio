@@ -5,6 +5,7 @@ import {
   loadSalesStatisticsInput,
 } from "../../quickhack_server/statistics/sales-statistics-service.ts";
 import { resolveClosedStatisticsPeriod } from "../../quickhack_shared/statistics/statistics-period.ts";
+import { SALES_STATISTICS_PRICE_BANDS } from "../../quickhack_shared/statistics/statistics.ts";
 
 const NOW = new Date("2026-07-29T03:00:00.000Z");
 
@@ -183,19 +184,13 @@ assert.equal(
   result.dimensionRows.filter((row) => row.dimension === "MODEL").length,
   2
 );
-assert.deepEqual(result.priceGradeRows.map((row) => row.priceBand), [
-  "10만원 미만",
-  "10-20만원",
-  "20-30만원",
-  "30-40만원",
-  "40-50만원",
-  "50-60만원",
-  "60만원 이상",
-  "가격 미확인",
-]);
+assert.deepEqual(
+  result.priceGradeRows.map((row) => row.priceBand),
+  SALES_STATISTICS_PRICE_BANDS
+);
 assert.deepEqual(result.priceGradeColumns, ["A", "B"]);
 assert.equal(
-  result.priceGradeRows.find((row) => row.priceBand === "가격 미확인")
+  result.priceGradeRows.find((row) => row.priceBand === "PRICE_UNKNOWN")
     ?.totalCount,
   1
 );

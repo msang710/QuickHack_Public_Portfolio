@@ -3,6 +3,7 @@ package com.quickhack.mobile;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
@@ -25,10 +26,13 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.appcompat.widget.Toolbar;
 import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
+import androidx.core.os.LocaleListCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -62,6 +66,12 @@ public final class MainActivity extends AppCompatActivity {
     private static final Pattern PG_PATTERN = Pattern.compile("^[A-Z]{2}\\d{10}$");
     private static final Pattern IMEI_PATTERN = Pattern.compile("^\\d{15}$");
 
+    private static final class UserMessageException extends IllegalStateException {
+        UserMessageException(String message) {
+            super(message);
+        }
+    }
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ArrayList<String> scannedValues = new ArrayList<>();
@@ -86,6 +96,8 @@ public final class MainActivity extends AppCompatActivity {
     private LinearLayout setupPanel;
     private LinearLayout signalPanel;
     private TextInputLayout serverUrlLayout;
+    private TextInputLayout usernameLayout;
+    private TextInputLayout passwordLayout;
     private TextInputEditText serverUrlInput;
     private TextInputEditText usernameInput;
     private TextInputEditText passwordInput;
@@ -94,6 +106,11 @@ public final class MainActivity extends AppCompatActivity {
     private TextView deviceValueText;
     private TextView shipmentValueText;
     private TextView allValuesText;
+    private TextView deviceBarcodeLabel;
+    private TextView shipmentBarcodeLabel;
+    private Toolbar setupToolbar;
+    private Toolbar signalToolbar;
+    private ImageButton signalSettingsButton;
     private MaterialButton loginButton;
     private MaterialButton cancelActivationButton;
     private CircularProgressIndicator setupProgress;
@@ -103,6 +120,11 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (AppCompatDelegate.getApplicationLocales().isEmpty()) {
+            AppCompatDelegate.setApplicationLocales(
+                LocaleListCompat.forLanguageTags("ko")
+            );
+        }
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
         credentialStore = new MobileCredentialStore(this, proofKey);
@@ -121,6 +143,7 @@ public final class MainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
         bindViews();
+        refreshLocalizedLabels();
         applyWindowInsets();
         cameraController = new BarcodeCameraController(this, this);
         configureInputsAndActions();
@@ -130,6 +153,12 @@ public final class MainActivity extends AppCompatActivity {
             : getString(R.string.setup_initial_login);
         showSetup(initialMessage);
         handleProvisioningInbox();
+    }
+
+    @Override
+    public void onConfigurationChanged(@NonNull Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        refreshLocalizedLabels();
     }
 
     @Override
@@ -196,6 +225,8 @@ public final class MainActivity extends AppCompatActivity {
         setupPanel = findViewById(R.id.setup_panel);
         signalPanel = findViewById(R.id.signal_panel);
         serverUrlLayout = findViewById(R.id.server_url_layout);
+        usernameLayout = findViewById(R.id.username_layout);
+        passwordLayout = findViewById(R.id.password_layout);
         serverUrlInput = findViewById(R.id.server_url_input);
         usernameInput = findViewById(R.id.username_input);
         passwordInput = findViewById(R.id.password_input);
@@ -204,13 +235,44 @@ public final class MainActivity extends AppCompatActivity {
         deviceValueText = findViewById(R.id.device_value_text);
         shipmentValueText = findViewById(R.id.shipment_value_text);
         allValuesText = findViewById(R.id.all_values_text);
+        deviceBarcodeLabel = findViewById(R.id.device_barcode_label);
+        shipmentBarcodeLabel = findViewById(R.id.shipment_barcode_label);
+        setupToolbar = findViewById(R.id.setup_toolbar);
+        signalToolbar = findViewById(R.id.signal_toolbar);
         loginButton = findViewById(R.id.login_button);
         cancelActivationButton = findViewById(R.id.cancel_activation_button);
         setupProgress = findViewById(R.id.setup_progress);
         signalCameraPreview = findViewById(R.id.signal_camera_preview);
         cameraResultCover = findViewById(R.id.camera_result_cover);
-        ImageButton signalSettingsButton = findViewById(R.id.signal_settings_button);
+        signalSettingsButton = findViewById(R.id.signal_settings_button);
         signalSettingsButton.setOnClickListener(view -> showSetup(getString(R.string.setup_mode)));
+    }
+
+    private void refreshLocalizedLabels() {
+        if (setupToolbar == null) return;
+        setupToolbar.setTitle(R.string.setup_title);
+        signalToolbar.setTitle(R.string.signal_title);
+        serverUrlLayout.setHint(getString(R.string.server_url_label));
+        usernameLayout.setHint(getString(R.string.username_label));
+        passwordLayout.setHint(getString(R.string.password_label));
+        serverUrlLayout.setPlaceholderText(
+            getString(BuildConfig.DEBUG
+                ? R.string.server_url_hint_debug
+                : R.string.server_url_hint_release)
+        );
+        loginButton.setText(R.string.login_and_start);
+        cancelActivationButton.setText(R.string.cancel_activation);
+        signalSettingsButton.setContentDescription(getString(R.string.signal_settings));
+        deviceBarcodeLabel.setText(R.string.device_barcode_label);
+        shipmentBarcodeLabel.setText(R.string.shipment_barcode_label);
+    }
+
+    private void applyAccountLocale(String value) {
+        String locale = "en".equals(value) ? "en" : "ko";
+        LocaleListCompat requested = LocaleListCompat.forLanguageTags(locale);
+        if (!requested.equals(AppCompatDelegate.getApplicationLocales())) {
+            AppCompatDelegate.setApplicationLocales(requested);
+        }
     }
 
     private void applyWindowInsets() {
@@ -285,18 +347,22 @@ public final class MainActivity extends AppCompatActivity {
         runSetupApi(getString(R.string.login_in_progress), () -> {
             QuickHackApi.ApiResponse response = api.login(username, password);
             if (!response.isHttpOk() || !response.isQuickHackOk()) {
-                throw new IllegalStateException(
+                throw new UserMessageException(
                     response.messageOrDefault(getString(R.string.login_failed))
                 );
             }
+            String accountLocale = response.json == null
+                ? "ko"
+                : response.json.optString("locale", "ko");
 
             if (provisioningRequest != null) {
                 activateProvisioningRequest();
             }
             if (deviceToken == null || deviceToken.isEmpty()) {
-                throw new IllegalStateException("QuickHack 클라이언트에서 실제 USB 기기 등록을 먼저 실행하세요.");
+                throw new UserMessageException(getString(R.string.device_registration_required));
             }
             mainHandler.post(() -> {
+                applyAccountLocale(accountLocale);
                 passwordInput.setText("");
                 enterSignalMode();
             });
@@ -306,14 +372,14 @@ public final class MainActivity extends AppCompatActivity {
     private void activateProvisioningRequest() throws Exception {
         ProvisioningRequest request = provisioningRequest;
         if (request == null || !ServerOrigin.same(request.serverOrigin, api.getBaseUrl())) {
-            throw new IllegalStateException("현재 서버에 대한 USB 기기 등록 요청이 없습니다.");
+            throw new UserMessageException(getString(R.string.provisioning_request_missing));
         }
         PendingActivationRecord record = preparePendingActivation(request);
         String currentProofSpki = proofKey.publicKeySpkiBase64();
         if (!record.proofPublicKeySpki.equals(currentProofSpki)) {
             pendingRecoveryBlocked = true;
             updateCancelActivationButton();
-            throw new IllegalStateException(getString(R.string.activation_proof_changed));
+            throw new UserMessageException(getString(R.string.activation_proof_changed));
         }
         String tokenDigest = Base64.encodeToString(
             MessageDigest.getInstance("SHA-256").digest(
@@ -340,14 +406,14 @@ public final class MainActivity extends AppCompatActivity {
             if (ActivationRecoveryPolicy.isTerminalFailure(response)) {
                 discardPendingActivation(record);
             }
-            throw new IllegalStateException(
+            throw new UserMessageException(
                 response.messageOrDefault(getString(R.string.activation_failed))
             );
         }
         JSONObject data = response.json == null ? null : response.json.optJSONObject("data");
         String returnedToken = data == null ? "" : data.optString("deviceToken", "");
         if (!record.deviceToken.equals(returnedToken)) {
-            throw new IllegalStateException(getString(R.string.activation_token_missing));
+            throw new UserMessageException(getString(R.string.activation_token_missing));
         }
         credentialStore.saveDeviceToken(
             record.serverOrigin,
@@ -672,14 +738,14 @@ public final class MainActivity extends AppCompatActivity {
                         credentialStore.clearCredentialMaterial();
                         deviceToken = "";
                     }
-                    throw new IllegalStateException(
+                    throw new UserMessageException(
                         response.messageOrDefault(getString(R.string.packing_check_failed))
                     );
                 }
 
                 JSONObject data = response.json.optJSONObject("data");
                 if (data == null) {
-                    throw new IllegalStateException(getString(R.string.packing_result_missing));
+                    throw new UserMessageException(getString(R.string.packing_result_missing));
                 }
 
                 boolean matched = data.optBoolean("matched", false);
@@ -703,7 +769,7 @@ public final class MainActivity extends AppCompatActivity {
                 mainHandler.post(() -> {
                     busy = false;
                     if (deviceToken == null || deviceToken.isEmpty()) {
-                        showSetup("기기 또는 계정 보안 상태가 변경되었습니다. USB로 다시 등록하세요.");
+                        showSetup(getString(R.string.security_state_changed));
                         return;
                     }
                     setSignalFailure(R.string.signal_failure);
@@ -818,10 +884,11 @@ public final class MainActivity extends AppCompatActivity {
             || error instanceof IOException) {
             return getString(R.string.server_connection_failed);
         }
-        String message = error.getMessage();
-        return message == null || message.trim().isEmpty()
-            ? getString(R.string.packing_check_failed)
-            : message;
+        if (error instanceof UserMessageException) {
+            String message = error.getMessage();
+            if (message != null && !message.trim().isEmpty()) return message;
+        }
+        return getString(R.string.packing_check_failed);
     }
 
     private String normalizeScan(String value) {

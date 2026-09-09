@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 401,
       code: "AUTHENTICATION_REQUIRED",
-      message: "로그인이 필요합니다.",
+
     });
   }
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 403,
       code: "PERMISSION_DENIED",
-      message: "매입 확정 권한이 없습니다.",
+
     });
   }
 
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 403,
       code: "SENSITIVE_AUTH_REQUIRED",
-      message: "매입 확정은 OTP 인증이 필요합니다.",
+
       extra: {
         sensitiveAuthRequired: true,
         sensitiveAction: SENSITIVE_ACTIONS.inboundPurchaseConfirm,
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
   setOperationTraceTargetCount(Array.isArray(body.items) ? body.items.length : 0);
@@ -111,7 +111,8 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json({
       ok: true,
-      message: result.message,
+      resultCode: result.resultCode,
+      messageArguments: result.messageArguments,
       confirmedCount: result.confirmedCount,
       recoveredCount: result.recoveredCount,
       skippedCount: result.skippedCount,

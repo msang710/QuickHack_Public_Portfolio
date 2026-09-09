@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
   if (runtimeConfigService.isProduction()) {
     return NextResponse.json(
-      { ok: false, message: "운영 모드에서는 쿠팡 mock 주문 조회를 사용할 수 없습니다." },
+      { ok: false, code: "MOCK_MODE_REQUIRED" },
       { status: 403 }
     );
   }
@@ -27,14 +27,14 @@ export async function GET(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "VIEWER")) {
     return NextResponse.json(
-      { ok: false, message: "쿠팡 mock 주문 조회 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
   if (config.mode !== "mock") {
     return NextResponse.json(
-      { ok: false, message: "쿠팡 API 모드가 mock일 때만 mock 서버 데이터를 제공합니다." },
+      { ok: false, code: "MOCK_MODE_REQUIRED" },
       { status: 409 }
     );
   }

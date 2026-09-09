@@ -209,14 +209,16 @@ function percentage(numerator: number, denominator: number) {
 function rateMetric(
   numerator: number,
   denominator: number,
-  unavailableReason = "집계 가능한 분모가 없습니다."
+  unavailableReasonCode: PurchaseRateMetric["unavailableReasonCode"] = "NO_DENOMINATOR",
+  unavailableReasonDays?: number
 ): PurchaseRateMetric {
   if (denominator === 0) {
     return {
       value: null,
       numerator,
       denominator,
-      unavailableReason,
+      unavailableReasonCode,
+      unavailableReasonDays,
     };
   }
 
@@ -506,7 +508,8 @@ function saleConversionRate(
   return rateMetric(
     convertedCount,
     mature.length,
-    `${days}일 관찰이 끝난 매입 회차가 없습니다.`
+    "NO_MATURE_PURCHASE_BATCHES",
+    days
   );
 }
 
@@ -515,7 +518,7 @@ function inspectionDefectRate(rows: PreparedInbound[]) {
   return rateMetric(
     inspected.filter((row) => row.hasDefect).length,
     inspected.length,
-    "연결된 입고 검수 표본이 없습니다."
+    "NO_LINKED_INBOUND_INSPECTION_SAMPLE"
   );
 }
 
@@ -525,7 +528,7 @@ function supplierReturnRate(rows: PreparedInbound[]) {
       (row) => row.inboundStatus === INBOUND_STATUS.supplierReturn
     ).length,
     rows.length,
-    "종결된 입고 회차가 없습니다."
+    "NO_TERMINAL_INBOUND_BATCHES"
   );
 }
 
@@ -625,7 +628,7 @@ function supplierPerformanceRows(
       customerReturnConfirmationRate: rateMetric(
         supplierSales.filter((sale) => sale.saleStatus === "RETURNED").length,
         supplierSales.length,
-        "판매 당시 원매입처가 기록된 판매 표본이 없습니다."
+        "NO_ORIGINAL_SUPPLIER_SALES_SAMPLE"
       ),
     };
   }).sort(

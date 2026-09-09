@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import QRCode from "qrcode";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -71,6 +73,7 @@ export function SensitiveMenuGate({
   item: { id: string; label: string };
   children: React.ReactNode;
 }) {
+  const t = useTranslations("auth.sensitiveAction");
   const [verificationCode, setVerificationCode] = React.useState("");
   const [isChecking, setIsChecking] = React.useState(true);
   const [isVerified, setIsVerified] = React.useState(false);
@@ -87,7 +90,7 @@ export function SensitiveMenuGate({
   const [isTotpConfirming, setIsTotpConfirming] = React.useState(false);
   const recovery = useOneTimeRecoveryCodes({
     formId: ONE_TIME_RESULT_FORM_IDS.sensitiveRecoveryCodes,
-    label: "민감 메뉴 OTP 복구코드",
+    label: t("recoveryLabel"),
   });
   const sensitiveAction = React.useMemo(() => sensitiveActionForMenu(item.id), [item.id]);
 
@@ -101,7 +104,7 @@ export function SensitiveMenuGate({
         | null;
 
       if (!response.ok || !payload?.ok || !payload.status) {
-        throw new Error(payload?.message || "OTP 상태를 확인하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.statusFailed")));
       }
 
       setTotpStatus(payload.status);
@@ -111,14 +114,14 @@ export function SensitiveMenuGate({
     } finally {
       setIsTotpLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const checkSensitiveStatus = React.useCallback(async () => {
     setIsChecking(true);
 
     try {
       if (!sensitiveAction) {
-        throw new Error("2차 인증 대상 메뉴가 올바르지 않습니다.");
+        throw new Error(t("message.invalidMenu"));
       }
 
       const response = await fetch(
@@ -130,7 +133,7 @@ export function SensitiveMenuGate({
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "인증 상태를 확인하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.authStatusFailed")));
       }
 
       setIsVerified(Boolean(payload.sensitiveAuthenticated));
@@ -140,7 +143,7 @@ export function SensitiveMenuGate({
     } finally {
       setIsChecking(false);
     }
-  }, [sensitiveAction]);
+  }, [sensitiveAction, t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -176,21 +179,21 @@ export function SensitiveMenuGate({
       .catch(() => {
         if (!cancelled) {
           setTotpQrDataUrl("");
-          setTotpMessage("QR 코드를 생성하지 못했습니다. 인증 앱 등록 키를 수동으로 입력하세요.");
+          setTotpMessage(t("message.qrFailed"));
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [totpSetup?.otpauthUri]);
+  }, [totpSetup?.otpauthUri, t]);
 
   async function verifySensitiveAccess() {
     if (!verificationCode || isSubmitting || !sensitiveAction) {
       return;
     }
     if (recovery.codes.length > 0 && !recovery.acknowledged) {
-      setMessage("먼저 OTP 복구코드를 안전하게 보관하고 ‘보관 완료’를 누르세요.");
+      setMessage(t("recoveryRequired"));
       return;
     }
 
@@ -211,7 +214,7 @@ export function SensitiveMenuGate({
         | null;
 
       if (!response.ok || !payload?.ok || !payload.sensitiveAuthenticated) {
-        throw new Error(payload?.message || "OTP 인증에 실패했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.verifyFailed")));
       }
 
       setVerificationCode("");
@@ -246,12 +249,12 @@ export function SensitiveMenuGate({
         | null;
 
       if (!response.ok || !payload?.ok || !payload.setup) {
-        throw new Error(payload?.message || "OTP 등록을 시작하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.setupStartFailed")));
       }
 
       setTotpSetup(payload.setup);
       setTotpSetupPassword("");
-      setTotpMessage("인증 앱에 OTP 키를 등록한 뒤 6자리 코드를 입력하세요.");
+      setTotpMessage(t("message.setupCodePrompt"));
     } catch (error) {
       setTotpMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -282,14 +285,14 @@ export function SensitiveMenuGate({
         | null;
 
       if (!response.ok || !payload?.ok || !payload.confirmed) {
-        throw new Error(payload?.message || "OTP 코드를 확인하지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.setupConfirmFailed")));
       }
 
       setTotpSetup(null);
       recovery.setCodes(payload.recoveryCodes ?? []);
       setTotpSetupCode("");
       setTotpQrDataUrl("");
-      setTotpMessage("OTP 등록이 완료되었습니다. 다음 2차 인증부터 OTP 코드를 사용합니다.");
+      setTotpMessage(t("message.setupComplete"));
       await loadTotpStatus();
     } catch (error) {
       setTotpMessage(error instanceof Error ? error.message : String(error));
@@ -312,16 +315,15 @@ export function SensitiveMenuGate({
                 <ShieldCheck className="size-5" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-base font-semibold">2차 인증 필요</h2>
+                <h2 className="text-base font-semibold">{t("title")}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {item.label} 메뉴는 채널 상품과 주문 매칭에 영향을 주므로
-                  OTP 코드를 확인합니다. OTP가 설정되지 않은 계정은 오른쪽에서 먼저 등록하세요.
+                  {t("description", { menu: item.label })}
                 </p>
               </div>
             </div>
 
             <label className="grid gap-1.5 text-sm font-medium">
-              OTP 코드
+              {t("code")}
               <input
                 className="sr-only"
                 tabIndex={-1}
@@ -368,40 +370,39 @@ export function SensitiveMenuGate({
             >
               <ShieldCheck className="size-4" />
               {isChecking
-                ? "인증 상태 확인중"
+                ? t("checking")
                 : isSubmitting
-                  ? "확인중"
-                  : "확인 후 열기"}
+                  ? t("submitting")
+                  : t("open")}
             </Button>
           </div>
         </div>
 
         <aside className="grid max-h-[calc(100vh-2.5rem)] gap-3 self-start overflow-auto rounded-md border bg-popover p-4 text-sm">
           <div>
-            <div className="font-semibold">OTP 등록</div>
+            <div className="font-semibold">{t("setup.title")}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              OTP를 등록하면 이후 민감 메뉴는 인증 앱의 6자리 코드로 확인합니다.
+              {t("setup.description")}
             </p>
           </div>
 
           {isTotpLoading ? (
             <div className="rounded-md border bg-background px-3 py-2 text-muted-foreground">
-              OTP 상태 확인중
+              {t("setup.loading")}
             </div>
           ) : totpStatus?.enabled ? (
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
-              이 계정은 OTP 2차 인증이 설정되어 있습니다.
+              {t("setup.enabled")}
             </div>
           ) : totpStatus && !totpStatus.server.configured ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-              OTP 보안 서비스를 사용할 수 없어 보호된 작업이 차단되었습니다. 관리자는
-              QuickHack 본서버 콘솔에서 OTP 보안 상태를 확인해야 합니다.
+              {t("setup.unavailable")}
             </div>
           ) : (
             <div className="grid gap-3">
               <div className="grid gap-2 rounded-md border bg-secondary/30 p-3">
                 <label className="grid gap-1.5 text-xs font-medium">
-                  현재 비밀번호
+                  {t("setup.password")}
                   <input
                     className="sr-only"
                     tabIndex={-1}
@@ -432,7 +433,7 @@ export function SensitiveMenuGate({
                   onClick={startTotpSetup}
                   disabled={!totpSetupPassword || isTotpSettingUp}
                 >
-                  OTP 등록 시작
+                  {t("setup.start")}
                 </Button>
               </div>
 
@@ -443,28 +444,28 @@ export function SensitiveMenuGate({
                       {totpQrDataUrl ? (
                         <img
                           src={totpQrDataUrl}
-                          alt="Google OTP 등록 QR 코드"
+                          alt={t("setup.qrAlt")}
                           className="size-44"
                         />
                       ) : (
                         <div className="grid size-44 place-items-center text-center text-xs text-muted-foreground">
-                          QR 코드 생성 중
+                          {t("setup.qrLoading")}
                         </div>
                       )}
                       <div className="text-center text-xs text-muted-foreground">
-                        Google OTP 앱에서 QR 코드를 스캔하세요.
+                        {t("setup.qrHint")}
                       </div>
                     </div>
 
                     <div className="grid min-w-0 content-start gap-2">
                       <div className="grid gap-1">
-                        <div className="text-xs font-semibold">인증 앱 등록 키</div>
+                        <div className="text-xs font-semibold">{t("setup.secret")}</div>
                         <div className="break-all rounded border bg-secondary px-2 py-1 font-mono text-xs">
                           {totpSetup.secret}
                         </div>
                       </div>
                       <div className="grid gap-1">
-                        <div className="text-xs font-semibold">등록 URI</div>
+                        <div className="text-xs font-semibold">{t("setup.uri")}</div>
                         <div className="max-h-20 overflow-auto break-all rounded border bg-secondary px-2 py-1 font-mono text-xs">
                           {totpSetup.otpauthUri}
                         </div>
@@ -474,7 +475,7 @@ export function SensitiveMenuGate({
 
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <label className="grid gap-1.5 text-xs font-medium">
-                      인증 앱 6자리 코드
+                      {t("setup.code")}
                       <Input
                         inputMode="numeric"
                         name="quickhack_totp_setup_code"
@@ -498,7 +499,7 @@ export function SensitiveMenuGate({
                       onClick={confirmTotpSetup}
                       disabled={!totpSetupCode || isTotpConfirming}
                     >
-                      OTP 등록 완료
+                      {t("setup.confirm")}
                     </Button>
                   </div>
                 </div>
@@ -543,6 +544,7 @@ export function DangerousConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useTranslations("auth.sensitiveAction.dialog");
   if (!open) {
     return null;
   }
@@ -568,7 +570,7 @@ export function DangerousConfirmDialog({
 
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onCancel} disabled={isBusy}>
-            취소
+            {t("cancel")}
           </Button>
           <Button
             variant="outline"
@@ -577,7 +579,7 @@ export function DangerousConfirmDialog({
             disabled={isBusy}
           >
             <AlertTriangle className="size-4" />
-            {isBusy ? busyLabel || "처리중" : confirmLabel}
+            {isBusy ? busyLabel || t("busy") : confirmLabel}
           </Button>
         </div>
       </div>

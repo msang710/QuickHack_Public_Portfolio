@@ -170,7 +170,7 @@ function parseOptionalPositiveId(
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw publicBadRequest(
       errorCode,
-      `${label}이(가) 올바르지 않습니다.`
+      errorCode
     );
   }
 
@@ -187,7 +187,7 @@ function parseOptionalRevision(value: unknown) {
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw publicBadRequest(
       "PURCHASE_CONFIRM_RATE_EVIDENCE_INVALID",
-      "매입가 기준 revision이 올바르지 않습니다."
+      "PURCHASE_CONFIRM_RATE_EVIDENCE_INVALID"
     );
   }
 
@@ -202,7 +202,7 @@ function parseExpectedInboundRevision(value: unknown) {
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw publicBadRequest(
       "PURCHASE_CONFIRM_TARGET_INVALID",
-      "입고 회차 revision이 올바르지 않습니다."
+      "PURCHASE_CONFIRM_TARGET_INVALID"
     );
   }
   return parsed;
@@ -234,7 +234,7 @@ function parseItems(input: PurchaseConfirmInput): PurchaseConfirmItem[] {
       if (expectedInboundId === null) {
         throw publicBadRequest(
           "PURCHASE_CONFIRM_TARGET_INVALID",
-          "매입 확정 대상의 입고 회차 ID와 revision이 필요합니다. 목록을 새로 고쳐 주세요."
+          "PURCHASE_CONFIRM_TARGET_INVALID"
         );
       }
 
@@ -271,7 +271,7 @@ function parseItems(input: PurchaseConfirmInput): PurchaseConfirmItem[] {
     ) {
       throw publicBadRequest(
         "PURCHASE_CONFIRM_RATE_EVIDENCE_INVALID",
-        "매입가 기준 ID와 revision은 함께 제출해야 합니다."
+        "PURCHASE_CONFIRM_RATE_EVIDENCE_INVALID"
       );
     }
   }
@@ -314,7 +314,7 @@ async function assignModelSeqIfMissing(
   if (updated.count !== 1) {
     throw publicConflict(
       "MODEL_SEQUENCE_ASSIGNMENT_CONFLICT",
-      `PG ${device.pg_no}의 고유번호가 동시에 변경되어 매입 확정을 중단했습니다.`
+      "MODEL_SEQUENCE_ASSIGNMENT_CONFLICT"
     );
   }
 
@@ -429,7 +429,7 @@ async function resolvePurchasePriceEvidence(
   ) {
     throw publicConflict(
       "PURCHASE_PRICE_RATE_STALE",
-      `PG ${item.pgNo}의 매입가 기준이 변경되었습니다. 매입가 목록을 새로 고친 뒤 다시 확정해 주세요.`
+      "PURCHASE_PRICE_RATE_STALE"
     );
   }
 
@@ -629,7 +629,7 @@ async function confirmInspectedPurchase(
   if (updatedInbound.count !== 1) {
     throw publicConflict(
       "INBOUND_WORKFLOW_STATE_CONFLICT",
-      `PG ${item.pgNo}의 입고 회차가 동시에 변경되어 매입 확정을 중단했습니다.`
+      "INBOUND_WORKFLOW_STATE_CONFLICT"
     );
   }
   await setSellableInventoryForNewPurchase(tx, device, timestamp, {
@@ -917,21 +917,6 @@ function summarizePurchaseResults(
   };
 }
 
-function purchaseConfirmMessage(summary: PurchaseConfirmSummary) {
-  const parts = [
-    summary.confirmedCount > 0 ? `확정 ${summary.confirmedCount}건` : null,
-    summary.recoveredCount > 0 ? `복구 ${summary.recoveredCount}건` : null,
-    summary.skippedCount > 0
-      ? `이미 처리 ${summary.skippedCount}건`
-      : null,
-    summary.conflictCount > 0 ? `제외 ${summary.conflictCount}건` : null,
-  ].filter(Boolean);
-
-  return parts.length > 0
-    ? `매입 확정 처리 결과: ${parts.join(", ")}`
-    : "매입 확정 처리 대상이 없습니다.";
-}
-
 function purchaseLogResult(summary: PurchaseConfirmSummary) {
   const handledCount =
     summary.confirmedCount + summary.recoveredCount + summary.skippedCount;
@@ -1023,7 +1008,7 @@ export async function confirmInboundPurchases(
   if (items.length === 0) {
     throw publicBadRequest(
       "PURCHASE_CONFIRM_INPUT_INVALID",
-      "매입 확정할 기기가 없습니다."
+      "PURCHASE_CONFIRM_INPUT_INVALID"
     );
   }
 
@@ -1057,7 +1042,15 @@ export async function confirmInboundPurchases(
 
     return {
       ...summary,
-      message: purchaseConfirmMessage(summary),
+      resultCode:
+        summary.confirmedCount +
+          summary.recoveredCount +
+          summary.skippedCount +
+          summary.conflictCount >
+        0
+          ? "PURCHASE_CONFIRM_RESULT"
+          : "PURCHASE_CONFIRM_NO_TARGET",
+      messageArguments: summary,
       results: results.map(({ auditReasonCode, ...result }) => {
         void auditReasonCode;
         return result;

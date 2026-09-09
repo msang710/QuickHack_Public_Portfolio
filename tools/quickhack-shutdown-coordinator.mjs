@@ -259,16 +259,17 @@ export function createQuickHackShutdownCoordinator(dependencies) {
 
   async function force(reason, options = {}) {
     if (!operation || operation.completedAt) {
-      throw new Error("진행 중인 QuickHack 종료 작업이 없습니다.");
+      throw Object.assign(new Error("SHUTDOWN_NOT_ACTIVE"), {
+        code: "SHUTDOWN_NOT_ACTIVE",
+      });
     }
     if (
       reason === "console-action" &&
       !options.bypassWarning &&
       Date.now() < operation.warningEpochMs
     ) {
-      const error = new Error(
-        "강제 종료는 안전 종료 대기 시간이 지난 뒤에만 사용할 수 있습니다."
-      );
+      const error = new Error("SHUTDOWN_FORCE_NOT_AVAILABLE");
+      error.code = "SHUTDOWN_FORCE_NOT_AVAILABLE";
       error.statusCode = 409;
       throw error;
     }
@@ -291,9 +292,7 @@ export function createQuickHackShutdownCoordinator(dependencies) {
     if (!verification.stopped) {
       operation.phase = "FAILED";
       operation.remainingPids = remainingPids;
-      operation.errorMessage = `강제 종료 뒤에도 PID ${remainingPids.join(
-        ", "
-      )}이 QuickHack 포트를 점유하고 있습니다.`;
+      operation.errorMessage = "SHUTDOWN_PORT_STILL_OWNED";
       operation.forced = false;
       publish();
       throw new Error(operation.errorMessage);

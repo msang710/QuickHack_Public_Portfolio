@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Command, MonitorUp, Smartphone } from "lucide-react";
+import { useTranslations } from "next-intl";
 import type { MenuGroup, MenuItemId } from "@/quickhack_client/components/app-shell/device-workspace-menu";
 import { DialogFrame } from "@/quickhack_client/components/ui/dialog-frame";
 import { Input } from "@/quickhack_client/components/ui/input";
@@ -14,6 +15,7 @@ export function DesktopCommandPalette({
   groups: readonly MenuGroup[];
   onNavigate: (menuId: MenuItemId) => void;
 }) {
+  const t = useTranslations("desktop.commandPalette");
   const { api } = useDesktopCapability();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -43,15 +45,15 @@ export function DesktopCommandPalette({
     onNavigate(menuId);
   };
   return (
-    <DialogFrame open={open} onOpenChange={setPaletteOpen} title="QuickHack 명령" description="권한이 있는 메뉴와 안전한 데스크톱 작업만 표시합니다." icon={<Command className="size-5" />} bodyClassName="p-0">
-      <div className="border-b p-3"><Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="메뉴 또는 작업 검색" /></div>
+    <DialogFrame open={open} onOpenChange={setPaletteOpen} title={t("title")} description={t("description")} icon={<Command className="size-5" />} bodyClassName="p-0">
+      <div className="border-b p-3"><Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search")} /></div>
       <div className="max-h-[55vh] overflow-y-auto p-2">
         {api && !normalized ? <div className="mb-2 grid gap-1">
-          {canOpenOutput ? <button type="button" className="flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-secondary" onClick={() => { setPaletteOpen(false); void api.openOutputWindow(); }}><MonitorUp className="size-4" /><span><strong className="block text-sm">출력 미리보기 창</strong><span className="text-xs text-muted-foreground">현재 출력 작업을 별도 모니터에서 확인</span></span></button> : null}
-          {canOpenAdb ? <button type="button" className="flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-secondary" onClick={() => { setPaletteOpen(false); void api.openAdbWindow(); }}><Smartphone className="size-4" /><span><strong className="block text-sm">ADB 장치 도구 창</strong><span className="text-xs text-muted-foreground">연결 장치 상태를 별도 창에 고정</span></span></button> : null}
+          {canOpenOutput ? <button type="button" className="flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-secondary" onClick={() => { setPaletteOpen(false); void api.openOutputWindow(); }}><MonitorUp className="size-4" /><span><strong className="block text-sm">{t("output.title")}</strong><span className="text-xs text-muted-foreground">{t("output.description")}</span></span></button> : null}
+          {canOpenAdb ? <button type="button" className="flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-secondary" onClick={() => { setPaletteOpen(false); void api.openAdbWindow(); }}><Smartphone className="size-4" /><span><strong className="block text-sm">{t("adb.title")}</strong><span className="text-xs text-muted-foreground">{t("adb.description")}</span></span></button> : null}
         </div> : null}
         {filtered.map((item) => <button key={item.id} type="button" className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-secondary" onClick={() => selectMenu(item.id)}><item.icon className="size-4" /><span><strong className="block text-sm">{item.label}</strong><span className="text-xs text-muted-foreground">{item.groupLabel} · {item.description}</span></span></button>)}
-        {filtered.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground">조건에 맞는 메뉴가 없습니다.</p> : null}
+        {filtered.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground">{t("empty")}</p> : null}
       </div>
     </DialogFrame>
   );

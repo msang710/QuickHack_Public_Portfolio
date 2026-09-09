@@ -1,4 +1,5 @@
 import fs from "node:fs";
+const preserveKoreanSnapshot = (value) => value;
 import path from "node:path";
 import {
   createEncryptedQhkey,
@@ -138,7 +139,7 @@ async function inspectProviderConsoleStatus(provider, selectedVolume, dataDir, m
   } else if (metadata && !metadata.ok) {
     errorMessage = metadata.errorMessage;
   } else if (metadata?.ok && !masterStatus.available) {
-    errorMessage = "이 서버에 QHKEY 마스터 키가 provision되지 않았습니다.";
+    errorMessage = preserveKoreanSnapshot("이 서버에 QHKEY 마스터 키가 provision되지 않았습니다.");
   }
   return { qhkeyFile: filePath, metadata, readable, errorMessage };
 }
@@ -151,7 +152,7 @@ export async function getQhkeyConsoleStatus(dataDir, production = false) {
   const masterStatus = await serverPlatform.qhkeyMasterKey.status({ dataDir, production });
   let errorMessage = masterStatus.warningMessage ?? "";
   if (rootsWithKey.length > 1) {
-    errorMessage = "QHKEY가 있는 removable volume이 여러 개라 자동 선택할 수 없습니다.";
+    errorMessage = preserveKoreanSnapshot("QHKEY가 있는 removable volume이 여러 개라 자동 선택할 수 없습니다.");
   }
   const coupang = await inspectProviderConsoleStatus("coupang", selectedVolume, dataDir, masterStatus);
   const logen = await inspectProviderConsoleStatus("logen", selectedVolume, dataDir, masterStatus);

@@ -5,14 +5,15 @@ import { NativeBrokerClientError, requestNativeBroker } from "@/quickhack_client
 import { getRuntimeAuthUser } from "@/quickhack_client/auth/request-auth";
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isServerRuntime } from "@/quickhack_shared/core/runtime";
-import { getServerProxyErrorMessage } from "@/quickhack_shared/core/server-proxy";
+import { getServerProxyErrorCode } from "@/quickhack_shared/core/server-proxy";
+import { ADB_CLIENT_API_CODE } from "@/quickhack_client/api/adb/client-api-codes";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   if (isServerRuntime()) {
     return NextResponse.json(
-      { ok: false, message: "ADB API는 클라이언트 앱에서만 실행됩니다." },
+      { ok: false, code: ADB_CLIENT_API_CODE.clientRuntimeRequired },
       { status: 403 }
     );
   }
@@ -23,21 +24,21 @@ export async function GET(request: NextRequest) {
     user = await getRuntimeAuthUser(request);
   } catch (error) {
     return NextResponse.json(
-      { ok: false, message: getServerProxyErrorMessage(error) },
+      { ok: false, code: getServerProxyErrorCode(error) },
       { status: 503 }
     );
   }
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: ADB_CLIENT_API_CODE.authRequired },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "ADB 기기 조회 권한이 없습니다." },
+      { ok: false, code: ADB_CLIENT_API_CODE.deviceReadForbidden },
       { status: 403 }
     );
   }
@@ -52,7 +53,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof NativeBrokerClientError) {
-      return NextResponse.json({ ok: false, code: error.code, message: error.message }, { status: 503 });
+      return NextResponse.json({ ok: false, code: error.code }, { status: 503 });
     }
     const response = toAdbErrorResponse(error);
     return NextResponse.json(response.body, { status: response.status });

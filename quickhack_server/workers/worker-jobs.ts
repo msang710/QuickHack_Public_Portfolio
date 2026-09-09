@@ -1131,7 +1131,7 @@ export async function updateWorkerSchedule(input: {
   if (worker.scheduleRequired && !input.scheduleEnabled) {
     throw publicConflict(
       "WORKER_SCHEDULE_REQUIRED",
-      "개인정보 보존기한 정리 worker의 필수 스케줄은 끌 수 없습니다."
+      "WORKER_SCHEDULE_REQUIRED"
     );
   }
 

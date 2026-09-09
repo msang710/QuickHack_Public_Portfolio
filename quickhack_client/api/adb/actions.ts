@@ -4,7 +4,8 @@ import { NativeBrokerClientError, requestNativeBroker } from "@/quickhack_client
 import { getRuntimeAuthUser } from "@/quickhack_client/auth/request-auth";
 import { canAccessRole } from "@/quickhack_shared/auth/auth-constants";
 import { isServerRuntime } from "@/quickhack_shared/core/runtime";
-import { getServerProxyErrorMessage } from "@/quickhack_shared/core/server-proxy";
+import { getServerProxyErrorCode } from "@/quickhack_shared/core/server-proxy";
+import { ADB_CLIENT_API_CODE, type AdbClientApiCode } from "@/quickhack_client/api/adb/client-api-codes";
 
 export const runtime = "nodejs";
 
@@ -12,13 +13,19 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+class AdbActionRequestError extends Error {
+  constructor(readonly code: AdbClientApiCode) {
+    super(code);
+  }
+}
+
 function readSerials(body: Record<string, unknown>) {
   if (!Array.isArray(body.serials) || body.serials.length === 0) {
-    throw new Error("ADB 작업 대상 기기 목록을 명시해야 합니다.");
+    throw new AdbActionRequestError(ADB_CLIENT_API_CODE.serialsRequired);
   }
   const serials = body.serials.map((item) => String(item ?? "").trim());
   if (serials.some((serial) => !serial)) {
-    throw new Error("ADB 작업 대상 기기 목록에 빈 값이 있습니다.");
+    throw new AdbActionRequestError(ADB_CLIENT_API_CODE.serialEmpty);
   }
   return [...new Set(serials)];
 }
@@ -26,7 +33,7 @@ function readSerials(body: Record<string, unknown>) {
 export async function POST(request: NextRequest) {
   if (isServerRuntime()) {
     return NextResponse.json(
-      { ok: false, message: "ADB API는 클라이언트 런타임에서만 실행합니다." },
+      { ok: false, code: ADB_CLIENT_API_CODE.clientRuntimeRequired },
       { status: 403 }
     );
   }
@@ -35,26 +42,26 @@ export async function POST(request: NextRequest) {
     user = await getRuntimeAuthUser(request);
   } catch (error) {
     return NextResponse.json(
-      { ok: false, message: getServerProxyErrorMessage(error) },
+      { ok: false, code: getServerProxyErrorCode(error) },
       { status: 503 }
     );
   }
   if (!user) {
-    return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ ok: false, code: ADB_CLIENT_API_CODE.authRequired }, { status: 401 });
   }
   if (!canAccessRole(user.role, "STAFF")) {
-    return NextResponse.json({ ok: false, message: "ADB 작업 실행 권한이 없습니다." }, { status: 403 });
+    return NextResponse.json({ ok: false, code: ADB_CLIENT_API_CODE.actionForbidden }, { status: 403 });
   }
   const body = await request.json().catch(() => null);
   if (!isObject(body) || typeof body.action !== "string") {
-    return NextResponse.json({ ok: false, message: "실행할 ADB 작업이 없습니다." }, { status: 400 });
+    return NextResponse.json({ ok: false, code: ADB_CLIENT_API_CODE.actionRequired }, { status: 400 });
   }
   let serials: string[];
   try {
     serials = readSerials(body);
   } catch (error) {
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : "ADB 대상이 올바르지 않습니다." },
+      { ok: false, code: error instanceof AdbActionRequestError ? error.code : ADB_CLIENT_API_CODE.invalidBody },
       { status: 400 }
     );
   }
@@ -64,7 +71,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: result.failCount === 0, ...result });
   } catch (error) {
     if (error instanceof NativeBrokerClientError) {
-      return NextResponse.json({ ok: false, code: error.code, message: error.message }, { status: error.code === "SELECTION_STALE" ? 409 : 503 });
+      return NextResponse.json({ ok: false, code: error.code }, { status: error.code === "SELECTION_STALE" ? 409 : 503 });
     }
     const response = toAdbErrorResponse(error);
     return NextResponse.json(response.body, { status: response.status });

@@ -48,6 +48,7 @@ import {
   type SalesChannelWriteRequestStatus,
   type SalesChannelWriteTargetInput,
 } from "@/quickhack_shared/sales-channel/write-requests";
+import { preserveKoreanSnapshot } from "@/quickhack_shared/i18n/preserved-snapshot";
 import {
   assertOwnedSalesChannelWriteAttempt,
   createSalesChannelWriteAttempt,
@@ -758,7 +759,7 @@ async function createWriteRequest(command: SalesChannelWriteCommand) {
       ) {
         throw new SalesChannelWriteReviewRequiredError(
           existing.sales_channel_write_request_id,
-          "같은 멱등 키가 다른 외부 API 작업에 사용되었습니다. 처리 확인 메뉴에서 기존 요청을 확인하세요."
+          "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
         );
       }
 
@@ -784,7 +785,7 @@ async function createWriteRequest(command: SalesChannelWriteCommand) {
         if (claimed.count !== 1) {
           throw new SalesChannelWriteReviewRequiredError(
             existing.sales_channel_write_request_id,
-            "같은 외부 API 요청의 재시도가 이미 시작되었습니다. 처리 확인 메뉴에서 상태를 확인하세요."
+            "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
           );
         }
 
@@ -903,9 +904,7 @@ async function createWriteRequest(command: SalesChannelWriteCommand) {
 
       throw new SalesChannelWriteReviewRequiredError(
         existing.sales_channel_write_request_id,
-        existing.request_status === SALES_CHANNEL_WRITE_REQUEST_STATUS.completed
-          ? "이미 완료된 외부 API 요청입니다."
-          : "같은 외부 API 요청 이력이 이미 있습니다. 처리 확인 메뉴에서 상태를 확인하세요."
+        "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
       );
     }
 
@@ -1009,7 +1008,7 @@ async function assertControlIsOpen(command: SalesChannelWriteCommand) {
   if (control?.is_paused === 1) {
     throw publicConflict(
       "SALES_CHANNEL_WRITE_PAUSED",
-      `${command.channel} ${command.requestType} 쓰기가 연속 실패로 일시 정지되었습니다. 시스템 관리자가 처리 확인 후 다시 열어야 합니다.`
+      "SALES_CHANNEL_WRITE_PAUSED"
     );
   }
 }
@@ -1415,7 +1414,8 @@ export async function requestSalesChannelWrite(
           writeResponseAssessment?.errorCode ?? "WRITE_TARGET_RESULT_UNKNOWN",
         errorMessage:
           writeResponseAssessment?.summary ??
-          "일부 대상 그룹의 외부 판매 채널 처리 결과를 확정하지 못했습니다.",
+          writeResponseAssessment?.errorCode ??
+          "WRITE_TARGET_RESULT_UNKNOWN",
       };
     }
     confirmation = {
@@ -1429,7 +1429,7 @@ export async function requestSalesChannelWrite(
     if (finalizeAttemptId === undefined) {
       throw new SalesChannelWriteReviewRequiredError(
         requestId,
-        "외부 채널의 대상별 처리 결과를 안전하게 식별할 수 없습니다. 처리 확인 메뉴에서 확인하세요."
+        "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
       );
     }
   } else {
@@ -1526,7 +1526,7 @@ export async function requestSalesChannelWrite(
       }
       throw new SalesChannelWriteReviewRequiredError(
         requestId,
-        "외부 채널 처리 여부를 확정할 수 없습니다. 자동 재요청하지 않았으므로 처리 확인 메뉴에서 채널 결과를 확인하세요."
+        "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
       );
     }
 
@@ -1765,7 +1765,7 @@ export async function requestSalesChannelWrite(
     );
     throw new SalesChannelWriteReviewRequiredError(
       requestId,
-      "쓰기 응답은 성공했지만 외부 채널의 실제 상태를 확인하지 못했습니다. 처리 확인 메뉴에서 확인하세요."
+      "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
     );
   }
 
@@ -1829,7 +1829,8 @@ export async function requestSalesChannelWrite(
             failure_stage:
               SALES_CHANNEL_WRITE_FAILURE_STAGE.externalVerification,
             error_code: confirmedVerification.code,
-            error_message: confirmedVerification.message,
+            error_message:
+              confirmedVerification.externalErrorSnapshot ?? null,
             review_required_at:
               targetSettlement.requestStatus ===
               SALES_CHANNEL_WRITE_REQUEST_STATUS.reviewRequired
@@ -1892,7 +1893,7 @@ export async function requestSalesChannelWrite(
           error_message:
             targetSettlement.requestStatus ===
             SALES_CHANNEL_WRITE_REQUEST_STATUS.reviewRequired
-              ? confirmedVerification.message
+              ? confirmedVerification.externalErrorSnapshot ?? null
               : null,
           review_required_at:
             targetSettlement.requestStatus ===
@@ -1945,8 +1946,9 @@ export async function requestSalesChannelWrite(
       failureStage: SALES_CHANNEL_WRITE_FAILURE_STAGE.externalVerification,
       errorCode:
         confirmedVerification.code ?? "EXTERNAL_VERIFICATION_UNKNOWN",
-      errorMessage:
-        "일부 대상 그룹의 외부 판매 채널 처리 결과를 확정하지 못했습니다.",
+      errorMessage: preserveKoreanSnapshot(
+        "일부 대상 그룹의 외부 판매 채널 처리 결과를 확정하지 못했습니다."
+      ),
     };
   }
   confirmation = {
@@ -1962,12 +1964,12 @@ export async function requestSalesChannelWrite(
     ) {
       throw publicConflict(
         confirmedVerification.code ?? "EXTERNAL_WRITE_NOT_APPLIED",
-        "외부 판매 채널에 요청 결과가 반영되지 않았습니다. 처리 확인 메뉴에서 상태를 확인하세요."
+        confirmedVerification.code ?? "EXTERNAL_WRITE_NOT_APPLIED"
       );
     }
     throw new SalesChannelWriteReviewRequiredError(
       requestId,
-      "외부 판매 채널의 실제 처리 결과를 확정하지 못했습니다. 처리 확인 메뉴에서 확인하세요."
+      "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
     );
   }
   }
@@ -2178,7 +2180,7 @@ export async function requestSalesChannelWrite(
     );
     throw new SalesChannelWriteReviewRequiredError(
       requestId,
-      "외부 채널 반영은 확인됐지만 QuickHack 내부 확정에 실패했습니다. 처리 확인 메뉴에서 내부 확정을 다시 실행하세요."
+      "SALES_CHANNEL_WRITE_REVIEW_REQUIRED"
     );
   }
 }
@@ -2209,7 +2211,7 @@ export async function resumeSalesChannelWriteControl(input: {
   if (resumed.count !== 1) {
     throw publicConflict(
       "SALES_CHANNEL_WRITE_CONTROL_STALE",
-      "쓰기 차단 상태가 변경되었습니다. 최신 상태를 새로고침한 뒤 다시 시도하세요."
+      "SALES_CHANNEL_WRITE_CONTROL_STALE"
     );
   }
   return prisma.sales_channel_write_controls.findUniqueOrThrow({

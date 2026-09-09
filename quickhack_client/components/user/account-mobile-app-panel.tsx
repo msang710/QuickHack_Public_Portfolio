@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import { RefreshCcw, Smartphone } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useUnsavedForm } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -15,6 +17,10 @@ import {
 } from "@/quickhack_client/components/ui/select";
 import { AccountFieldLabel } from "@/quickhack_client/components/user/account-information-fields";
 import { isAdbVirtualSerial } from "@/quickhack_shared/adb/adb-target-policy";
+import {
+  ADB_CLIENT_API_MESSAGE_KEYS,
+  isAdbClientApiCode,
+} from "@/quickhack_client/api/adb/client-api-codes";
 import {
   applyAdbSuggestionAsCleanBaseline,
   emptyMobileRegistrationDraft,
@@ -37,7 +43,9 @@ type MobileDevice = {
 
 type MobileDevicesResponse = {
   ok: boolean;
+  code?: string;
   message?: string;
+  details?: string;
   items?: MobileDevice[];
   nextCursor?: string | null;
   hasMore?: boolean;
@@ -45,18 +53,11 @@ type MobileDevicesResponse = {
 };
 
 type AdbDevice = { serial?: string; connectionState?: string; modelCode?: string };
-type AdbDevicesResponse = { ok: boolean; message?: string; devices?: AdbDevice[] };
+type AdbDevicesResponse = { ok: boolean; code?: string; message?: string; details?: string; devices?: AdbDevice[] };
 
 function formatDateTime(value: string | null | undefined) {
   const cleaned = String(value ?? "").trim();
   return cleaned ? cleaned.replace("T", " ").slice(0, 19) : "-";
-}
-
-function stateLabel(state: MobileDevice["registrationState"]) {
-  if (state === "ACTIVE") return "활성";
-  if (state === "PROVISIONING") return "앱 로그인 대기";
-  if (state === "REAUTH_REQUIRED") return "재등록 필요";
-  return "폐기됨";
 }
 
 export function AccountMobileAppPanel({
@@ -66,6 +67,8 @@ export function AccountMobileAppPanel({
   permissionEnabled: boolean;
   onActiveCountChange?: (count: number) => void;
 }) {
+  const t = useTranslations("settings.mobileApp");
+  const adbT = useTranslations("common.adbApi");
   const [devices, setDevices] = React.useState<MobileDevice[]>([]);
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
   const [adbDevices, setAdbDevices] = React.useState<AdbDevice[]>([]);
@@ -76,7 +79,7 @@ export function AccountMobileAppPanel({
 
   useUnsavedForm({
     id: MOBILE_REGISTRATION_FORM_IDS.personal,
-    label: "포장 검수 USB 기기 등록",
+    label: t("formLabel"),
     isDirty: !mobileRegistrationDraftsEqual(registrationBaseline, registrationDraft),
     isBusy,
     discard: () => {
@@ -91,7 +94,7 @@ export function AccountMobileAppPanel({
       const response = await fetch(`/api/auth/mobile-devices${query}`, { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as MobileDevicesResponse | null;
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "모바일 기기 등록 정보를 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.loadFailed")));
       }
       const items = payload.items ?? [];
       setDevices((current) => {
@@ -103,7 +106,7 @@ export function AccountMobileAppPanel({
       });
       setNextCursor(payload.hasMore ? payload.nextCursor ?? null : null);
     },
-    [onActiveCountChange]
+    [onActiveCountChange, t]
   );
 
   React.useEffect(() => {
@@ -120,7 +123,12 @@ export function AccountMobileAppPanel({
     try {
       const response = await fetch("/api/adb/devices", { cache: "no-store" });
       const payload = (await response.json().catch(() => null)) as AdbDevicesResponse | null;
-      if (!response.ok || !payload?.ok) throw new Error(payload?.message || "ADB 기기 목록을 불러오지 못했습니다.");
+      if (!response.ok || !payload?.ok) {
+        const localized = isAdbClientApiCode(payload?.code)
+          ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code])
+          : legacyApiMessage(payload, t("message.adbLoadFailed"));
+        throw new Error(localized || t("message.adbLoadFailed"));
+      }
       const items = (payload.devices ?? []).filter(
         (device) =>
           device.connectionState === "device" &&
@@ -136,7 +144,7 @@ export function AccountMobileAppPanel({
       });
       setRegistrationDraft(next.current);
       setRegistrationBaseline(next.baseline);
-      setMessage(items.length ? "현재 준비된 실제 USB 기기 목록을 갱신했습니다." : "현재 준비된 실제 USB 기기가 없습니다.");
+      setMessage(items.length ? t("message.adbUpdated") : t("message.adbEmpty"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -146,11 +154,11 @@ export function AccountMobileAppPanel({
 
   async function provision(device?: MobileDevice) {
     if (!permissionEnabled) {
-      setMessage("포장 검수 접근 권한이 없습니다.");
+      setMessage(t("permission.message"));
       return;
     }
     if (!registrationDraft.adbSerial.trim()) {
-      setMessage("ADB 목록을 갱신하고 실제 USB 기기를 선택하세요.");
+      setMessage(t("message.selectDevice"));
       return;
     }
     setIsBusy(true);
@@ -172,11 +180,22 @@ export function AccountMobileAppPanel({
         }),
       });
       const payload = (await response.json().catch(() => null)) as MobileDevicesResponse | null;
-      if (!response.ok || !payload?.ok) throw new Error(payload?.message || "USB 기기 등록에 실패했습니다.");
+      if (!response.ok || !payload?.ok) {
+        const localized = isAdbClientApiCode(payload?.code)
+          ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code])
+          : legacyApiMessage(payload, t("message.provisionFailed"));
+        throw new Error(
+          [localized || t("message.provisionFailed"), payload?.details].filter(Boolean).join(" ")
+        );
+      }
       const empty = emptyMobileRegistrationDraft();
       setRegistrationDraft(empty);
       setRegistrationBaseline(empty);
-      setMessage(payload.message || "USB 기기 등록 정보를 전달했습니다.");
+      setMessage(
+        isAdbClientApiCode(payload.code)
+          ? adbT(ADB_CLIENT_API_MESSAGE_KEYS[payload.code])
+          : t("message.provisioned")
+      );
       await loadDevices();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -186,7 +205,7 @@ export function AccountMobileAppPanel({
   }
 
   async function revoke(device: MobileDevice) {
-    if (!window.confirm(`${device.label || device.adbSerialPreview} 등록을 폐기할까요?`)) return;
+    if (!window.confirm(t("revokeConfirm", { device: device.label || device.adbSerialPreview }))) return;
     setIsBusy(true);
     setMessage("");
     try {
@@ -200,8 +219,8 @@ export function AccountMobileAppPanel({
         }),
       });
       const payload = (await response.json().catch(() => null)) as MobileDevicesResponse | null;
-      if (!response.ok || !payload?.ok) throw new Error(payload?.message || "기기 등록 폐기에 실패했습니다.");
-      setMessage(payload.message || "기기 등록을 폐기했습니다.");
+      if (!response.ok || !payload?.ok) throw new Error(legacyApiMessage(payload, t("message.revokeFailed")));
+      setMessage(t("message.revoked"));
       await loadDevices();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -216,14 +235,14 @@ export function AccountMobileAppPanel({
         <div>
           <div className="flex items-center gap-2">
             <Smartphone className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">포장 검수 모바일 연결</h2>
+            <h2 className="text-sm font-semibold">{t("title")}</h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            현재 연결된 실제 USB 기기에만 등록 증명을 전달합니다. 등록 코드는 표시하지 않습니다.
+            {t("description")}
           </p>
         </div>
         <Badge variant={permissionEnabled ? "success" : "neutral"}>
-          {permissionEnabled ? "권한 허용" : "권한 없음"}
+          {permissionEnabled ? t("permission.allowed") : t("permission.denied")}
         </Badge>
       </div>
 
@@ -231,7 +250,7 @@ export function AccountMobileAppPanel({
 
       <div className="grid gap-3 border-t p-3">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-          <AccountFieldLabel label="실제 USB ADB 기기">
+          <AccountFieldLabel label={t("device")}>
             <Select
               value={registrationDraft.adbSerial || "NONE"}
               disabled={isBusy || !permissionEnabled}
@@ -241,7 +260,7 @@ export function AccountMobileAppPanel({
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="NONE">ADB 기기 선택</SelectItem>
+                <SelectItem value="NONE">{t("select")}</SelectItem>
                 {adbDevices.map((device) => (
                   <SelectItem key={device.serial} value={String(device.serial)}>
                     {String(device.serial)} / {String(device.modelCode ?? "-")}
@@ -251,19 +270,19 @@ export function AccountMobileAppPanel({
             </Select>
           </AccountFieldLabel>
           <Button type="button" variant="outline" className="self-end" disabled={isBusy || !permissionEnabled} onClick={() => void loadAdbDevices()}>
-            <RefreshCcw className="size-4" /> ADB 갱신
+            <RefreshCcw className="size-4" /> {t("refresh")}
           </Button>
         </div>
-        <AccountFieldLabel label="기기 라벨">
+        <AccountFieldLabel label={t("label")}>
           <Input
             value={registrationDraft.label}
-            placeholder="예: 포장라인 1번 기기"
+            placeholder={t("labelPlaceholder")}
             disabled={isBusy || !permissionEnabled}
             onChange={(event) => setRegistrationDraft((current) => ({ ...current, label: event.target.value }))}
           />
         </AccountFieldLabel>
         <Button type="button" variant="outline" disabled={isBusy || !permissionEnabled || !registrationDraft.adbSerial} onClick={() => void provision()}>
-          <Smartphone className="size-4" /> 선택한 USB 기기 등록
+          <Smartphone className="size-4" /> {t("register")}
         </Button>
       </div>
 
@@ -273,32 +292,34 @@ export function AccountMobileAppPanel({
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="truncate font-semibold">{device.label || device.adbSerialPreview}</div>
-                <div className="font-mono text-muted-foreground">{device.adbSerialPreview} · rev {device.registrationRevision}</div>
+                <div className="font-mono text-muted-foreground">
+                  {device.adbSerialPreview} · {t("revision", { revision: device.registrationRevision })}
+                </div>
               </div>
               <Badge variant={device.registrationState === "ACTIVE" ? "success" : device.registrationState === "REVOKED" ? "neutral" : "warning"}>
-                {stateLabel(device.registrationState)}
+                {t(`state.${device.registrationState === "ACTIVE" ? "active" : device.registrationState === "PROVISIONING" ? "provisioning" : device.registrationState === "REAUTH_REQUIRED" ? "reauthRequired" : "revoked"}`)}
               </Badge>
             </div>
             <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-              <div>활성화 <span className="tabular-nums">{formatDateTime(device.activatedAt)}</span></div>
-              <div>마지막 호출 <span className="tabular-nums">{formatDateTime(device.lastSeenAt)}</span></div>
+              <div>{t("activatedAt")} <span className="tabular-nums">{formatDateTime(device.activatedAt)}</span></div>
+              <div>{t("lastSeenAt")} <span className="tabular-nums">{formatDateTime(device.lastSeenAt)}</span></div>
             </div>
             {device.registrationState !== "REVOKED" ? (
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" variant="outline" disabled={isBusy || !permissionEnabled || !registrationDraft.adbSerial} onClick={() => void provision(device)}>
-                  선택 USB로 재등록
+                  {t("reregister")}
                 </Button>
                 <Button type="button" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800" disabled={isBusy} onClick={() => void revoke(device)}>
-                  폐기
+                  {t("revoke")}
                 </Button>
               </div>
             ) : null}
           </div>
         )) : (
-          <div className="border border-dashed px-3 py-3 text-center text-xs text-muted-foreground">이 계정에 등록된 포장 검수 기기가 없습니다.</div>
+          <div className="border border-dashed px-3 py-3 text-center text-xs text-muted-foreground">{t("empty")}</div>
         )}
         {nextCursor ? (
-          <Button type="button" variant="outline" disabled={isBusy} onClick={() => void loadDevices(nextCursor, true)}>다음 등록 불러오기</Button>
+          <Button type="button" variant="outline" disabled={isBusy} onClick={() => void loadDevices(nextCursor, true)}>{t("loadMore")}</Button>
         ) : null}
       </div>
     </section>

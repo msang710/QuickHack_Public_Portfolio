@@ -37,8 +37,8 @@ export const demonstrationConsoleIntegration = Object.freeze({
     const children = CHILDREN.map((item) => ({ id: item.id, pid: managed.get(item.id)?.pid ?? null, port: item.port }));
     return { ready: children.every((item) => item.pid !== null), children };
   },
-  renderHtml() {
-    return `<section class="card"><h2>시연 연동</h2><p class="muted">패키지에 포함된 Coupang·Logen simulator만 콘솔 child로 실행합니다.</p><form id="mock-key-form"><input name="root" placeholder="QHKEY volume"><input name="keyAlias" placeholder="별칭"><button type="submit">시연용 Coupang 키 발급</button></form><script>document.getElementById('mock-key-form').onsubmit=async(e)=>{e.preventDefault();await window.quickHackConsolePost('/api/qhkey/mock-issue',Object.fromEntries(new FormData(e.currentTarget)))}</script></section>`;
+  renderHtml(t) {
+    return `<section class="card"><h2>${t.demonstration}</h2><p class="muted">${t.demonstrationHelp}</p><form id="mock-key-form"><input name="root" placeholder="${t.qhkeyVolume}"><input name="keyAlias" placeholder="${t.alias}"><button type="submit">${t.issueDemo}</button></form><script>document.getElementById('mock-key-form').onsubmit=async(e)=>{e.preventDefault();await window.quickHackConsolePost('/api/qhkey/mock-issue',Object.fromEntries(new FormData(e.currentTarget)))}</script></section>`;
   },
   async handleAction(pathname, { config, payload }) {
     if (pathname !== "/api/qhkey/mock-issue") return null;

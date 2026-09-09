@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { CheckCheck, ChevronDown, CircleX } from "lucide-react";
 import { Input } from "@/quickhack_client/components/ui/input";
@@ -148,7 +149,7 @@ export function SearchSelect({
   options,
   onValueChange,
   placeholder,
-  emptyLabel = "선택 안 함",
+  emptyLabel,
   allowEmpty = true,
   disabled = false,
   readOnly = false,
@@ -161,6 +162,8 @@ export function SearchSelect({
 }: BasePickerProps & {
   onValueChange: (value: string) => void;
 }) {
+  const t = useTranslations("common.searchControl");
+  const resolvedEmptyLabel = emptyLabel ?? t("emptySelection");
   const normalizedOptions = React.useMemo(
     () => normalizeOptions(options),
     [options]
@@ -306,7 +309,7 @@ export function SearchSelect({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => selectValue("")}
                 >
-                  {emptyLabel}
+                  {resolvedEmptyLabel}
                 </button>
               ) : null}
               {filteredOptions.length > 0 ? (
@@ -337,7 +340,7 @@ export function SearchSelect({
                 ))
               ) : (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
-                  검색 결과가 없습니다.
+                  {t("noResults")}
                 </div>
               )}
             </div>
@@ -443,8 +446,8 @@ export function SearchSelect({
             type="button"
             className="absolute right-8 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
             tabIndex={-1}
-            aria-label={label ? `${label} 입력값 지우기` : "입력값 지우기"}
-            title="입력값 지우기"
+            aria-label={label ? t("clearInputLabel", { label }) : t("clearInput")}
+            title={t("clearInput")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={clearDraft}
           >
@@ -456,7 +459,7 @@ export function SearchSelect({
           className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
           disabled={isDisabled}
           tabIndex={-1}
-          aria-label={label ? `${label} 목록` : "목록"}
+          aria-label={label ? t("listLabel", { label }) : t("list")}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             if (isDisabled) {
@@ -481,7 +484,7 @@ export function SuggestInput({
   options,
   onValueChange,
   placeholder,
-  emptyLabel = "기본",
+  emptyLabel,
   allowEmpty = true,
   disabled = false,
   readOnly = false,
@@ -490,12 +493,14 @@ export function SuggestInput({
 }: BasePickerProps & {
   onValueChange: (value: string) => void;
 }) {
+  const t = useTranslations("common.searchControl");
+  const resolvedEmptyLabel = emptyLabel ?? t("defaultSelection");
   const normalizedOptions = React.useMemo(() => {
     const seen = new Set<string>();
     const nextOptions: SearchSelectOption[] = [];
 
     if (allowEmpty) {
-      nextOptions.push({ value: "", label: emptyLabel });
+      nextOptions.push({ value: "", label: resolvedEmptyLabel });
       seen.add("");
     }
 
@@ -509,7 +514,7 @@ export function SuggestInput({
     }
 
     return nextOptions;
-  }, [allowEmpty, emptyLabel, options]);
+  }, [allowEmpty, options, resolvedEmptyLabel]);
   const [isOpen, setIsOpen] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const { anchorRef, popupRef, position } = useAnchoredPopup(isOpen);
@@ -594,7 +599,7 @@ export function SuggestInput({
                 ))
               ) : (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
-                  검색 결과가 없습니다.
+                  {t("noResults")}
                 </div>
               )}
             </div>
@@ -640,8 +645,8 @@ export function SuggestInput({
             type="button"
             className="absolute right-8 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
             tabIndex={-1}
-            aria-label={label ? `${label} 입력값 지우기` : "입력값 지우기"}
-            title="입력값 지우기"
+            aria-label={label ? t("clearInputLabel", { label }) : t("clearInput")}
+            title={t("clearInput")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={clearValue}
           >
@@ -653,7 +658,7 @@ export function SuggestInput({
           className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
           disabled={isDisabled}
           tabIndex={-1}
-          aria-label={label ? `${label} 목록` : "목록"}
+          aria-label={label ? t("listLabel", { label }) : t("list")}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             if (isDisabled) {

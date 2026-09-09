@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { Input } from "@/quickhack_client/components/ui/input";
 import {
   SearchSelect,
@@ -65,6 +66,7 @@ export const InventoryEditField = React.memo(function InventoryEditField({
   options = [],
   allowEmpty = true,
 }: InventoryEditFieldProps) {
+  const t = useTranslations("inventory.editFields");
   const [draftState, setDraftState] = React.useState(() => ({
     draftValue: value,
     externalValue: value,
@@ -186,11 +188,13 @@ export const InventoryEditField = React.memo(function InventoryEditField({
                 "border-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.24)] focus:ring-emerald-500"
             )}
           >
-            <SelectValue placeholder={placeholder || "선택"} />
+            <SelectValue placeholder={placeholder || t("selectPlaceholder")} />
           </SelectTrigger>
           <SelectContent>
             {allowEmpty ? (
-              <SelectItem value={EMPTY_SELECT_VALUE}>선택 안 함</SelectItem>
+              <SelectItem value={EMPTY_SELECT_VALUE}>
+                {t("clearSelection")}
+              </SelectItem>
             ) : null}
             {options.map((option) => (
               <SelectItem key={option.value} value={option.value}>

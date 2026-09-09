@@ -1,4 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
+import type { InventoryCandidateWarning } from "@/quickhack_shared/catalog/inventory-candidate-warning";
 import { prisma } from "@/quickhack_server/core/prisma";
 import { SELLABLE_INVENTORY_STATUSES } from "@/quickhack_shared/inventory/inventory-status";
 import {
@@ -129,7 +130,7 @@ export async function findInventoryCandidatesForSalesOffer(
     return {
       offer: null,
       candidates: [],
-      warnings: ["활성 판매 오퍼를 찾을 수 없습니다."],
+      warnings: [{ code: "ACTIVE_OFFER_NOT_FOUND" }] satisfies InventoryCandidateWarning[],
       failureReason: INVENTORY_MATCH_FAILURE_REASONS.noChannelSalesOffer,
     };
   }
@@ -140,7 +141,7 @@ export async function findInventoryCandidatesForSalesOffer(
     return {
       offer: null,
       candidates: [],
-      warnings: ["판매 오퍼의 보증조건이 올바르지 않습니다."],
+      warnings: [{ code: "INVALID_WARRANTY_GROUP" }] satisfies InventoryCandidateWarning[],
       failureReason: INVENTORY_MATCH_FAILURE_REASONS.noChannelSalesOffer,
     };
   }
@@ -266,20 +267,24 @@ export async function findInventoryCandidatesForSalesOffer(
     }
   }
 
-  const warnings: string[] = [];
+  const warnings: InventoryCandidateWarning[] = [];
 
   if (randomStorage) {
-    warnings.push("용량 랜덤 조건에 따라 한 용량 후보군을 선택했습니다.");
+    warnings.push({ code: "RANDOM_STORAGE_BUCKET" });
   }
 
   if (randomColor) {
-    warnings.push("색상 랜덤 조건에 따라 한 색상 후보군을 선택했습니다.");
+    warnings.push({ code: "RANDOM_COLOR_BUCKET" });
   }
 
   if (fallbackApplied) {
-    warnings.push(
-      `${warrantyGroupLabel(warrantyGroup)} 기본 우선순위 재고가 없어 ${matchedGradeValues.join(", ")} 등급을 조회했습니다.`
-    );
+    warnings.push({
+      code: "GRADE_FALLBACK",
+      args: {
+        warrantyGroup: warrantyGroupLabel(warrantyGroup),
+        grades: matchedGradeValues.join(", "),
+      },
+    });
   }
 
   const candidates = rows.flatMap((device) => {

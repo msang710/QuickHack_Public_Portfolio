@@ -152,7 +152,7 @@ async function requireLeader(request: NextRequest) {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -162,7 +162,7 @@ async function requireLeader(request: NextRequest) {
     return {
       ok: false as const,
       response: NextResponse.json(
-        { ok: false, message: "worker 작업 관리 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -176,7 +176,7 @@ function serverConsoleWorkerControlResponse() {
     {
       ok: false,
       code: SERVER_CONSOLE_WORKER_CONTROL_ERROR,
-      message: "이 백업 작업은 서버 콘솔의 DB 백업 관리에서만 변경할 수 있습니다.",
+
     },
     { status: 403 }
   );
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
 
   if (!parsed) {
     return NextResponse.json(
-      { ok: false, message: "요청 본문은 JSON 객체여야 합니다." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }
@@ -269,7 +269,7 @@ export async function POST(request: NextRequest) {
 
       if (!workerKey) {
         return NextResponse.json(
-          { ok: false, message: "workerKey가 필요합니다." },
+          { ok: false, code: "WORKER_KEY_REQUIRED" },
           { status: 400 }
         );
       }
@@ -300,7 +300,7 @@ export async function POST(request: NextRequest) {
 
       if (!workerKey) {
         return NextResponse.json(
-          { ok: false, message: "workerKey가 필요합니다." },
+          { ok: false, code: "WORKER_KEY_REQUIRED" },
           { status: 400 }
         );
       }
@@ -323,7 +323,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { ok: false, message: "지원하지 않는 worker 작업입니다." },
+      { ok: false, code: "ACTION_UNSUPPORTED" },
       { status: 400 }
     );
   } catch (error) {

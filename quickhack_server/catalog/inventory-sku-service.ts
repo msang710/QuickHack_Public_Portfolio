@@ -35,7 +35,7 @@ function requiredText(value: unknown, label: string) {
   if (!text) {
     throw publicBadRequest(
       "INVENTORY_SKU_INPUT_INVALID",
-      `${label} 값이 없어 재고 SKU를 확정할 수 없습니다.`
+      "INVENTORY_SKU_INPUT_INVALID"
     );
   }
 
@@ -60,7 +60,7 @@ async function requireActiveOptionById(
   if (!option || option.category !== category || option.is_active !== 1) {
     throw publicBadRequest(
       "INVENTORY_SKU_CRITERIA_INVALID",
-      `${label} 상품 기준값을 찾을 수 없거나 비활성 상태입니다.`
+      "INVENTORY_SKU_CRITERIA_INVALID"
     );
   }
 
@@ -83,14 +83,14 @@ async function requireUniqueActiveOption(
   if (rows.length === 0) {
     throw publicBadRequest(
       "INVENTORY_SKU_CRITERIA_INVALID",
-      `${label} '${value}'이(가) 상품 기준값에 등록되어 있지 않습니다.`
+      "INVENTORY_SKU_CRITERIA_INVALID"
     );
   }
 
   if (rows.length > 1) {
     throw publicConflict(
       "INVENTORY_SKU_CRITERIA_AMBIGUOUS",
-      `${label} '${value}'에 해당하는 기준값이 둘 이상입니다. option ID를 명시해 주세요.`
+      "INVENTORY_SKU_CRITERIA_AMBIGUOUS"
     );
   }
 
@@ -154,7 +154,7 @@ async function validateModelOptionLink(
   if (!allowed) {
     throw publicBadRequest(
       "INVENTORY_SKU_CRITERIA_INVALID",
-      `선택한 ${label}은(는) 해당 모델에 허용된 기준값이 아닙니다.`
+      "INVENTORY_SKU_CRITERIA_INVALID"
     );
   }
 }
@@ -241,7 +241,7 @@ export async function resolveOrCreateInventorySku(
     if (existing.is_active !== 1) {
       throw publicConflict(
         "INVENTORY_SKU_INACTIVE",
-        `비활성화된 재고 SKU에는 새 재고를 연결할 수 없습니다: ${existing.sku_code}`
+        "INVENTORY_SKU_INACTIVE"
       );
     }
 
@@ -299,7 +299,7 @@ export async function resolveOrCreateInventorySku(
   if (row.is_active !== 1) {
     throw publicConflict(
       "INVENTORY_SKU_INACTIVE",
-      `비활성화된 재고 SKU에는 새 재고를 연결할 수 없습니다: ${row.sku_code}`
+      "INVENTORY_SKU_INACTIVE"
     );
   }
 
@@ -342,7 +342,7 @@ export async function assignCurrentInventorySkuToDevice(
   if (!device) {
     throw publicNotFound(
       "INVENTORY_NOT_FOUND",
-      `PG를 찾을 수 없습니다: ${pgNo}`
+      "INVENTORY_NOT_FOUND"
     );
   }
 
@@ -355,7 +355,7 @@ export async function assignCurrentInventorySkuToDevice(
     if (options.required) {
       throw publicConflict(
         "INVENTORY_SKU_INCOMPLETE",
-        `PG ${pgNo}의 SKU 확정 정보가 부족합니다.`
+        "INVENTORY_SKU_INCOMPLETE"
       );
     }
 
@@ -379,7 +379,7 @@ export async function assignCurrentInventorySkuToDevice(
     if (linkedSku.is_active !== 1 && !device.inventory) {
       throw publicConflict(
         "INVENTORY_SKU_INACTIVE",
-        `비활성화된 재고 SKU에는 새 재고를 연결할 수 없습니다: ${linkedSku.sku_code}`
+        "INVENTORY_SKU_INACTIVE"
       );
     }
 

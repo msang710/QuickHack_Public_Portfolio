@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 
   if (!sensitiveAction) {
     return NextResponse.json(
-      { ok: false, message: "유효한 민감 작업이 지정되지 않았습니다." },
+      { ok: false, code: "SENSITIVE_ACTION_INVALID" },
       { status: 400 }
     );
   }
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 
   if (!canUseSensitiveAction(user.role, sensitiveAction)) {
     return NextResponse.json(
-      { ok: false, message: "민감 작업을 확인할 권한이 없습니다." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }

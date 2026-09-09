@@ -18,7 +18,6 @@ export function failedInvoiceChannelSubmission(
   return {
     status: "FAILED",
     errorCode,
-    errorMessage: "쿠팡 송장 등록을 완료하지 못했습니다.",
     requests: [],
   };
 }
@@ -46,12 +45,12 @@ export function buildInvoiceIssueMutationResponse(input: {
     partial: channelStatus === "PARTIAL",
     requestIds,
     status: completed ? 200 : failed ? 502 : 202,
-    message: completed
-      ? "송장번호 채번과 쿠팡 송장 등록을 완료했습니다."
+    resultCode: completed
+      ? "INVOICE_ISSUE_COMPLETED"
       : reviewRequired
-        ? "송장 채번 결과는 보존되었지만 쿠팡 등록 결과를 점검해야 합니다."
+        ? "INVOICE_ISSUE_REVIEW_REQUIRED"
         : allocating
-          ? "다른 요청에서 송장번호를 채번 중입니다. 완료 후 결과를 확인하세요."
-          : "송장 처리 결과를 저장했습니다.",
+          ? "INVOICE_ISSUE_ALLOCATING"
+          : "INVOICE_ISSUE_RESULT_SAVED",
   } as const;
 }

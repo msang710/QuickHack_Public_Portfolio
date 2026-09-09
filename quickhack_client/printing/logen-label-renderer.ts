@@ -108,7 +108,10 @@ function packMonochromeBitmap(context: CanvasRenderingContext2D) {
   return output;
 }
 
-export function renderLogenLabelBitmap(label: LogenLabelDto): RenderedLabel {
+export function renderLogenLabelBitmap(
+  label: LogenLabelDto,
+  combinedParcelText: string
+): RenderedLabel {
   const canvas = document.createElement("canvas");
   canvas.width = LOGEN_LABEL_TEMPLATE.widthDots;
   canvas.height = LOGEN_LABEL_TEMPLATE.lengthDots;
@@ -167,9 +170,7 @@ export function renderLogenLabelBitmap(label: LogenLabelDto): RenderedLabel {
   context.font = '600 24px "Malgun Gothic", sans-serif';
   drawFittedText(
     context,
-    `합포장 ${label.parcel.packageMemberCount}건 · ${label.parcel.pgNos.join(
-      ", "
-    )}`,
+    combinedParcelText,
     42,
     620,
     700
@@ -201,4 +202,3 @@ export function renderLogenLabelBitmap(label: LogenLabelDto): RenderedLabel {
     previewDataUrl: canvas.toDataURL("image/png"),
   };
 }
-

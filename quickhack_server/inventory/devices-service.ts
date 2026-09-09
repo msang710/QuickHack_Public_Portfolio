@@ -5,10 +5,8 @@ import { runConsistentReadSnapshot } from "@/quickhack_server/core/database/cons
 import { loadInboundInspectionEvidence } from "@/quickhack_server/inbound/inbound-inspection-evidence-loader";
 import {
   effectiveInventoryDisplayStatus,
-  inboundStatusLabel,
 } from "@/quickhack_shared/inbound/inbound-status";
 import {
-  inventoryStatusLabel,
   type InventoryStatusCode,
 } from "@/quickhack_shared/inventory/inventory-status";
 import { INVENTORY_SKU_EDITABLE_STATUSES } from "@/quickhack_shared/inventory/inventory-write-rules";
@@ -19,9 +17,6 @@ import type {
 } from "@/quickhack_shared/device/types";
 import {
   INSPECTION_TYPE,
-  inspectionResultLabel,
-  inspectionSourceTypeLabel,
-  inspectionTypeLabel,
 } from "@/quickhack_shared/inspection/inspection-types";
 import {
   apiDateTime,
@@ -118,19 +113,15 @@ export function inspectionDetail(inspection: {
   return_yn: string;
 }) {
   const parts = [
-    inspection.inspection_type ? inspectionTypeLabel(inspection.inspection_type) : null,
-    inspection.inspection_result ? inspectionResultLabel(inspection.inspection_result) : null,
-    inspection.appearance_grade
-      ? `외관등급 ${inspection.appearance_grade}`
-      : null,
-    inspection.appearance_defect
-      ? `외관 ${inspection.appearance_defect}`
-      : null,
-    inspection.function_defect ? `기능 ${inspection.function_defect}` : null,
-    inspection.return_yn === "Y" ? "매입처 반품" : null,
+    inspection.inspection_type,
+    inspection.inspection_result,
+    inspection.appearance_grade ? `appearance_grade=${inspection.appearance_grade}` : null,
+    inspection.appearance_defect ? `appearance_defect=${inspection.appearance_defect}` : null,
+    inspection.function_defect ? `function_defect=${inspection.function_defect}` : null,
+    inspection.return_yn === "Y" ? "RETURN_TO_SUPPLIER" : null,
   ].filter(Boolean);
 
-  return parts.join(" / ") || "검수 기록";
+  return parts.join(" / ") || "INSPECTION";
 }
 
 function isAppearanceInspection(inspection: {
@@ -162,7 +153,6 @@ function isFunctionInspection(inspection: {
 
 export function field(
   key: string,
-  label: string,
   value: string | number | Date | null | undefined,
   options: {
     displayValue?: string | number | Date | null;
@@ -181,7 +171,6 @@ export function field(
 
   return {
     key,
-    label,
     value: formatValue(value),
     displayValue:
       options.displayValue === undefined
@@ -285,19 +274,19 @@ async function loadDeviceDetails(options: {
           "device",
           "device",
           row.device_id,
-          "기기 정보",
+          "DEVICE",
           row.model,
           row.updated_at,
           [
-            field("pg_no", "PG", row.pg_no, { readOnly: true }),
-            field("model", "모델", row.model, { readOnly: skuFieldsReadOnly }),
-            field("model_code", "모델 코드", row.model_code, { readOnly: skuFieldsReadOnly }),
-            field("model_seq", "고유번호", row.model_seq),
-            field("imei", "IMEI", row.imei),
-            field("storage", "저장공간", row.storage, { readOnly: skuFieldsReadOnly }),
-            field("color", "공식 색상명", row.color, { readOnly: skuFieldsReadOnly }),
-            field("sale_grade", "판매등급", row.sale_grade, { readOnly: skuFieldsReadOnly }),
-            field("warranty", "보증서", row.warranty),
+            field("pg_no", row.pg_no, { readOnly: true }),
+            field("model", row.model, { readOnly: skuFieldsReadOnly }),
+            field("model_code", row.model_code, { readOnly: skuFieldsReadOnly }),
+            field("model_seq", row.model_seq),
+            field("imei", row.imei),
+            field("storage", row.storage, { readOnly: skuFieldsReadOnly }),
+            field("color", row.color, { readOnly: skuFieldsReadOnly }),
+            field("sale_grade", row.sale_grade, { readOnly: skuFieldsReadOnly }),
+            field("warranty", row.warranty),
           ],
           row.revision
         ),
@@ -307,32 +296,28 @@ async function loadDeviceDetails(options: {
           `inbound-${item.inbound_id}`,
           "inbound",
           item.inbound_id,
-          `입고 정보 ${index + 1}`,
-          inboundStatusLabel(item.inbound_status),
+          `INBOUND:${index + 1}`,
+          item.inbound_status,
           item.received_at,
           [
-            field("batch_date", "입고일자", item.inbound_batch?.batch_date, {
+            field("batch_date", item.inbound_batch?.batch_date, {
               readOnly: true,
             }),
-            field("batch_no", "차수", item.inbound_batch?.batch_no),
-            field("supplier_name", "매입처", item.supplier_name, {
+            field("batch_no", item.inbound_batch?.batch_no),
+            field("supplier_name", item.supplier_name, {
               readOnly: item._count.sales_records > 0,
             }),
-            field("purchase_price", "매입가", item.purchase_price, {
+            field("purchase_price", item.purchase_price, {
               readOnly: item._count.sales_records > 0,
             }),
-            field("received_at", "입고일시", item.received_at),
-            field("price_agreed_at", "가격협의일시", item.price_agreed_at, {
+            field("received_at", item.received_at),
+            field("price_agreed_at", item.price_agreed_at, {
               readOnly: item._count.sales_records > 0,
             }),
-            field("inbound_status", "입고상태", item.inbound_status, {
-              displayValue: inboundStatusLabel(item.inbound_status),
-              readOnly: true,
-            }),
-            field("note", "비고", item.note),
+            field("inbound_status", item.inbound_status, { readOnly: true }),
+            field("note", item.note),
             field(
               "purchase_price_updated_at",
-              "매입가 수정일시",
               item.purchase_price_updated_at,
               { readOnly: true }
             ),
@@ -345,42 +330,34 @@ async function loadDeviceDetails(options: {
           `inspection-${item.inspection_id}`,
           "inspection",
           item.inspection_id,
-          `검수 정보 ${index + 1}`,
+          `INSPECTION:${index + 1}`,
           inspectionDetail(item),
           item.checked_at || item.function_checked_at || item.appearance_checked_at,
           [
-            field("inspection_type", "검수 종류", item.inspection_type, {
-              displayValue: inspectionTypeLabel(item.inspection_type),
-            }),
-            field("inspection_round", "검수 차수", item.inspection_round),
-            field("inspection_result", "검수 결과", item.inspection_result, {
-              displayValue: inspectionResultLabel(item.inspection_result),
-            }),
-            field("source_type", "검수 출처", item.source_type, {
-              displayValue: inspectionSourceTypeLabel(item.source_type),
-              readOnly: true,
-            }),
+            field("inspection_type", item.inspection_type),
+            field("inspection_round", item.inspection_round),
+            field("inspection_result", item.inspection_result),
+            field("source_type", item.source_type, { readOnly: true }),
             field(
               "coupang_return_allocation_id",
-              "쿠팡 반품 PG 연결 ID",
               item.coupang_return_allocation_id,
               { readOnly: true }
             ),
-            field("checked_by_user_id", "검수 계정 ID", item.checked_by_user_id, {
+            field("checked_by_user_id", item.checked_by_user_id, {
               readOnly: true,
             }),
-            field("checked_at", "검수일시", item.checked_at),
-            field("appearance_grade", "외관등급", item.appearance_grade),
-            field("appearance_defect", "외관하자", item.appearance_defect),
-            field("function_defect", "기능하자", item.function_defect),
-            field("return_yn", "매입처 반품 여부", item.return_yn),
-            field("csc", "통신사", item.csc),
-            field("first_call_date", "최초통화일", item.first_call_date),
-            field("appearance_worker", "외관 작업자", item.appearance_worker),
-            field("function_worker", "기능 작업자", item.function_worker),
-            field("appearance_checked_at", "외관 검수일시", item.appearance_checked_at),
-            field("function_checked_at", "기능 검수일시", item.function_checked_at),
-            field("note", "비고", item.note),
+            field("checked_at", item.checked_at),
+            field("appearance_grade", item.appearance_grade),
+            field("appearance_defect", item.appearance_defect),
+            field("function_defect", item.function_defect),
+            field("return_yn", item.return_yn),
+            field("csc", item.csc),
+            field("first_call_date", item.first_call_date),
+            field("appearance_worker", item.appearance_worker),
+            field("function_worker", item.function_worker),
+            field("appearance_checked_at", item.appearance_checked_at),
+            field("function_checked_at", item.function_checked_at),
+            field("note", item.note),
           ],
           item.revision
         )
@@ -391,15 +368,13 @@ async function loadDeviceDetails(options: {
               `inventory-${row.inventory.inventory_id}`,
               "inventory",
               row.inventory.inventory_id,
-              "재고 정보",
-              inventoryStatusLabel(row.inventory.inventory_status),
+              "INVENTORY",
+              row.inventory.inventory_status,
               row.inventory.stocked_at,
               [
-                field("inventory_status", "재고상태", row.inventory.inventory_status, {
-                  displayValue: inventoryStatusLabel(row.inventory.inventory_status),
-                }),
-                field("location", "위치", row.inventory.location),
-                field("stocked_at", "재고등록일시", row.inventory.stocked_at),
+                field("inventory_status", row.inventory.inventory_status),
+                field("location", row.inventory.location),
+                field("stocked_at", row.inventory.stocked_at),
               ],
               row.inventory.revision
             ),
@@ -462,7 +437,7 @@ async function loadDeviceDetails(options: {
         : null,
       inspections: inspections.map((inspection) => ({
         id: inspection.inspection_id,
-        label: inspection.appearance_worker || inspection.function_worker || "검수",
+        label: inspection.appearance_worker || inspection.function_worker || "INSPECTION",
         detail: inspectionDetail(inspection),
         at: requiredApiDateTime(
           inspection.checked_at ||

@@ -198,7 +198,7 @@ function parseContext(value: unknown): DeviceListContext {
   if (!Object.values(DEVICE_LIST_CONTEXT).includes(normalized as DeviceListContext)) {
     throw publicBadRequest(
       "DEVICE_LIST_CONTEXT_INVALID",
-      "지원하지 않는 기기 목록 조회 구분입니다."
+      "DEVICE_LIST_CONTEXT_INVALID"
     );
   }
   return normalized as DeviceListContext;
@@ -209,7 +209,7 @@ function parseSort(value: unknown): DeviceListSortKey {
   if (!DEVICE_LIST_SORT_KEYS.includes(normalized as DeviceListSortKey)) {
     throw publicBadRequest(
       "DEVICE_LIST_SORT_INVALID",
-      "지원하지 않는 기기 목록 정렬 기준입니다."
+      "DEVICE_LIST_SORT_INVALID"
     );
   }
   return normalized as DeviceListSortKey;
@@ -220,7 +220,7 @@ function parseDirection(value: unknown): DeviceListSortDirection {
   if (normalized !== "asc" && normalized !== "desc") {
     throw publicBadRequest(
       "DEVICE_LIST_DIRECTION_INVALID",
-      "기기 목록 정렬 방향은 asc 또는 desc여야 합니다."
+      "DEVICE_LIST_DIRECTION_INVALID"
     );
   }
   return normalized;
@@ -232,7 +232,7 @@ function parseLimit(value: unknown) {
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw publicBadRequest(
       "DEVICE_LIST_LIMIT_INVALID",
-      "기기 목록 조회 개수는 양의 정수여야 합니다."
+      "DEVICE_LIST_LIMIT_INVALID"
     );
   }
   return Math.min(parsed, MAX_LIMIT);
@@ -245,7 +245,7 @@ function parseBoolean(value: unknown) {
   if (normalized === "false" || normalized === "0") return false;
   throw publicBadRequest(
     "DEVICE_LIST_BOOLEAN_INVALID",
-    "기기 목록의 재고 보유 조건이 올바르지 않습니다."
+    "DEVICE_LIST_BOOLEAN_INVALID"
   );
 }
 
@@ -290,7 +290,7 @@ function decodeCursor(
   } catch {
     throw publicBadRequest(
       "DEVICE_LIST_CURSOR_INVALID",
-      "기기 목록 조회 cursor가 올바르지 않습니다."
+      "DEVICE_LIST_CURSOR_INVALID"
     );
   }
 }

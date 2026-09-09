@@ -9,7 +9,6 @@ import {
 import {
   RESPONSE_PERFORMANCE_RANGE_VALUES,
   RESPONSE_PERFORMANCE_STATUS_VALUES,
-  responsePerformanceOperationLabel,
   type ResponsePerformanceDurationStats,
   type ResponsePerformanceOperationSummary,
   type ResponsePerformanceClientMetrics,
@@ -220,7 +219,6 @@ function traceSummary(
     logId: record.id,
     traceId,
     operationName,
-    operationLabel: responsePerformanceOperationLabel(operationName),
     route: fields.get("route") ?? "",
     method: fields.get("method") ?? "",
     status: record.status,
@@ -330,7 +328,6 @@ function operationSummaries(
     summaries.push({
       key,
       operationName: first.operationName,
-      operationLabel: first.operationLabel,
       method: first.method,
       route: first.route,
       sampleCount: group.length,

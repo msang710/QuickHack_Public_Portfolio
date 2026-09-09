@@ -15,9 +15,8 @@ const presentation = read(
 const view = read(
   "quickhack_client/components/statistics/statistics-view.tsx"
 );
-const menu = read(
-  "quickhack_client/components/app-shell/device-workspace-menu.ts"
-);
+const koStatistics = read("quickhack_client/i18n/catalogs/ko/statistics.ts");
+const koNavigation = read("quickhack_client/i18n/catalogs/ko/navigation.ts");
 
 assert.match(panel, /buildStatisticsPeriodRequestQuery/);
 assert.match(panel, /\/api\/statistics\/inventory/);
@@ -30,10 +29,11 @@ assert.match(panel, /requestState\.requestKey === requestKey/);
 assert.match(panel, /retryRevision/);
 assert.match(panel, /cache: "no-store"/);
 assert.match(panel, /aria-busy=/);
-assert.match(panel, /같은 조건으로 통계를 다시 확인하고 있습니다/);
-assert.match(panel, /다시 시도/);
+assert.match(panel, /t\("loading\.refresh"\)/);
+assert.match(panel, /t\("loading\.retry"\)/);
+assert.match(koStatistics, /같은 조건으로 통계를 다시 확인하고 있습니다/);
 
-for (const preset of ['value: "30d"', 'value: "90d"', 'value: "1y"', 'value: "all"']) {
+for (const preset of ['"30d":', '"90d":', '"1y":', 'all:']) {
   assert.match(presentation, new RegExp(preset));
 }
 
@@ -46,7 +46,7 @@ for (const section of [
   "재고 상태 이동",
   "SKU별 판매 회전율",
 ]) {
-  assert.match(panel, new RegExp(section));
+  assert.match(koStatistics, new RegExp(section));
 }
 
 assert.match(panel, /StatisticsCalculationScope calculation=\{data\.calculation\}/);
@@ -86,7 +86,7 @@ assert.doesNotMatch(view, /const filteredDevices/);
 assert.doesNotMatch(view, /label="평균 재고 기간"/);
 assert.doesNotMatch(view, /title="다음 통계 후보"/);
 assert.match(
-  menu,
+  koNavigation,
   /현재 재고 구성, 장기 재고 부담, 기간 흐름과 판매 회전율을 확인합니다\./
 );
 

@@ -57,7 +57,7 @@ const publicBody = await publicResponse.json();
 assert.equal(publicResponse.status, 409);
 assert.equal(publicBody.ok, false);
 assert.equal(publicBody.code, "INVENTORY_STALE_STATE");
-assert.equal(publicBody.message, "다른 작업자가 먼저 재고를 변경했습니다.");
+assert.equal(publicBody.message, undefined);
 assert.deepEqual(publicBody.details, { pgNo: "PG0000000001" });
 assert.match(publicBody.traceId, /^[0-9a-f-]{36}$/);
 assert.equal(
@@ -97,10 +97,7 @@ const internalBody = await internalResponse.json();
 assert.equal(internalResponse.status, 500);
 assert.equal(internalBody.ok, false);
 assert.equal(internalBody.code, "INTERNAL_ERROR");
-assert.equal(
-  internalBody.message,
-  "요청을 처리하는 중 문제가 발생했습니다. 문제가 계속되면 추적 ID와 함께 관리자에게 문의하세요."
-);
+assert.equal(internalBody.message, undefined);
 assert.equal(JSON.stringify(internalBody).includes("do-not-expose"), false);
 assert.equal(JSON.stringify(internalBody).includes("do-not-expose"), false);
 assert.equal(
@@ -128,7 +125,6 @@ const sensitiveResponse = await runOperationTrace(
     apiFailureResponse({
       status: 403,
       code: "SENSITIVE_AUTH_REQUIRED",
-      message: "2차 인증이 필요합니다.",
       extra: {
         sensitiveAuthRequired: true,
         sensitiveAction: "inventory_edit",
@@ -138,6 +134,7 @@ const sensitiveResponse = await runOperationTrace(
 const sensitiveBody = await sensitiveResponse.json();
 
 assert.equal(sensitiveBody.code, "SENSITIVE_AUTH_REQUIRED");
+assert.equal(sensitiveBody.message, undefined);
 assert.equal(sensitiveBody.sensitiveAuthRequired, true);
 assert.equal(sensitiveBody.sensitiveAction, "inventory_edit");
 

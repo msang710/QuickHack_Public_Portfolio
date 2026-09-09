@@ -3,19 +3,7 @@ import { createHash } from "node:crypto";
 export const QUICKHACK_POSTGRESQL_MIGRATIONS = Object.freeze([
   Object.freeze({
     name: "20260811010000_postgresql_baseline",
-    checksum: "255c2dbe4086cd7b688e630957af7de8108c8c6d80b7e652879bcca4a1feb70f",
-  }),
-  Object.freeze({
-    name: "20260826143000_active_allocation_pg_unique",
-    checksum: "5899d512e509a1a7dc76471cdeee7526ba69a1bb4824a0894784fd4674cf6601",
-  }),
-  Object.freeze({
-    name: "20260826150000_manual_order_match_receipts_recovery",
-    checksum: "9195ca0bb83151890c6f902f3fca7f26e1f7b478ea5c9e1418bba2ed0c88a5d5",
-  }),
-  Object.freeze({
-    name: "20260826163000_manual_order_match_intent_lease",
-    checksum: "9898df4e0f2493adf1bee35d678ab1b79f3db5a25976383704e4fb90dd3bb648",
+    checksum: "d757e13f18cc57805b90d456a2a19787c76d4b0e83e508606251fddf00606b9c",
   }),
 ]);
 

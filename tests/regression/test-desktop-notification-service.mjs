@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { publishDesktopNotification, markDesktopNotificationsRead, listDesktopNotifications } from "../../quickhack_server/notifications/desktop-notification-service.ts";
 let userWhere;
 let created = [];
+let eventCreate;
 const tx = {
-  desktop_notification_events: { upsert: async ({ where }) => { assert.equal(where.dedupe_key, "RETURN_REQUEST:R-1"); return { notification_event_id: 9n }; } },
+  desktop_notification_events: { upsert: async ({ where, create }) => { assert.equal(where.dedupe_key, "RETURN_REQUEST:R-1"); eventCreate = create; return { notification_event_id: 9n }; } },
   users: { findMany: async ({ where }) => { userWhere = where; return [{ user_id: 2 }, { user_id: 3 }]; } },
   desktop_notification_recipients: {
     createMany: async ({ data, skipDuplicates }) => { assert.equal(skipDuplicates, true); created = data; return { count: data.length }; },
@@ -13,7 +14,10 @@ const tx = {
   },
   $transaction: async (callback) => callback(tx),
 };
-await publishDesktopNotification(tx, { kind: "RETURN_REQUEST", sourceType: "COUPANG_RETURN_RAW", sourceId: "1", dedupeKey: "RETURN_REQUEST:R-1", menuId: "return-after-shipment", title: "반품", body: "접수" });
+await publishDesktopNotification(tx, { kind: "RETURN_REQUEST", sourceType: "COUPANG_RETURN_RAW", sourceId: "1", dedupeKey: "RETURN_REQUEST:R-1", menuId: "return-after-shipment", messageKey: "returnRequest" });
+assert.equal(eventCreate.title, "");
+assert.equal(eventCreate.body, "");
+assert.equal(eventCreate.message_key, "returnRequest");
 assert.equal(userWhere.is_active, 1);
 assert.deepEqual(userWhere.role.in, ["STAFF", "MANAGER", "LEADER"]);
 assert.equal(userWhere.user_preferences.is.return_notification_enabled, 1);

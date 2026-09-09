@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { ExternalLink, Loader2, RefreshCcw, X } from "lucide-react";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -12,18 +13,19 @@ import {
 export type FunctionAction =
   (typeof FUNCTION_ACTION_GROUPS)[number]["actions"][number];
 
-function prepareFunctionRemoteWindow(remoteWindow: Window) {
+function prepareFunctionRemoteWindow(remoteWindow: Window, title: string) {
   remoteWindow.document.open();
   remoteWindow.document.write(`<!doctype html>
-<html lang="ko">
+<html lang="${document.documentElement.lang || "ko"}">
   <head>
-    <title>QuickHack 기능 검수 제어</title>
+    <title></title>
   </head>
   <body>
     <div id="quickhack-function-remote-root"></div>
   </body>
 </html>`);
   remoteWindow.document.close();
+  remoteWindow.document.title = title;
 
   for (const node of Array.from(
     document.head.querySelectorAll('link[rel="stylesheet"], style')
@@ -41,6 +43,7 @@ export function useFunctionRemoteWindow({
 }: {
   onPopupBlocked: () => void;
 }) {
+  const t = useTranslations("inspection.remote");
   const [isFunctionRemoteOpen, setIsFunctionRemoteOpen] =
     React.useState(false);
   const [functionRemoteWindow, setFunctionRemoteWindow] =
@@ -117,12 +120,12 @@ export function useFunctionRemoteWindow({
       return;
     }
 
-    prepareFunctionRemoteWindow(remoteWindow);
+    prepareFunctionRemoteWindow(remoteWindow, t("pageTitle"));
     functionRemoteWindowRef.current = remoteWindow;
     setFunctionRemoteWindow(remoteWindow);
     setIsFunctionRemoteOpen(true);
     remoteWindow.focus();
-  }, [onPopupBlocked]);
+  }, [onPopupBlocked, t]);
 
   const functionRemoteRoot =
     isFunctionRemoteOpen && functionRemoteWindow && !functionRemoteWindow.closed
@@ -164,6 +167,7 @@ export function FunctionInspectionRemotePortal({
   onFunctionAction,
   onClose,
 }: FunctionInspectionRemotePortalProps) {
+  const t = useTranslations("inspection.remote");
   if (!root) {
     return null;
   }
@@ -172,7 +176,7 @@ export function FunctionInspectionRemotePortal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="기능 검수 제어"
+      aria-label={t("title")}
       className="min-h-screen bg-popover text-popover-foreground"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -183,19 +187,22 @@ export function FunctionInspectionRemotePortal({
     >
       <div className="flex items-start justify-between gap-3 border-b bg-background px-4 py-3">
         <div>
-          <h2 className="text-sm font-semibold">기능 검수 제어</h2>
+          <h2 className="text-sm font-semibold">{t("title")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            작업 대상 {connectedDeviceCount}대 / 작업 가능 {readyDeviceCount}대
+            {t("summary", {
+              connected: connectedDeviceCount,
+              ready: readyDeviceCount,
+            })}
             {ignoredAdbDeviceCount > 0
-              ? ` / 가상 포트 제외 ${ignoredAdbDeviceCount}개`
-              : ""}
+              ? t("ignoredSummary", { ignored: ignoredAdbDeviceCount })
+              : null}
           </p>
         </div>
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="기능 검수 제어 닫기"
+          aria-label={t("close")}
           onClick={onClose}
         >
           <X className="size-4" />
@@ -204,9 +211,9 @@ export function FunctionInspectionRemotePortal({
 
       <div className="grid gap-4 overflow-auto p-4">
         {FUNCTION_ACTION_GROUPS.map((group) => (
-          <div key={group.title} className="grid gap-2">
+          <div key={group.id} className="grid gap-2">
             <div className="border-b pb-1 text-xs font-semibold">
-              {group.title}
+              {t(`groups.${group.id}`)}
             </div>
             {group.actions.map((action) => (
               <Button
@@ -221,7 +228,7 @@ export function FunctionInspectionRemotePortal({
                 ) : action.id === "refresh" ? (
                   <RefreshCcw className="size-4" />
                 ) : null}
-                {action.label}
+                {t(`actions.${action.id.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())}` as never)}
               </Button>
             ))}
           </div>
@@ -234,7 +241,7 @@ export function FunctionInspectionRemotePortal({
             checked={allDevices}
             onChange={(event) => onAllDevicesChange(event.target.checked)}
           />
-          모든 기기에 적용
+          {t("allDevices")}
         </label>
 
         <Button
@@ -243,13 +250,11 @@ export function FunctionInspectionRemotePortal({
           onClick={() => window.open(MANUAL_URL, "_blank", "noopener,noreferrer")}
         >
           <ExternalLink className="size-4" />
-          기기 연결 매뉴얼 보기
+          {t("manual")}
         </Button>
 
         <div className="rounded-md border bg-background px-3 py-2 text-xs leading-5 text-muted-foreground">
-          USB 디버깅 연결 방법 | 휴대폰 설정 → 휴대전화 정보 → 소프트웨어 정보 →
-          빌드번호 7번 터치 → 개발자 옵션 → USB 디버깅 ON → USB 연결 후 항상
-          허용
+          {t("instructions")}
         </div>
       </div>
     </div>,

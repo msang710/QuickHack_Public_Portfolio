@@ -1,6 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
+import { invoiceOperationStatusLabel } from "@/quickhack_client/components/invoice/invoice-status-presentation";
 import { RefreshCcw, Search } from "lucide-react";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -65,6 +68,12 @@ function DetailLine({
 }
 
 export function InvoiceIssueHistoryView() {
+  const t = useTranslations("shipment.invoiceHistory");
+  const statusText = React.useCallback(
+    (value: string | null | undefined, fallback: string) =>
+      invoiceOperationStatusLabel(value, fallback, t),
+    [t]
+  );
   const [items, setItems] = React.useState<InvoiceHistoryRow[]>([]);
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [detailResult, setDetailResult] = React.useState<{
@@ -92,7 +101,7 @@ export function InvoiceIssueHistoryView() {
         );
         const payload = (await response.json()) as HistoryListResponse;
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.message || "송장 이력을 불러오지 못했습니다.");
+          throw new Error(legacyApiMessage(payload, t("state.loadFailed")));
         }
         const nextItems = payload.items ?? [];
         setItems((current) => (append ? [...current, ...nextItems] : nextItems));
@@ -111,7 +120,7 @@ export function InvoiceIssueHistoryView() {
         setLoading(false);
       }
     },
-    [appliedSearch, nextCursor]
+    [appliedSearch, nextCursor, t]
   );
 
   React.useEffect(() => {
@@ -132,7 +141,7 @@ export function InvoiceIssueHistoryView() {
       .then(async (response) => {
         const payload = (await response.json()) as HistoryDetailResponse;
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.message || "송장 상세 이력을 불러오지 못했습니다.");
+          throw new Error(legacyApiMessage(payload, t("state.detailFailed")));
         }
         if (alive) {
           setDetailResult({
@@ -153,7 +162,7 @@ export function InvoiceIssueHistoryView() {
     return () => {
       alive = false;
     };
-  }, [selectedId]);
+  }, [selectedId, t]);
 
   const revisions =
     detailResult?.carrierShipmentId === selectedId
@@ -170,10 +179,9 @@ export function InvoiceIssueHistoryView() {
     <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
       <div className="flex flex-wrap items-center gap-2 border-b pb-3">
         <div className="mr-auto">
-          <h2 className="text-base font-semibold">송장 발급 이력 조회</h2>
+          <h2 className="text-base font-semibold">{t("title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            한 물리 박스의 최초 발급부터 재발급, 쿠팡·로젠·출력·배송 이력을
-            revision 순서로 확인합니다. 전체 {totalCount.toLocaleString("ko-KR")}건
+            {t("description", { count: totalCount })}
           </p>
         </div>
         <form
@@ -188,12 +196,12 @@ export function InvoiceIssueHistoryView() {
             className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="송장번호, 주문번호, PG 검색"
+            placeholder={t("search")}
           />
         </form>
         <Button variant="outline" size="sm" disabled={loading} onClick={() => void load(false)}>
           <RefreshCcw className={cn("size-4", loading && "animate-spin")} />
-          새로고침
+          {t("refresh")}
         </Button>
       </div>
 
@@ -208,15 +216,15 @@ export function InvoiceIssueHistoryView() {
           <table className="w-full min-w-[1040px] table-fixed text-sm">
             <thead className="sticky top-0 z-10 bg-muted text-left text-xs text-muted-foreground">
               <tr>
-                <th className="w-40 px-3 py-2">송장번호</th>
-                <th className="w-20 px-3 py-2">차수</th>
-                <th className="w-28 px-3 py-2">송장 상태</th>
-                <th className="w-28 px-3 py-2">쿠팡</th>
-                <th className="w-28 px-3 py-2">로젠 등록</th>
-                <th className="w-28 px-3 py-2">송장 출력</th>
-                <th className="w-36 px-3 py-2">PG / 합포장</th>
-                <th className="px-3 py-2">주문번호</th>
-                <th className="w-36 px-3 py-2">발급 일시</th>
+                <th className="w-40 px-3 py-2">{t("columns.tracking")}</th>
+                <th className="w-20 px-3 py-2">{t("columns.revision")}</th>
+                <th className="w-28 px-3 py-2">{t("columns.status")}</th>
+                <th className="w-28 px-3 py-2">{t("columns.channel")}</th>
+                <th className="w-28 px-3 py-2">{t("columns.carrier")}</th>
+                <th className="w-28 px-3 py-2">{t("columns.output")}</th>
+                <th className="w-36 px-3 py-2">{t("columns.members")}</th>
+                <th className="px-3 py-2">{t("columns.order")}</th>
+                <th className="w-36 px-3 py-2">{t("columns.issuedAt")}</th>
               </tr>
             </thead>
             <tbody>
@@ -233,35 +241,35 @@ export function InvoiceIssueHistoryView() {
                     <div>{item.trackingNumber}</div>
                     {item.isCurrent ? (
                       <span className="text-[10px] font-semibold text-primary">
-                        현재 송장
+                        {t("state.currentInvoice")}
                       </span>
                     ) : null}
                   </td>
                   <td className="px-3 py-2">rev.{item.revisionNo}</td>
                   <td className="px-3 py-2">
                     <Badge variant={statusVariant(item.invoiceStatus)}>
-                      {item.invoiceStatus}
+                      {statusText(item.invoiceStatus, t("state.pending"))}
                     </Badge>
                   </td>
                   <td className="px-3 py-2">
                     <Badge variant={statusVariant(item.channelWrite?.status)}>
-                      {item.channelWrite?.status ?? "이력 없음"}
+                      {statusText(item.channelWrite?.status, t("state.noHistory"))}
                     </Badge>
                   </td>
                   <td className="px-3 py-2">
                     <Badge variant={statusVariant(item.registration?.status)}>
-                      {item.registration?.status ?? "대기"}
+                      {statusText(item.registration?.status, t("state.pending"))}
                     </Badge>
                   </td>
                   <td className="px-3 py-2">
                     <Badge variant={statusVariant(item.issue?.labelPrintStatus)}>
-                      {item.issue?.labelPrintStatus ?? "대기"}
+                      {statusText(item.issue?.labelPrintStatus, t("state.pending"))}
                     </Badge>
                   </td>
                   <td className="px-3 py-2 text-xs">
                     {item.members.map((member) => member.pgNo).join(", ") || item.pgNo || "-"}
                     <div className="text-[10px] text-muted-foreground">
-                      {item.memberCount}건
+                      {t("state.count", { count: item.memberCount })}
                     </div>
                   </td>
                   <td className="truncate px-3 py-2 font-mono text-xs">
@@ -276,13 +284,13 @@ export function InvoiceIssueHistoryView() {
           </table>
           {!loading && items.length === 0 ? (
             <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-              조회된 송장 이력이 없습니다.
+              {t("state.empty")}
             </div>
           ) : null}
           {nextCursor ? (
             <div className="border-t p-3 text-center">
               <Button variant="outline" disabled={loading} onClick={() => void load(true)}>
-                이력 더 보기
+                {t("state.loadMore")}
               </Button>
             </div>
           ) : null}
@@ -290,41 +298,40 @@ export function InvoiceIssueHistoryView() {
 
         <aside className="min-h-0 overflow-auto rounded-md border bg-background">
           {detailLoading ? (
-            <div className="p-6 text-sm text-muted-foreground">상세 이력을 불러오는 중입니다.</div>
+            <div className="p-6 text-sm text-muted-foreground">{t("state.detailLoading")}</div>
           ) : selected ? (
             <div>
               <div className="sticky top-0 z-10 border-b bg-background px-4 py-3">
                 <h3 className="font-semibold">{selected.trackingNumber}</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  합포장 그룹 #{selected.packageGroupId ?? "-"} · revision{" "}
-                  {revisions.length}개
+                  {t("detail.package", { group: String(selected.packageGroupId ?? "-"), count: revisions.length })}
                 </p>
               </div>
               <DescriptionList className="p-4">
-                <DetailLine label="수취인" value={selected.receiverName} />
-                <DetailLine label="주소" value={selected.receiverAddress} />
+                <DetailLine label={t("detail.receiver")} value={selected.receiverName} />
+                <DetailLine label={t("detail.address")} value={selected.receiverAddress} />
                 <DetailLine
-                  label="쿠팡 처리"
+                  label={t("detail.channel")}
                   value={
                     selected.channelWrite
-                      ? `${selected.channelWrite.requestTypeLabel} · ${selected.channelWrite.status}`
-                      : "이력 없음"
+                      ? `${selected.channelWrite.requestTypeLabel} · ${statusText(selected.channelWrite.status, t("state.pending"))}`
+                      : t("state.noHistory")
                   }
                 />
                 <DetailLine
-                  label="로젠 등록"
-                  value={selected.registration?.status ?? "대기"}
+                  label={t("detail.carrier")}
+                  value={statusText(selected.registration?.status, t("state.pending"))}
                 />
                 <DetailLine
-                  label="송장 출력"
-                  value={selected.issue?.labelPrintStatus ?? "대기"}
+                  label={t("detail.output")}
+                  value={statusText(selected.issue?.labelPrintStatus, t("state.pending"))}
                 />
-                <DetailLine label="배송 상태" value={selected.shipmentStatus} />
+                <DetailLine label={t("detail.shipment")} value={selected.shipmentStatus} />
               </DescriptionList>
 
               <div className="border-t p-4">
                 <h4 className="mb-3 text-xs font-semibold text-muted-foreground">
-                  송장 revision
+                  {t("detail.revisions")}
                 </h4>
                 <div className="space-y-2">
                   {revisions.map((revision) => (
@@ -343,9 +350,9 @@ export function InvoiceIssueHistoryView() {
                           rev.{revision.revisionNo} · {revision.trackingNumber}
                         </span>
                         {revision.isCurrent ? (
-                          <Badge variant="success">현재</Badge>
+                          <Badge variant="success">{t("detail.current")}</Badge>
                         ) : (
-                          <Badge variant="secondary">{revision.invoiceStatus}</Badge>
+                          <Badge variant="secondary">{statusText(revision.invoiceStatus, t("state.pending"))}</Badge>
                         )}
                       </div>
                       <div className="mt-1 text-muted-foreground">
@@ -358,7 +365,7 @@ export function InvoiceIssueHistoryView() {
 
               <div className="border-t p-4">
                 <h4 className="mb-3 text-xs font-semibold text-muted-foreground">
-                  최근 배송 스캔
+                  {t("detail.scans")}
                 </h4>
                 {selected.trackingEvents.length ? (
                   <div className="space-y-2">
@@ -375,14 +382,14 @@ export function InvoiceIssueHistoryView() {
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    아직 수집된 배송 스캔이 없습니다.
+                    {t("detail.scansEmpty")}
                   </p>
                 )}
               </div>
             </div>
           ) : (
             <div className="flex h-full min-h-48 items-center justify-center p-6 text-sm text-muted-foreground">
-              왼쪽에서 송장을 선택하세요.
+              {t("state.select")}
             </div>
           )}
         </aside>

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import {
   Select,
   SelectContent,
@@ -39,6 +40,7 @@ export function useAppearanceHistoryColumns({
 }: {
   updateAppearanceReturnYn: (recordId: string, value: "Y" | "N") => void;
 }) {
+  const t = useTranslations("inspection.columns");
   return React.useMemo<
     DataGridColumn<
       | "pg"
@@ -63,27 +65,27 @@ export function useAppearanceHistoryColumns({
       },
       {
         key: "color",
-        label: "공식 색상명",
+        label: t("color"),
         width: "140px",
-        placeholder: "색상",
+        placeholder: t("placeholders.color"),
         cellClassName: "flex items-center px-3",
         render: (record) => record.기기색상 || "-",
         text: (record) => record.기기색상 || "",
       },
       {
         key: "grade",
-        label: "외관등급",
+        label: t("appearanceGrade"),
         width: "110px",
-        placeholder: "등급",
+        placeholder: t("placeholders.grade"),
         cellClassName: "flex items-center px-3",
         render: (record) => record.외관등급 || "-",
         text: (record) => record.외관등급 || "",
       },
       {
         key: "defect",
-        label: "외관하자",
+        label: t("appearanceDefect"),
         width: "minmax(220px,1fr)",
-        placeholder: "하자",
+        placeholder: t("placeholders.defect"),
         cellClassName: "min-w-0 px-3 py-2",
         render: (record) => (
           <div className="truncate" title={record.외관하자 || undefined}>
@@ -94,7 +96,7 @@ export function useAppearanceHistoryColumns({
       },
       {
         key: "returnYn",
-        label: "매입처 반품",
+        label: t("supplierReturn"),
         width: "120px",
         placeholder: "Y/N",
         cellClassName: "flex items-center px-3",
@@ -121,24 +123,24 @@ export function useAppearanceHistoryColumns({
       },
       {
         key: "worker",
-        label: "작업자",
+        label: t("worker"),
         width: "120px",
-        placeholder: "작업자",
+        placeholder: t("placeholders.worker"),
         cellClassName: "flex items-center px-3",
         render: (record) => record.외관검수자 || "-",
         text: (record) => record.외관검수자 || "",
       },
       {
         key: "inspectedAt",
-        label: "검수일시",
+        label: t("inspectedAt"),
         width: "170px",
-        placeholder: "검수일시",
+        placeholder: t("placeholders.inspectedAt"),
         cellClassName: "flex items-center px-3",
         render: (record) => record.외관검수일시 || "-",
         text: (record) => record.외관검수일시 || "",
       },
     ],
-    [updateAppearanceReturnYn]
+    [t, updateAppearanceReturnYn]
   );
 }
 
@@ -147,6 +149,8 @@ export function useAppearancePendingColumns({
   setVisibleRecordsSelected,
   visibleRecordSelectionState,
 }: SelectableRecordColumnOptions) {
+  const status = useTranslations("inspection.status");
+  const columns = useTranslations("inspection.columns");
   return React.useMemo<
     DataGridColumn<
       | "select"
@@ -174,7 +178,7 @@ export function useAppearancePendingColumns({
               checked={selectionState.checked}
               indeterminate={selectionState.indeterminate}
               disabled={selectionState.disabled}
-              ariaLabel="외관 검수 대기 행 전체 선택 또는 해제"
+              ariaLabel={columns("selectAllAppearance")}
               onCheckedChange={(checked) =>
                 setVisibleRecordsSelected(displayRows, checked)
               }
@@ -198,7 +202,7 @@ export function useAppearancePendingColumns({
       },
       {
         key: "color",
-        label: "공식 색상명",
+        label: columns("color"),
         width: "130px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.기기색상 || "-",
@@ -206,7 +210,7 @@ export function useAppearancePendingColumns({
       },
       {
         key: "grade",
-        label: "외관등급",
+        label: columns("appearanceGrade"),
         width: "100px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.외관등급 || "-",
@@ -214,7 +218,7 @@ export function useAppearancePendingColumns({
       },
       {
         key: "defect",
-        label: "외관하자",
+        label: columns("appearanceDefect"),
         width: "minmax(240px,1fr)",
         cellClassName: "min-w-0 px-3 py-2",
         render: (record) => (
@@ -226,7 +230,7 @@ export function useAppearancePendingColumns({
       },
       {
         key: "returnYn",
-        label: "매입처 반품",
+        label: columns("supplierReturn"),
         width: "110px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.매입처반품유무 || "N",
@@ -234,7 +238,7 @@ export function useAppearancePendingColumns({
       },
       {
         key: "batchNo",
-        label: "차수",
+        label: columns("batch"),
         width: "90px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.차수 || "-",
@@ -242,7 +246,7 @@ export function useAppearancePendingColumns({
       },
       {
         key: "worker",
-        label: "작업자",
+        label: columns("worker"),
         width: "120px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.외관검수자 || "-",
@@ -250,7 +254,7 @@ export function useAppearancePendingColumns({
       },
       {
         key: "inspectedAt",
-        label: "검수일시",
+        label: columns("inspectedAt"),
         width: "170px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.외관검수일시 || "-",
@@ -258,10 +262,13 @@ export function useAppearancePendingColumns({
       },
       {
         key: "uploadStatus",
-        label: "업로드상태",
+        label: columns("uploadStatus"),
         width: "120px",
         cellClassName: "flex items-center px-3",
-        render: (record) => statusBadge(record[UPLOAD_STATUS_COLUMN]),
+        render: (record) =>
+          statusBadge(record[UPLOAD_STATUS_COLUMN], (key) =>
+            status(key as never)
+          ),
         text: (record) => record[UPLOAD_STATUS_COLUMN] || "",
       },
     ],
@@ -269,6 +276,8 @@ export function useAppearancePendingColumns({
       renderSelectionCell,
       setVisibleRecordsSelected,
       visibleRecordSelectionState,
+      status,
+      columns,
     ]
   );
 }
@@ -278,6 +287,8 @@ export function useFunctionPendingColumns({
   setVisibleRecordsSelected,
   visibleRecordSelectionState,
 }: SelectableRecordColumnOptions) {
+  const status = useTranslations("inspection.status");
+  const columns = useTranslations("inspection.columns");
   return React.useMemo<
     DataGridColumn<
       | "select"
@@ -307,7 +318,7 @@ export function useFunctionPendingColumns({
               checked={selectionState.checked}
               indeterminate={selectionState.indeterminate}
               disabled={selectionState.disabled}
-              ariaLabel="기능 검수 대기 행 전체 선택 또는 해제"
+              ariaLabel={columns("selectAllFunction")}
               onCheckedChange={(checked) =>
                 setVisibleRecordsSelected(displayRows, checked)
               }
@@ -339,7 +350,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "product",
-        label: "제품명",
+        label: columns("product"),
         width: "160px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.제품명 || "-",
@@ -347,7 +358,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "carrier",
-        label: "통신사",
+        label: columns("carrier"),
         width: "100px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.통신사 || "-",
@@ -355,7 +366,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "storage",
-        label: "저장공간",
+        label: columns("storage"),
         width: "110px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.저장공간 || "-",
@@ -363,7 +374,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "firstCallDate",
-        label: "최초통화일",
+        label: columns("firstCallDate"),
         width: "130px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.최초통화일 || "-",
@@ -371,7 +382,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "functionDefect",
-        label: "기능하자",
+        label: columns("functionDefect"),
         width: "minmax(260px,1fr)",
         cellClassName: "min-w-0 px-3 py-2",
         render: (record) => (
@@ -383,7 +394,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "returnYn",
-        label: "매입처 반품",
+        label: columns("supplierReturn"),
         width: "110px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.매입처반품유무 || "N",
@@ -391,7 +402,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "worker",
-        label: "작업자",
+        label: columns("worker"),
         width: "120px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.기능검수자 || "-",
@@ -399,7 +410,7 @@ export function useFunctionPendingColumns({
       },
       {
         key: "inspectedAt",
-        label: "검수일시",
+        label: columns("inspectedAt"),
         width: "170px",
         cellClassName: "flex items-center px-3",
         render: (record) => record.기능검수일시 || "-",
@@ -407,10 +418,13 @@ export function useFunctionPendingColumns({
       },
       {
         key: "uploadStatus",
-        label: "업로드상태",
+        label: columns("uploadStatus"),
         width: "120px",
         cellClassName: "flex items-center px-3",
-        render: (record) => statusBadge(record[UPLOAD_STATUS_COLUMN]),
+        render: (record) =>
+          statusBadge(record[UPLOAD_STATUS_COLUMN], (key) =>
+            status(key as never)
+          ),
         text: (record) => record[UPLOAD_STATUS_COLUMN] || "",
       },
     ],
@@ -418,6 +432,8 @@ export function useFunctionPendingColumns({
       renderSelectionCell,
       setVisibleRecordsSelected,
       visibleRecordSelectionState,
+      status,
+      columns,
     ]
   );
 }

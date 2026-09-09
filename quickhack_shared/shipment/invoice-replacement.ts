@@ -49,24 +49,3 @@ export const CARRIER_INVOICE_REPLACEMENT_EXECUTION_STATE = {
   running: "RUNNING",
   stale: "STALE",
 } as const;
-
-export const CARRIER_INVOICE_REPLACEMENT_STAGE_LABELS: Record<string, string> = {
-  PRECHECK: "최신 주문과 출고 상태 확인",
-  OLD_INVOICE_HANDLING: "기존 송장 처리 확인",
-  ALLOCATION: "새 송장번호 채번",
-  CHANNEL_UPDATE: "쿠팡 송장번호 변경",
-  CARRIER_REGISTRATION: "로젠 주문 등록",
-  LABEL_PRINT: "새 송장 출력",
-  FINALIZE: "출고 보류 해제",
-};
-
-export const CARRIER_INVOICE_REPLACEMENT_STATUS_LABELS: Record<string, string> = {
-  PENDING: "처리 대기",
-  PROCESSING: "처리 중",
-  WAITING_MANUAL: "관리자 확인 필요",
-  WAITING_LABEL: "새 송장 출력 필요",
-  COMPLETED: "교체 완료",
-  REVIEW_REQUIRED: "직접 확인 필요",
-  FAILED: "처리 실패",
-  CANCELED: "작업 취소",
-};

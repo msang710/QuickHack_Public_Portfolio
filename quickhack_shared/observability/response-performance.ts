@@ -19,40 +19,19 @@ export const RESPONSE_PERFORMANCE_STATUS_VALUES = [
 export type ResponsePerformanceStatusFilter =
   (typeof RESPONSE_PERFORMANCE_STATUS_VALUES)[number];
 
-export const RESPONSE_PERFORMANCE_OPERATION_LABELS: Record<string, string> = {
-  "inventory.workspace.read": "재고 작업공간 조회",
-  "inventory.quantity-ledger.read": "재고 수량 원장 조회",
-  "inventory.quantity-ledger.movements.read": "재고 수불 이력 조회",
-  "inventory.inbound-reconciliation.read": "입고 대조 상세 조회",
-  "inventory.device.create": "재고 추가",
-  "inventory.device.update": "기존 재고 수정",
-  "inventory.device.delete": "재고 삭제",
-  "inventory.bulk-correction": "재고 일괄 수정",
-  "inventory.audit.save": "재고실사 저장",
-  "inspection.record.save": "검수 기록 저장",
-  "inbound.batch.read": "입고 차수 조회",
-  "inbound.batch.create": "입고 차수 생성",
-  "inbound.batch.update": "입고 차수 수정",
-  "inbound.batch.delete": "입고 차수 삭제",
-  "inbound.purchase.confirm": "매입 확정",
-  "inbound.purchase-price.save": "매입가 저장",
-  "shipment.orders.read": "출고 주문 조회",
-  "shipment.delivering.read": "배송 중 목록 조회",
-  "shipment.print-history.read": "출고 출력 이력 조회",
-  "shipment.inventory-candidates.read": "출고 재고 후보 조회",
-  "shipment.address-change.read": "배송지 변경 건 조회",
-  "shipment.packing-check": "포장 검증",
-  "shipment.print-batch.create": "출고 목록 생성",
-  "shipment.print-batch.update": "출고 목록 상태 변경",
-  "return.action": "반품 처리",
-  "return.list.read": "반품 목록 조회",
-  "statistics.dashboard.read": "통계 대시보드 조회",
-  "statistics.sales.read": "매출 통계 조회",
-  "sales-channel.sync-check.read": "판매 채널 동기화 점검 조회",
-  "sales-channel.sync-check.recheck-inventory": "판매 채널 재고 다시 점검",
-  "sales-channel.sync-check.repair-inventory": "판매 채널 재고수량 복구",
-  "sales-channel.write-review.action": "판매 채널 쓰기 점검 처리",
-};
+export const RESPONSE_PERFORMANCE_OPERATION_NAMES = [
+  "inventory.workspace.read", "inventory.quantity-ledger.read", "inventory.quantity-ledger.movements.read",
+  "inventory.inbound-reconciliation.read", "inventory.device.create", "inventory.device.update",
+  "inventory.device.delete", "inventory.bulk-correction", "inventory.audit.save",
+  "inspection.record.save", "inbound.batch.read", "inbound.batch.create", "inbound.batch.update",
+  "inbound.batch.delete", "inbound.purchase.confirm", "inbound.purchase-price.save",
+  "shipment.orders.read", "shipment.delivering.read", "shipment.print-history.read",
+  "shipment.inventory-candidates.read", "shipment.address-change.read", "shipment.packing-check",
+  "shipment.print-batch.create", "shipment.print-batch.update", "return.action", "return.list.read",
+  "statistics.dashboard.read", "statistics.sales.read", "sales-channel.sync-check.read",
+  "sales-channel.sync-check.recheck-inventory", "sales-channel.sync-check.repair-inventory",
+  "sales-channel.write-review.action",
+] as const;
 
 export type ResponsePerformanceDurationStats = {
   sampleCount: number;
@@ -91,7 +70,6 @@ export type ResponsePerformanceClientMetrics = {
 export type ResponsePerformanceOperationSummary = {
   key: string;
   operationName: string;
-  operationLabel: string;
   method: string;
   route: string;
   sampleCount: number;
@@ -112,7 +90,6 @@ export type ResponsePerformanceTraceSummary = {
   logId: number;
   traceId: string;
   operationName: string;
-  operationLabel: string;
   route: string;
   method: string;
   status: string;
@@ -188,14 +165,10 @@ export type ResponsePerformanceDetailResponse = {
 
 export type ResponsePerformanceErrorResponse = {
   ok: false;
-  message: string;
+  code: string;
 };
 
 export type ResponsePerformanceApiResponse =
   | ResponsePerformanceReport
   | ResponsePerformanceDetailResponse
   | ResponsePerformanceErrorResponse;
-
-export function responsePerformanceOperationLabel(operationName: string) {
-  return RESPONSE_PERFORMANCE_OPERATION_LABELS[operationName] ?? operationName;
-}

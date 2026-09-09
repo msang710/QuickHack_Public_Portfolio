@@ -12,7 +12,6 @@ import {
 } from "@/quickhack_shared/core/time";
 import {
   INVENTORY_STATUS,
-  INVENTORY_STATUS_LABELS,
   type InventoryStatusCode,
 } from "@/quickhack_shared/inventory/inventory-status";
 import { INVENTORY_QUANTITY_MOVEMENT_TYPE } from "@/quickhack_shared/inventory/inventory-quantity-movement";
@@ -110,19 +109,16 @@ export type InventoryStatisticsSaleInput = {
 
 type InventoryStatisticsStatusGroupDefinition = {
   key: InventoryStatisticsStatusGroupKey;
-  label: string;
   statuses: readonly InventoryStatusCode[];
 };
 
 export const INVENTORY_STATISTICS_STATUS_GROUPS = [
   {
     key: "SELLABLE",
-    label: "판매 가능",
     statuses: [INVENTORY_STATUS.sellable],
   },
   {
     key: "ORDER_ALLOCATED",
-    label: "주문 배정",
     statuses: [
       INVENTORY_STATUS.reserved,
       INVENTORY_STATUS.packing,
@@ -132,7 +128,6 @@ export const INVENTORY_STATISTICS_STATUS_GROUPS = [
   },
   {
     key: "SALES_RESTRICTED",
-    label: "판매 제한·점검",
     statuses: [
       INVENTORY_STATUS.hold,
       INVENTORY_STATUS.defective,
@@ -141,22 +136,18 @@ export const INVENTORY_STATISTICS_STATUS_GROUPS = [
   },
   {
     key: "DELIVERING",
-    label: "배송 중",
     statuses: [INVENTORY_STATUS.delivering],
   },
   {
     key: "TRACKING_EXCEPTION",
-    label: "배송 추적 예외",
     statuses: [INVENTORY_STATUS.noneTracking],
   },
   {
     key: "FINAL_DELIVERY",
-    label: "판매 종결",
     statuses: [INVENTORY_STATUS.finalDelivery],
   },
   {
     key: "CLAIM_LOCATION_UNKNOWN",
-    label: "고객 클레임 진행·물류 위치 미확정",
     statuses: [
       INVENTORY_STATUS.returnRequested,
       INVENTORY_STATUS.exchangeRequested,
@@ -197,31 +188,26 @@ export const INVENTORY_STATISTICS_LONG_TERM_STATUSES = new Set<string>([
 const INVENTORY_STATISTICS_AGE_BUCKETS = [
   {
     key: "DAYS_0_29",
-    label: "0~29일",
     fromDays: 0,
     toDays: 29,
   },
   {
     key: "DAYS_30_59",
-    label: "30~59일",
     fromDays: 30,
     toDays: 59,
   },
   {
     key: "DAYS_60_89",
-    label: "60~89일",
     fromDays: 60,
     toDays: 89,
   },
   {
     key: "DAYS_90_PLUS",
-    label: "90일 이상",
     fromDays: 90,
     toDays: null,
   },
 ] as const satisfies readonly {
   key: InventoryStatisticsAgeBucketKey;
-  label: string;
   fromDays: number;
   toDays: number | null;
 }[];
@@ -388,13 +374,11 @@ function currentGroups(
   return INVENTORY_STATISTICS_STATUS_GROUPS.map((group) => {
     const statuses = group.statuses.map((status) => ({
       status,
-      label: INVENTORY_STATUS_LABELS[status],
       quantity: exposesQuantity ? quantities.get(status) ?? 0 : null,
     }));
 
     return {
       key: group.key,
-      label: group.label,
       quantity: exposesQuantity
         ? statuses.reduce(
             (sum, status) => sum + (status.quantity ?? 0),
@@ -960,14 +944,14 @@ function validatePgMovementHistory(input: {
 function periodTurnover(
   soldQuantity: number,
   averageWarehouseQuantity: number | null,
-  reason?: string
+  unavailableReasonCode?: InventoryStatisticsTurnoverMetric["unavailableReasonCode"]
 ): InventoryStatisticsTurnoverMetric {
-  if (reason) {
+  if (unavailableReasonCode) {
     return {
       value: null,
       soldQuantity,
       averageWarehouseQuantity,
-      unavailableReason: reason,
+      unavailableReasonCode,
     };
   }
 
@@ -976,7 +960,7 @@ function periodTurnover(
       value: null,
       soldQuantity,
       averageWarehouseQuantity,
-      unavailableReason: "기간 재고 원장을 복원할 수 없습니다.",
+      unavailableReasonCode: "INVENTORY_LEDGER_UNAVAILABLE",
     };
   }
 
@@ -986,14 +970,13 @@ function periodTurnover(
           value: null,
           soldQuantity,
           averageWarehouseQuantity,
-          unavailableReason: "선택 기간에 창고 재고와 판매가 없습니다.",
+          unavailableReasonCode: "NO_INVENTORY_OR_SALES",
         }
       : {
           value: null,
           soldQuantity,
           averageWarehouseQuantity,
-          unavailableReason:
-            "판매 완료는 있지만 창고 보유 재고 분모가 0입니다.",
+          unavailableReasonCode: "SALES_WITHOUT_INVENTORY_DENOMINATOR",
         };
   }
 
@@ -1386,7 +1369,7 @@ function periodStatistics(
   const turnover = periodTurnover(
     salesCompletedQuantity,
     averageWarehouseQuantity,
-    salesReady ? undefined : "판매 원장 시각을 검증할 수 없습니다."
+    salesReady ? undefined : "SALE_LEDGER_TIMESTAMP_UNVERIFIED"
   );
   const periodSalesBySku = new Map<number, number>();
 
@@ -1422,7 +1405,7 @@ function periodStatistics(
         turnover: periodTurnover(
           soldQuantity,
           average,
-          salesReady ? undefined : "판매 원장 시각을 검증할 수 없습니다."
+          salesReady ? undefined : "SALE_LEDGER_TIMESTAMP_UNVERIFIED"
         ),
       };
     })

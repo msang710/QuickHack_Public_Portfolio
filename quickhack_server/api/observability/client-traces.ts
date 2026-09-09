@@ -31,14 +31,14 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "Login is required." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (bodyText.length > 65_536) {
     return NextResponse.json(
-      { ok: false, message: "Request body is too large." },
+      { ok: false, code: "REQUEST_BODY_TOO_LARGE" },
       { status: 413 }
     );
   }
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     payload = JSON.parse(bodyText);
   } catch {
     return NextResponse.json(
-      { ok: false, message: "Request body must be valid JSON." },
+      { ok: false, code: "INVALID_JSON_BODY" },
       { status: 400 }
     );
   }
@@ -62,7 +62,6 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_CLIENT_TRACE_DATA",
-      message: "Invalid trace data.",
       cause: error,
     });
   }

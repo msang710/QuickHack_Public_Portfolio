@@ -58,14 +58,14 @@ export async function POST(request: NextRequest) {
 
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "로그인이 필요합니다." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
 
       if (!canAccessRole(user.role, "MANAGER")) {
         return NextResponse.json(
-          { ok: false, message: "기존 주문 재매칭 권한이 없습니다." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
@@ -80,10 +80,7 @@ export async function POST(request: NextRequest) {
         )
       ) {
         return NextResponse.json(
-          sensitiveAuthRequiredResponse(
-            "기존 주문 재매칭은 OTP 인증이 필요합니다.",
-            SENSITIVE_ACTIONS.channelOrderMatching
-          ),
+          sensitiveAuthRequiredResponse(SENSITIVE_ACTIONS.channelOrderMatching),
           { status: 403 }
         );
       }
@@ -92,7 +89,7 @@ export async function POST(request: NextRequest) {
 
       if (!body) {
         return NextResponse.json(
-          { ok: false, message: "요청 본문이 올바르지 않습니다." },
+          { ok: false, code: "INVALID_BODY" },
           { status: 400 }
         );
       }

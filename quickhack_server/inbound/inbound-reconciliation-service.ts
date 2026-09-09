@@ -55,7 +55,7 @@ export class InboundReconciliationInputError extends PublicError {
 function assertSqlDate(value: string, label: string) {
   if (!SQL_DATE_PATTERN.test(value)) {
     throw new InboundReconciliationInputError(
-      `${label}은 YYYY-MM-DD 형식이어야 합니다.`
+      "INBOUND_RECONCILIATION_INPUT_INVALID"
     );
   }
 
@@ -66,7 +66,7 @@ function assertSqlDate(value: string, label: string) {
     parsed.toISOString().slice(0, 10) !== value
   ) {
     throw new InboundReconciliationInputError(
-      `${label}에 실제로 존재하는 날짜를 입력하세요.`
+      "INBOUND_RECONCILIATION_INPUT_INVALID"
     );
   }
 }
@@ -84,7 +84,7 @@ export function normalizeInboundReconciliationDetailScope(
     )
   ) {
     throw new InboundReconciliationInputError(
-      "scope는 UNASSIGNED, MISMATCHED, SHORTAGE, EXCESS 중 하나여야 합니다."
+      "INBOUND_RECONCILIATION_INPUT_INVALID"
     );
   }
 

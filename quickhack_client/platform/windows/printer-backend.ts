@@ -138,7 +138,7 @@ async function bridgePath(
       platform: "win32",
       dependency: "quickhack-raw-print",
       recovery: "Repair the QuickHack client printer runtime.",
-      message: "The QuickHack RAW printer bridge is invalid.",
+          message: "DEPENDENCY_INVALID",
     });
   }
   throw dependencyMissing({
@@ -147,7 +147,7 @@ async function bridgePath(
     platform: "win32",
     dependency: "quickhack-raw-print",
     recovery: "Repair the QuickHack client printer runtime.",
-    message: "The QuickHack RAW printer bridge is missing.",
+        message: "DEPENDENCY_MISSING",
   });
 }
 
@@ -218,7 +218,7 @@ export function createWindowsPrinterBackend(
             platform: "win32",
             dependency: "powershell",
             recovery: "Repair the Windows system PowerShell installation.",
-            message: "The Windows printer process dependency is missing.",
+          message: "DEPENDENCY_MISSING",
           });
         }
         const listError = new Error("The Windows printer queue list could not be read.");

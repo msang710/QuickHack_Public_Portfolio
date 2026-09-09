@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
+import type { WorkflowFamily } from "@/quickhack_shared/desktop/workflow-family";
+export { menuWorkflowFamily } from "@/quickhack_shared/desktop/workflow-family";
+export type { WorkflowFamily } from "@/quickhack_shared/desktop/workflow-family";
 
 export const WORKFLOW_ADMISSION_COOKIE = "quickhack_workflow_admission";
 export const WORKFLOW_ADMISSION_MAX_AGE_SECONDS = 30 * 60;
-export type WorkflowFamily = "INSPECTION" | "INVENTORY" | "SHIPMENT" | "RETURNS" | "MANUAL_MATCHING" | "ACCOUNT";
 
 export type ClientCompatibilityPolicy = {
   clientFamily: string;
@@ -76,15 +78,5 @@ export function protectedWorkflowFamily(pathname: string): WorkflowFamily | null
   if (/^\/api\/coupang\/returns(?:\/|$)/u.test(pathname)) return "RETURNS";
   if (/^\/api\/coupang\/manual-order-matches(?:\/|$)/u.test(pathname)) return "MANUAL_MATCHING";
   if (/^\/api\/auth\/(?:me|mobile-devices)(?:\/|$)/u.test(pathname)) return "ACCOUNT";
-  return null;
-}
-
-export function menuWorkflowFamily(menuId: string): WorkflowFamily | null {
-  if (menuId.startsWith("inbound-")) return "INSPECTION";
-  if (menuId.startsWith("inventory-")) return "INVENTORY";
-  if (menuId.startsWith("shipment-") || menuId.startsWith("invoice-")) return "SHIPMENT";
-  if (menuId.startsWith("return-")) return "RETURNS";
-  if (menuId === "channel-manual-order-match") return "MANUAL_MATCHING";
-  if (menuId === "personal-settings") return "ACCOUNT";
   return null;
 }

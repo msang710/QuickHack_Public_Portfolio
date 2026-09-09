@@ -18,7 +18,7 @@ export async function authorizeAccountManagement(request: NextRequest) {
     return {
       authorized: false as const,
       response: NextResponse.json(
-        { ok: false, message: "로그인이 필요합니다." },
+        { ok: false, code: "AUTH_REQUIRED" },
         { status: 401 }
       ),
     };
@@ -30,7 +30,7 @@ export async function authorizeAccountManagement(request: NextRequest) {
     return {
       authorized: false as const,
       response: NextResponse.json(
-        { ok: false, message: "사용자 계정 관리 권한이 없습니다." },
+        { ok: false, code: "FORBIDDEN" },
         { status: 403 }
       ),
     };
@@ -45,10 +45,7 @@ export async function authorizeAccountManagement(request: NextRequest) {
     return {
       authorized: false as const,
       response: NextResponse.json(
-        sensitiveAuthRequiredResponse(
-          "사용자 계정 관리는 OTP 인증이 필요합니다.",
-          SENSITIVE_ACTIONS.accountManagement
-        ),
+        sensitiveAuthRequiredResponse(SENSITIVE_ACTIONS.accountManagement),
         { status: 403 }
       ),
     };

@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { RefreshCcw } from "lucide-react";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { FeedbackBanner } from "@/quickhack_client/components/ui/feedback-banner";
@@ -60,6 +62,7 @@ function formatPrintDateTime(value: string) {
 }
 
 export function ShipmentPrintedListView() {
+  const t = useTranslations("shipment.printed");
   const [rows, setRows] = React.useState<ShipmentPrintedRow[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [message, setMessage] = React.useState("");
@@ -77,7 +80,7 @@ export function ShipmentPrintedListView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "오늘의 출고 목록을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("fallback.loadFailed")));
       }
 
       setRows(payload.items ?? []);
@@ -87,7 +90,7 @@ export function ShipmentPrintedListView() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -103,7 +106,7 @@ export function ShipmentPrintedListView() {
     () => [
       {
         key: "printedAt",
-        label: "출력시각",
+        label: t("columns.printedAt"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => formatPrintDateTime(row.printedAt),
@@ -113,7 +116,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "batchLabel",
-        label: "차수",
+        label: t("columns.batch"),
         width: "130px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs font-medium",
         text: (row) => row.batchLabel,
@@ -141,7 +144,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "uniqueNo",
-        label: "고유번호",
+        label: t("columns.uniqueId"),
         width: "120px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.uniqueNo,
@@ -149,7 +152,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "warranty",
-        label: "보증서",
+        label: t("columns.warranty"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.warranty,
@@ -157,7 +160,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "saleGrade",
-        label: "판매등급",
+        label: t("columns.saleGrade"),
         width: "110px",
         cellClassName: "flex items-center px-3",
         text: (row) => row.saleGrade,
@@ -170,7 +173,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "model",
-        label: "기종",
+        label: t("columns.model"),
         width: "minmax(160px,1fr)",
         cellClassName: "flex min-w-0 items-center px-3",
         text: (row) => row.model,
@@ -178,7 +181,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "storage",
-        label: "용량",
+        label: t("columns.storage"),
         width: "100px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.storage,
@@ -186,7 +189,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "color",
-        label: "색상",
+        label: t("columns.color"),
         width: "120px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.color,
@@ -194,7 +197,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "receiverName",
-        label: "수신인",
+        label: t("columns.receiver"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverName,
@@ -204,7 +207,7 @@ export function ShipmentPrintedListView() {
       },
       {
         key: "receiverAddress",
-        label: "주소",
+        label: t("columns.address"),
         width: "minmax(280px,1.5fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverAddress,
@@ -213,21 +216,21 @@ export function ShipmentPrintedListView() {
         ),
       },
     ],
-    []
+    [t]
   );
 
   return (
     <WorkspacePageFrame className="p-5">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">오늘의 출고 목록</h2>
+          <h2 className="text-sm font-semibold">{t("title")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            오늘 출력된 출고 목록 {rows.length.toLocaleString("ko-KR")}건
+            {t("summary", { count: rows.length })}
           </p>
         </div>
         <Button variant="outline" onClick={loadRows} disabled={isLoading}>
           <RefreshCcw className="size-4" />
-          목록 새로고침
+          {t("refresh")}
         </Button>
       </div>
 
@@ -243,8 +246,8 @@ export function ShipmentPrintedListView() {
         rowKey={(row) => row.allocationId}
         emptyMessage={
           isLoading
-            ? "오늘의 출고 목록을 불러오는 중입니다."
-            : "오늘 출력된 출고 목록이 없습니다."
+            ? t("loading")
+            : t("empty")
         }
         minWidth="1560px"
         rowHeight={44}

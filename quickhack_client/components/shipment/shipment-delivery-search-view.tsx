@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { RefreshCcw, RotateCcw, Search } from "lucide-react";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -22,9 +24,7 @@ import { ShipmentDeliverySearchDetailSheet } from "@/quickhack_client/components
 import { todayKstDate } from "@/quickhack_shared/core/time";
 import {
   SHIPMENT_DELIVERY_DATE_BASIS,
-  SHIPMENT_DELIVERY_DATE_BASIS_LABELS,
   SHIPMENT_DELIVERY_STAGE,
-  SHIPMENT_DELIVERY_STAGE_LABELS,
   type ShipmentDeliveryDateBasis,
   type ShipmentDeliverySearchDetail,
   type ShipmentDeliverySearchDetailResponse,
@@ -101,13 +101,6 @@ function stageVariant(stage: ShipmentDeliveryStage) {
   return "secondary" as const;
 }
 
-function activitySourceLabel(value: ShipmentDeliverySearchRow["lastActivitySource"]) {
-  if (value === "TRACKING") return "배송 추적";
-  if (value === "CARRIER") return "택배사 처리";
-  if (value === "CHANNEL") return "쿠팡 처리";
-  return "포장 정보";
-}
-
 function Filters({
   value,
   disabled,
@@ -121,6 +114,27 @@ function Filters({
   onApply: () => void;
   onReset: () => void;
 }) {
+  const t = useTranslations("shipment.deliverySearch");
+
+  function dateBasisLabel(value: ShipmentDeliveryDateBasis) {
+    if (value === "OUTBOUND_CONFIRMED_AT") return t("dateBasis.outboundConfirmed");
+    if (value === "INVOICE_ALLOCATED_AT") return t("dateBasis.invoiceAllocated");
+    if (value === "CARRIER_REGISTERED_AT") return t("dateBasis.carrierRegistered");
+    if (value === "TRACKING_SCANNED_AT") return t("dateBasis.trackingScanned");
+    return t("dateBasis.ordered");
+  }
+
+  function stageLabel(value: ShipmentDeliveryStage) {
+    if (value === "INVOICE_ALLOCATED") return t("stage.invoiceAllocated");
+    if (value === "REGISTERED") return t("stage.registered");
+    if (value === "IN_TRANSIT") return t("stage.inTransit");
+    if (value === "DELIVERED") return t("stage.delivered");
+    if (value === "ON_HOLD") return t("stage.onHold");
+    if (value === "EXCEPTION") return t("stage.exception");
+    if (value === "CLOSED") return t("stage.closed");
+    return t("stage.preparing");
+  }
+
   function patch(next: Partial<DeliverySearchFilters>) {
     onChange({ ...value, ...next });
   }
@@ -142,15 +156,15 @@ function Filters({
         >
           <SelectTrigger
             className="w-36"
-            aria-label="배송 조회 기간 기준"
+            aria-label={t("filters.dateBasis")}
           >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(SHIPMENT_DELIVERY_DATE_BASIS_LABELS).map(
-              ([key, label]) => (
+            {Object.values(SHIPMENT_DELIVERY_DATE_BASIS).map(
+              (key) => (
                 <SelectItem key={key} value={key}>
-                  {label}
+                  {dateBasisLabel(key)}
                 </SelectItem>
               )
             )}
@@ -159,7 +173,7 @@ function Filters({
         <Input
           type="date"
           className="w-36"
-          aria-label="배송 조회 시작일"
+          aria-label={t("filters.from")}
           value={value.from}
           onChange={(event) => patch({ from: event.target.value })}
         />
@@ -167,7 +181,7 @@ function Filters({
         <Input
           type="date"
           className="w-36"
-          aria-label="배송 조회 종료일"
+          aria-label={t("filters.to")}
           value={value.to}
           onChange={(event) => patch({ to: event.target.value })}
         />
@@ -179,15 +193,15 @@ function Filters({
             })
           }
         >
-          <SelectTrigger className="w-36" aria-label="배송 상태">
+          <SelectTrigger className="w-36" aria-label={t("filters.allStages")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">전체 상태</SelectItem>
-            {Object.entries(SHIPMENT_DELIVERY_STAGE_LABELS).map(
-              ([key, label]) => (
+            <SelectItem value="ALL">{t("filters.allStages")}</SelectItem>
+            {Object.values(SHIPMENT_DELIVERY_STAGE).map(
+              (key) => (
                 <SelectItem key={key} value={key}>
-                  {label}
+                  {stageLabel(key)}
                 </SelectItem>
               )
             )}
@@ -199,12 +213,12 @@ function Filters({
             patch({ carrier: carrier as DeliverySearchFilters["carrier"] })
           }
         >
-          <SelectTrigger className="w-28" aria-label="택배사">
+          <SelectTrigger className="w-28" aria-label={t("filters.carrier")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">전체 택배사</SelectItem>
-            <SelectItem value="LOGEN">로젠택배</SelectItem>
+            <SelectItem value="ALL">{t("filters.allCarriers")}</SelectItem>
+            <SelectItem value="LOGEN">{t("filters.logen")}</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -213,13 +227,13 @@ function Filters({
             patch({ packing: packing as DeliverySearchFilters["packing"] })
           }
         >
-          <SelectTrigger className="w-28" aria-label="포장 유형">
+          <SelectTrigger className="w-28" aria-label={t("filters.packing")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">전체 포장</SelectItem>
-            <SelectItem value="SINGLE">단일 포장</SelectItem>
-            <SelectItem value="COMBINED">합포장</SelectItem>
+            <SelectItem value="ALL">{t("filters.allPacking")}</SelectItem>
+            <SelectItem value="SINGLE">{t("filters.single")}</SelectItem>
+            <SelectItem value="COMBINED">{t("filters.combined")}</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -228,12 +242,12 @@ function Filters({
             patch({ review: review as DeliverySearchFilters["review"] })
           }
         >
-          <SelectTrigger className="w-32" aria-label="확인 필요 여부">
+          <SelectTrigger className="w-32" aria-label={t("filters.review")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">전체 확인 상태</SelectItem>
-            <SelectItem value="REQUIRED">확인 필요만</SelectItem>
+            <SelectItem value="ALL">{t("filters.allReview")}</SelectItem>
+            <SelectItem value="REQUIRED">{t("filters.reviewOnly")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -243,13 +257,13 @@ function Filters({
           <Input
             className="pl-9"
             value={value.search}
-            placeholder="주문번호, 묶음배송번호, 송장번호, PG, 수취인 검색"
+            placeholder={t("filters.searchPlaceholder")}
             onChange={(event) => patch({ search: event.target.value })}
           />
         </div>
         <Button type="submit" disabled={disabled}>
           <Search className="size-4" />
-          조회
+          {t("actions.apply")}
         </Button>
         <Button
           type="button"
@@ -258,7 +272,7 @@ function Filters({
           onClick={onReset}
         >
           <RotateCcw className="size-4" />
-          초기화
+          {t("actions.reset")}
         </Button>
       </div>
     </form>
@@ -266,6 +280,25 @@ function Filters({
 }
 
 export function ShipmentDeliverySearchView() {
+  const t = useTranslations("shipment.deliverySearch");
+
+  const stageLabel = React.useCallback((value: ShipmentDeliveryStage) => {
+    if (value === "INVOICE_ALLOCATED") return t("stage.invoiceAllocated");
+    if (value === "REGISTERED") return t("stage.registered");
+    if (value === "IN_TRANSIT") return t("stage.inTransit");
+    if (value === "DELIVERED") return t("stage.delivered");
+    if (value === "ON_HOLD") return t("stage.onHold");
+    if (value === "EXCEPTION") return t("stage.exception");
+    if (value === "CLOSED") return t("stage.closed");
+    return t("stage.preparing");
+  }, [t]);
+
+  const activitySourceLabel = React.useCallback((value: ShipmentDeliverySearchRow["lastActivitySource"]) => {
+    if (value === "TRACKING") return t("activity.tracking");
+    if (value === "CARRIER") return t("activity.carrier");
+    if (value === "CHANNEL") return t("activity.channel");
+    return t("activity.package");
+  }, [t]);
   const initialFilters = React.useMemo(() => defaultFilters(), []);
   const [draftFilters, setDraftFilters] =
     React.useState<DeliverySearchFilters>(initialFilters);
@@ -316,7 +349,7 @@ export function ShipmentDeliverySearchView() {
           | null;
         if (!response.ok || !payload?.ok) {
           throw new Error(
-            payload?.message || "전체 배송 건을 불러오지 못했습니다."
+            legacyApiMessage(payload, t("fallback.listLoadFailed"))
           );
         }
         const nextRows = payload.items ?? [];
@@ -330,7 +363,7 @@ export function ShipmentDeliverySearchView() {
         setLoadingMore(false);
       }
     },
-    []
+    [t]
   );
 
   React.useEffect(() => {
@@ -354,7 +387,7 @@ export function ShipmentDeliverySearchView() {
         | null;
       if (!response.ok || !payload?.ok || !payload.detail) {
         throw new Error(
-          payload?.message || "배송 건 상세 정보를 불러오지 못했습니다."
+          legacyApiMessage(payload, t("fallback.detailLoadFailed"))
         );
       }
       setDetail(payload.detail);
@@ -364,7 +397,7 @@ export function ShipmentDeliverySearchView() {
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [t]);
 
   function applyFilters() {
     if (
@@ -372,7 +405,7 @@ export function ShipmentDeliverySearchView() {
       draftFilters.to &&
       draftFilters.from > draftFilters.to
     ) {
-      setMessage("조회 시작일은 종료일보다 늦을 수 없습니다.");
+      setMessage(t("validation.invalidDateRange"));
       return;
     }
     const next = { ...draftFilters, search: draftFilters.search.trim() };
@@ -405,7 +438,7 @@ export function ShipmentDeliverySearchView() {
     () => [
       {
         key: "status",
-        label: "상태",
+        label: t("columns.status"),
         width: "155px",
         sortable: false,
         filterable: false,
@@ -413,13 +446,13 @@ export function ShipmentDeliverySearchView() {
         render: (row) => (
           <div className="flex min-w-0 flex-col items-start gap-1">
             <Badge variant={stageVariant(row.deliveryStage)}>
-              {SHIPMENT_DELIVERY_STAGE_LABELS[row.deliveryStage]}
+              {stageLabel(row.deliveryStage)}
             </Badge>
             {row.reviewRequired ? (
-              <Badge variant="warning">확인 필요 {row.reviewCount}</Badge>
+              <Badge variant="warning">{t("reviewCount", { count: row.reviewCount })}</Badge>
             ) : row.channelStatuses.length > 0 ? (
               <span className="max-w-full truncate text-[11px] text-muted-foreground">
-                쿠팡 {row.channelStatuses.join(", ")}
+                {t("values.channel")} {row.channelStatuses.join(", ")}
               </span>
             ) : null}
           </div>
@@ -427,7 +460,7 @@ export function ShipmentDeliverySearchView() {
       },
       {
         key: "invoice",
-        label: "송장",
+        label: t("columns.invoice"),
         width: "175px",
         sortable: false,
         filterable: false,
@@ -438,9 +471,9 @@ export function ShipmentDeliverySearchView() {
               {textOrDash(row.trackingNumber)}
             </div>
             <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-              <span>{row.carrierCode || "송장 미발급"}</span>
+              <span>{row.carrierCode || t("values.invoiceMissing")}</span>
               {row.reissued ? (
-                <Badge variant="purple">재발급 rev.{row.revisionNo}</Badge>
+                <Badge variant="purple">{t("values.reissued", { revision: row.revisionNo ?? 0 })}</Badge>
               ) : null}
             </div>
           </div>
@@ -448,7 +481,7 @@ export function ShipmentDeliverySearchView() {
       },
       {
         key: "order",
-        label: "주문",
+        label: t("columns.order"),
         width: "175px",
         sortable: false,
         filterable: false,
@@ -457,15 +490,15 @@ export function ShipmentDeliverySearchView() {
           <div className="min-w-0">
             <div className="truncate">{row.representativeOrderId}</div>
             <div className="mt-1 text-[11px] text-muted-foreground">
-              {row.orderCount > 1 ? `외 ${row.orderCount - 1}건 · ` : ""}
-              묶음배송 {row.shipmentBoxCount}건
+              {row.orderCount > 1 ? t("values.orderRemainder", { count: row.orderCount - 1 }) : ""}
+              {t("values.shipmentBoxes", { count: row.shipmentBoxCount })}
             </div>
           </div>
         ),
       },
       {
         key: "productPackage",
-        label: "상품·포장",
+        label: t("columns.productPackage"),
         width: "minmax(260px,1fr)",
         sortable: false,
         filterable: false,
@@ -482,11 +515,11 @@ export function ShipmentDeliverySearchView() {
                 }
               >
                 {row.packingType === "COMBINED"
-                  ? `합포장 ${row.memberCount}개`
-                  : "단일 포장"}
+                  ? t("packing.combined", { count: row.memberCount })
+                  : t("packing.single")}
               </Badge>
               {row.splitShipment ? (
-                <Badge variant="purple">분할배송</Badge>
+                <Badge variant="purple">{t("packing.split")}</Badge>
               ) : null}
             </div>
           </div>
@@ -494,7 +527,7 @@ export function ShipmentDeliverySearchView() {
       },
       {
         key: "outbound",
-        label: "출고",
+        label: t("columns.outbound"),
         width: "145px",
         sortable: false,
         filterable: false,
@@ -507,14 +540,14 @@ export function ShipmentDeliverySearchView() {
             <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
               {row.printLineNumbers.length
                 ? `No. ${row.printLineNumbers.join(", ")}`
-                : "출력 전"}
+                : t("values.notPrinted")}
             </div>
           </div>
         ),
       },
       {
         key: "receiverRegion",
-        label: "수취인·지역",
+        label: t("columns.receiverRegion"),
         width: "190px",
         sortable: false,
         filterable: false,
@@ -534,7 +567,7 @@ export function ShipmentDeliverySearchView() {
       },
       {
         key: "latestTracking",
-        label: "최근 배송 현황",
+        label: t("columns.latestTracking"),
         width: "205px",
         sortable: false,
         filterable: false,
@@ -552,7 +585,7 @@ export function ShipmentDeliverySearchView() {
       },
       {
         key: "lastActivity",
-        label: "최근 처리",
+        label: t("columns.lastActivity"),
         width: "165px",
         sortable: false,
         filterable: false,
@@ -569,16 +602,16 @@ export function ShipmentDeliverySearchView() {
         ),
       },
     ],
-    []
+    [activitySourceLabel, stageLabel, t]
   );
 
   return (
     <WorkspacePageFrame className="gap-3 p-4">
       <div className="flex shrink-0 items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold">전체 배송 건 검색</h2>
+          <h2 className="text-base font-semibold">{t("title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            물리 포장 단위로 송장 준비부터 배송 완료·종료 건까지 검색합니다.
+            {t("subtitle")}
           </p>
         </div>
         <Button
@@ -588,7 +621,7 @@ export function ShipmentDeliverySearchView() {
           onClick={() => void loadPage(appliedFilters, null, false)}
         >
           <RefreshCcw className="size-4" />
-          새로고침
+          {t("actions.refresh")}
         </Button>
       </div>
 
@@ -609,10 +642,9 @@ export function ShipmentDeliverySearchView() {
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex shrink-0 items-center justify-between text-xs text-muted-foreground">
           <span>
-            검색 결과 {totalCount.toLocaleString("ko-KR")}건 · 현재{" "}
-            {rows.length.toLocaleString("ko-KR")}건 표시
+            {t("resultSummary", { total: totalCount, visible: rows.length })}
           </span>
-          <span>행을 클릭하면 배송 상세 이력을 확인할 수 있습니다.</span>
+          <span>{t("hint")}</span>
         </div>
         <VirtualizedDataGrid
           rows={rows}
@@ -622,8 +654,8 @@ export function ShipmentDeliverySearchView() {
           onRowClick={openDetail}
           emptyMessage={
             loading
-              ? "전체 배송 건을 불러오는 중입니다."
-              : "조건에 맞는 배송 건이 없습니다."
+              ? t("loading")
+              : t("empty")
           }
           minWidth="1470px"
           rowHeight={72}
@@ -641,7 +673,7 @@ export function ShipmentDeliverySearchView() {
               <RefreshCcw
                 className={`size-4 ${loadingMore ? "animate-spin" : ""}`}
               />
-              {loadingMore ? "불러오는 중" : "더 보기"}
+              {loadingMore ? t("actions.loading") : t("actions.loadMore")}
             </Button>
           </div>
         ) : null}

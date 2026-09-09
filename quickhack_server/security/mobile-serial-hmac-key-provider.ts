@@ -241,7 +241,7 @@ export class MobileSerialHmacKeyProvider implements MobileSerialHmacKeyAccess {
       this.initialization = null;
       throw publicUnavailable(
         "MOBILE_SERIAL_KEY_UNAVAILABLE",
-        "모바일 기기 식별 키를 사용할 수 없어 기기 등록과 포장 검증을 차단했습니다."
+        "MOBILE_SERIAL_KEY_UNAVAILABLE"
       );
     }
   }

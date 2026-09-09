@@ -16,7 +16,6 @@ export async function POST(request: NextRequest) {
       return apiFailureResponse({
         status: 400,
         code: "RESTORE_BARRIER_REQUEST_INVALID",
-        message: "The restore security barrier epoch is invalid.",
       });
     }
     const state = await prisma.server_instance_state.findUnique({

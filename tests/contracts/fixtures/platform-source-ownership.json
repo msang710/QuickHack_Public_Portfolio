@@ -15,7 +15,7 @@
     { "path": "quickhack_client/components/security/sensitive-action-guards.tsx", "token": "dpapi", "count": 1, "classification": "observation-only" },
     { "path": "quickhack_client/components/user/account-totp-panel.tsx", "token": "dpapi", "count": 1, "classification": "observation-only" },
     { "path": "quickhack_client/platform/compose-client-platform.ts", "token": "process.platform", "count": 1, "classification": "composition-root" },
-    { "path": "quickhack_client/platform/linux/printer-backend.ts", "token": "cups", "count": 12, "classification": "adapter-owned" },
+    { "path": "quickhack_client/platform/linux/printer-backend.ts", "token": "cups", "count": 8, "classification": "adapter-owned" },
     { "path": "quickhack_client/platform/windows/adb-executable-resolver.ts", "token": "path.win32", "count": 6, "classification": "adapter-owned" },
     { "path": "quickhack_client/platform/windows/printer-backend.ts", "token": "path.win32", "count": 4, "classification": "adapter-owned" },
     { "path": "quickhack_client/platform/windows/printer-backend.ts", "token": "powershell", "count": 5, "classification": "adapter-owned" },

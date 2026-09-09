@@ -133,16 +133,11 @@ function messageFromResponseText(text: string) {
   return text.trim().slice(0, 500);
 }
 
-export function getServerProxyErrorMessage(error: unknown) {
+export function getServerProxyErrorCode(error: unknown): ServerProxyErrorCode {
   if (error instanceof ServerProxyError) {
-    return error.message;
+    return error.code ?? SERVER_PROXY_ERROR_CODE.upstream;
   }
-
-  if (error instanceof Error) {
-    return `중앙 서버에 연결할 수 없습니다. ${error.message}`;
-  }
-
-  return "중앙 서버에 연결할 수 없습니다.";
+  return SERVER_PROXY_ERROR_CODE.unavailable;
 }
 
 function copySetCookie(
@@ -201,7 +196,7 @@ export async function fetchServerJson<T>(
             error instanceof Error ? error.message : ""
           );
 
-    throw new ServerProxyError(payload.message, {
+    throw new ServerProxyError(payload.code, {
       status:
         payload.code === SERVER_PROXY_ERROR_CODE.timeout ? 504 : 503,
       code: payload.code,
@@ -214,10 +209,11 @@ export async function fetchServerJson<T>(
   if (!response.ok) {
     const upstreamMessage = messageFromResponseText(text ?? "");
     throw new ServerProxyError(
-      upstreamMessage || `중앙 서버 응답 오류 (${response.status})`,
+      upstreamMessage || SERVER_PROXY_ERROR_CODE.upstream,
       {
         status: response.status,
         responseText: text ?? "",
+        code: SERVER_PROXY_ERROR_CODE.upstream,
       }
     );
   }
@@ -259,7 +255,7 @@ export async function mutateServerJson<T>(input: {
         : serverProxyUnavailablePayload(
             error instanceof Error ? error.message : ""
           );
-    throw new ServerProxyError(payload.message, {
+    throw new ServerProxyError(payload.code, {
       status: payload.code === SERVER_PROXY_ERROR_CODE.timeout ? 504 : 503,
       code: payload.code,
       retryable: payload.retryable,
@@ -270,18 +266,20 @@ export async function mutateServerJson<T>(input: {
   if (!consumed.response.ok) {
     throw new ServerProxyError(
       messageFromResponseText(consumed.text) ||
-        `중앙 서버 응답 오류 (${consumed.response.status})`,
+        SERVER_PROXY_ERROR_CODE.upstream,
       {
         status: consumed.response.status,
         responseText: consumed.text,
+        code: SERVER_PROXY_ERROR_CODE.upstream,
       }
     );
   }
   try {
     return JSON.parse(consumed.text) as T;
   } catch {
-    throw new ServerProxyError("중앙 서버가 올바른 JSON 응답을 반환하지 않았습니다.", {
+    throw new ServerProxyError(SERVER_PROXY_ERROR_CODE.invalidResponse, {
       status: 502,
+      code: SERVER_PROXY_ERROR_CODE.invalidResponse,
       responseText: consumed.text.slice(0, 500),
     });
   }

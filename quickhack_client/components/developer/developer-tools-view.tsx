@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
 import {
   AlertTriangle,
   Bug,
@@ -15,7 +17,7 @@ import {
   Smartphone,
   Wrench,
 } from "lucide-react";
-import { ROLE_LABELS, type AuthUser } from "@/quickhack_shared/auth/auth-constants";
+import type { AuthUser } from "@/quickhack_shared/auth/auth-constants";
 import type { MenuItemId } from "@/quickhack_client/components/app-shell/device-workspace-menu";
 import { useUnsavedForm } from "@/quickhack_client/components/app-shell/unsaved-changes-provider";
 import { Badge } from "@/quickhack_client/components/ui/badge";
@@ -146,6 +148,34 @@ type AdbDevicesPayload = {
   devices?: Array<Record<string, unknown>>;
 };
 
+type DeveloperToolsTranslator = ReturnType<
+  typeof useTranslations<"developer.tools">
+>;
+
+function adbWarningText(
+  device: Record<string, unknown>,
+  t: DeveloperToolsTranslator
+) {
+  const codes = Array.isArray(device.warningCodes)
+    ? device.warningCodes.map(String)
+    : [];
+  if (codes.length === 0) return String(device.warning ?? "-");
+  const detail = String(device.warningDetail ?? "-");
+  return codes
+    .map((code) => {
+      if (code === "CARRIER_REVIEW") return t("adb.warningText.carrierReview");
+      if (code === "ACCOUNT_REVIEW") return t("adb.warningText.accountReview");
+      if (code === "ACCOUNT_QUERY_FAILED") return t("adb.warningText.accountQueryFailed");
+      if (code === "ADB_OFFLINE") return t("adb.warningText.offline");
+      if (code === "ADB_UNAUTHORIZED") return t("adb.warningText.unauthorized");
+      if (code === "ADB_QUERY_FAILED") {
+        return t("adb.warningText.queryFailed", { detail });
+      }
+      return t("adb.warningText.unknown", { state: detail });
+    })
+    .join("\n");
+}
+
 type ApiSandboxResponse = {
   ok: boolean;
   message?: string;
@@ -185,12 +215,12 @@ function toneBadgeVariant(tone: Tone = "neutral") {
   }
 }
 
-function numberText(value: number | null | undefined) {
-  return typeof value === "number" ? value.toLocaleString("ko-KR") : "-";
+function numberText(value: number | null | undefined, locale: string) {
+  return typeof value === "number" ? value.toLocaleString(locale) : "-";
 }
 
-function boolText(value: unknown) {
-  return value ? "예" : "아니오";
+function boolText(value: unknown, yes: string, no: string) {
+  return value ? yes : no;
 }
 
 function bytesText(value: number) {
@@ -210,7 +240,27 @@ function bytesText(value: number) {
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit) {
+type FetchJsonFallbacks = {
+  invalidJson: (status: number) => string;
+  requestFailed: (status: number) => string;
+};
+
+function useFetchJsonFallbacks(): FetchJsonFallbacks {
+  const t = useTranslations("developer.tools.common");
+  return React.useMemo(
+    () => ({
+      invalidJson: (status: number) => t("invalidJson", { status }),
+      requestFailed: (status: number) => t("requestFailed", { status }),
+    }),
+    [t]
+  );
+}
+
+async function fetchJson<T>(
+  url: string,
+  fallbacks: FetchJsonFallbacks,
+  init?: RequestInit
+) {
   const response = await fetch(url, {
     cache: "no-store",
     ...init,
@@ -225,25 +275,22 @@ async function fetchJson<T>(url: string, init?: RequestInit) {
   try {
     payload = text ? JSON.parse(text) : null;
   } catch {
-    throw new Error(text || `응답을 JSON으로 읽지 못했습니다. (${response.status})`);
+    throw new Error(text || fallbacks.invalidJson(response.status));
   }
 
   if (!response.ok) {
-    const message =
-      payload &&
-      typeof payload === "object" &&
-      "message" in payload &&
-      typeof (payload as { message?: unknown }).message === "string"
-        ? (payload as { message: string }).message
-        : `API 요청에 실패했습니다. (${response.status})`;
-
-    throw new Error(message);
+    throw new Error(
+      legacyApiMessage(payload, fallbacks.requestFailed(response.status))
+    );
   }
 
   return payload as T;
 }
 
-function useApiResource<T>(url: string): ApiState<T> & { reload: () => Promise<void> } {
+function useApiResource<T>(
+  url: string,
+  fallbacks: FetchJsonFallbacks
+): ApiState<T> & { reload: () => Promise<void> } {
   const [state, setState] = React.useState<ApiState<T>>({
     data: null,
     loading: true,
@@ -254,7 +301,7 @@ function useApiResource<T>(url: string): ApiState<T> & { reload: () => Promise<v
     setState((current) => ({ ...current, loading: true, error: "" }));
 
     try {
-      const data = await fetchJson<T>(url);
+      const data = await fetchJson<T>(url, fallbacks);
       setState({ data, loading: false, error: "" });
     } catch (error) {
       setState({
@@ -263,7 +310,7 @@ function useApiResource<T>(url: string): ApiState<T> & { reload: () => Promise<v
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }, [url]);
+  }, [fallbacks, url]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -311,6 +358,7 @@ function StatusTile({
 }
 
 function InfoTable({ rows }: { rows: InfoRow[] }) {
+  const t = useTranslations("developer.tools");
   return (
     <div className="overflow-hidden rounded-md border bg-background">
       {rows.map((row) => (
@@ -323,7 +371,7 @@ function InfoTable({ rows }: { rows: InfoRow[] }) {
           </div>
           <div className="min-w-0 truncate font-medium">{row.value}</div>
           <div className="flex justify-end">
-            <Badge variant={toneBadgeVariant(row.tone)}>{row.note ?? "확인"}</Badge>
+            <Badge variant={toneBadgeVariant(row.tone)}>{row.note ?? t("common.check")}</Badge>
           </div>
         </div>
       ))}
@@ -344,6 +392,7 @@ function ActionRow({
   tone?: Tone;
   action?: React.ReactNode;
 }) {
+  const t = useTranslations("developer.tools");
   return (
     <div className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 border-b px-3 py-2 last:border-b-0">
       <div className="flex size-8 items-center justify-center rounded-md bg-secondary text-primary">
@@ -355,15 +404,16 @@ function ActionRow({
           {description}
         </div>
       </div>
-      {action ?? <Badge variant={toneBadgeVariant(tone)}>확인</Badge>}
+      {action ?? <Badge variant={toneBadgeVariant(tone)}>{t("common.check")}</Badge>}
     </div>
   );
 }
 
-function LoadingBox({ text = "조회 중입니다." }: { text?: string }) {
+function LoadingBox({ text }: { text?: string }) {
+  const t = useTranslations("developer.tools");
   return (
     <div className="grid min-h-32 place-items-center rounded-md border border-dashed bg-background text-sm text-muted-foreground">
-      {text}
+      {text ?? t("common.loading")}
     </div>
   );
 }
@@ -377,25 +427,36 @@ function ErrorBox({ message }: { message: string }) {
 }
 
 function DiagnosticsView({ currentUser }: { currentUser: AuthUser }) {
+  const t = useTranslations("developer.tools");
+  const systemT = useTranslations("admin.systemStatus");
+  const fetchFallbacks = useFetchJsonFallbacks();
+  const locale = useLocale();
+  const roleLabels: Record<AuthUser["role"], string> = {
+    VIEWER: t("roles.viewer"), STAFF: t("roles.staff"),
+    MANAGER: t("roles.manager"), LEADER: t("roles.leader"),
+  };
   const { data, loading, error, reload } =
-    useApiResource<DeveloperDiagnosticsPayload>("/api/developer/diagnostics");
+    useApiResource<DeveloperDiagnosticsPayload>(
+      "/api/developer/diagnostics",
+      fetchFallbacks
+    );
   const counts = data?.database.tableCounts ?? {};
   const rows: InfoRow[] = data
     ? [
         {
-          label: "로그인 사용자",
-          value: `${currentUser.displayName} / ${ROLE_LABELS[currentUser.role]}`,
+          label: t("diagnostics.user"),
+          value: `${currentUser.displayName} / ${roleLabels[currentUser.role]}`,
           tone: currentUser.isDeveloper ? "success" : "danger",
-          note: currentUser.isDeveloper ? "개발자" : "차단",
+          note: currentUser.isDeveloper ? t("common.developer") : t("common.blocked"),
         },
         {
-          label: "실행 환경",
+          label: t("diagnostics.environment"),
           value: `${data.runtime.quickHackEnvironment} / ${data.runtime.runtimeRole} / ${data.runtime.nodeEnv}`,
           tone: data.runtime.production ? "warning" : "sky",
-          note: data.runtime.production ? "운영" : "개발",
+          note: data.runtime.production ? t("diagnostics.production") : t("diagnostics.development"),
         },
         {
-          label: "Node 런타임",
+          label: t("diagnostics.node"),
           value: `${data.runtime.nodeVersion} / ${data.runtime.platform}-${data.runtime.arch} / pid ${data.runtime.pid}`,
           tone: "neutral",
           note: data.runtime.hostname,
@@ -404,21 +465,21 @@ function DiagnosticsView({ currentUser }: { currentUser: AuthUser }) {
           label: "DB",
           value: `${data.database.provider} / ${data.database.url}`,
           tone: "purple",
-          note: "연결",
+          note: t("diagnostics.connected"),
         },
         {
           label: "worker",
-          value: `등록 ${data.workers.registeredCount} / DB ${data.workers.persistedCount} / 실행 ${data.workers.runningCount}`,
+          value: t("diagnostics.workerSummary", { registered: data.workers.registeredCount, persisted: data.workers.persistedCount, running: data.workers.runningCount }),
           tone: data.workers.failedCount > 0 ? "warning" : "success",
-          note: data.workers.failedCount > 0 ? "오류 있음" : "정상",
+          note: data.workers.failedCount > 0 ? t("diagnostics.hasErrors") : t("common.normal"),
         },
       ]
     : [
         {
-          label: "로그인 사용자",
-          value: `${currentUser.displayName} / ${ROLE_LABELS[currentUser.role]}`,
+          label: t("diagnostics.user"),
+          value: `${currentUser.displayName} / ${roleLabels[currentUser.role]}`,
           tone: currentUser.isDeveloper ? "success" : "danger",
-          note: currentUser.isDeveloper ? "개발자" : "차단",
+          note: currentUser.isDeveloper ? t("common.developer") : t("common.blocked"),
         },
       ];
 
@@ -427,37 +488,37 @@ function DiagnosticsView({ currentUser }: { currentUser: AuthUser }) {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatusTile
           icon={CheckCircle2}
-          label="메뉴 접근"
-          value={currentUser.isDeveloper ? "허용" : "차단"}
+          label={t("diagnostics.menuAccess")}
+          value={currentUser.isDeveloper ? t("common.allowed") : t("common.blocked")}
           tone={currentUser.isDeveloper ? "success" : "danger"}
         />
         <StatusTile
           icon={Database}
-          label="기기 데이터"
-          value={numberText(counts.devices)}
+          label={t("diagnostics.devices")}
+          value={numberText(counts.devices, locale)}
           tone="purple"
         />
         <StatusTile
           icon={ServerCog}
-          label="worker 실패"
-          value={numberText(data?.workers.failedCount)}
+          label={t("diagnostics.workerFailures")}
+          value={numberText(data?.workers.failedCount, locale)}
           tone={data && data.workers.failedCount > 0 ? "warning" : "success"}
         />
         <StatusTile
           icon={LockKeyhole}
-          label="OTP 키"
-          value={boolText(data?.environment.hasTotpEncryptionKey)}
+          label={t("diagnostics.otpKey")}
+          value={boolText(data?.environment.hasTotpEncryptionKey, t("common.yes"), t("common.no"))}
           tone={data?.environment.hasTotpEncryptionKey ? "success" : "warning"}
         />
       </div>
 
       <Section
-        title="현재 런타임 상태"
-        description={data ? `최종 조회: ${data.checkedAt}` : "서버 진단 API를 호출합니다."}
+        title={t("diagnostics.title")}
+        description={data ? t("diagnostics.checkedAt", { date: data.checkedAt }) : t("diagnostics.description")}
         action={
           <Button size="sm" variant="outline" onClick={() => void reload()} disabled={loading}>
             <RefreshCcw className="size-4" />
-            진단 새로고침
+            {t("diagnostics.refresh")}
           </Button>
         }
       >
@@ -465,13 +526,13 @@ function DiagnosticsView({ currentUser }: { currentUser: AuthUser }) {
         {loading && !data ? <LoadingBox /> : <InfoTable rows={rows} />}
       </Section>
 
-      <Section title="주요 테이블 카운트">
+      <Section title={t("diagnostics.tableCounts")}>
         {data ? (
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {Object.entries(data.database.tableCounts).map(([key, value]) => (
               <div key={key} className="rounded-md border bg-background px-3 py-2">
                 <div className="truncate text-xs text-muted-foreground">{key}</div>
-                <div className="mt-1 text-lg font-semibold">{numberText(value)}</div>
+                <div className="mt-1 text-lg font-semibold">{numberText(value, locale)}</div>
               </div>
             ))}
           </div>
@@ -481,13 +542,22 @@ function DiagnosticsView({ currentUser }: { currentUser: AuthUser }) {
       </Section>
 
       {data?.workers.failedWorkers.length ? (
-        <Section title="worker 오류">
+        <Section title={t("diagnostics.workerErrors")}>
           <div className="overflow-hidden rounded-md border bg-background">
             {data.workers.failedWorkers.map((worker) => (
               <ActionRow
                 key={worker.workerKey}
                 icon={AlertTriangle}
-                title={`${worker.workerName} (${worker.status})`}
+                title={`${worker.workerName} (${({
+                  IDLE: systemT("status.idle"),
+                  RUNNING: systemT("status.running"),
+                  SUCCESS: systemT("status.success"),
+                  FAILED: systemT("status.failed"),
+                  RETRY: systemT("status.retry"),
+                  DISABLED: systemT("status.disabled"),
+                  STARTING: systemT("status.starting"),
+                  STOPPED: systemT("status.stopped"),
+                }[worker.status] ?? systemT("status.unknown", { code: worker.status }))})`}
                 description={worker.lastErrorMessage || worker.workerKey}
                 tone="warning"
               />
@@ -500,6 +570,8 @@ function DiagnosticsView({ currentUser }: { currentUser: AuthUser }) {
 }
 
 function ApiSandboxView() {
+  const t = useTranslations("developer.tools");
+  const fetchFallbacks = useFetchJsonFallbacks();
   const [draft, setDraft] = React.useState(defaultApiSandboxDraft);
   const [baseline, setBaseline] = React.useState(defaultApiSandboxDraft);
   const [loading, setLoading] = React.useState(false);
@@ -513,7 +585,7 @@ function ApiSandboxView() {
 
   useUnsavedForm({
     id: API_SANDBOX_FORM_ID,
-    label: "개발자 API 샌드박스 요청",
+    label: t("sandbox.form"),
     isDirty: !apiSandboxDraftsEqual(baseline, draft),
     isBusy: loading,
     discard: discardDraft,
@@ -525,10 +597,14 @@ function ApiSandboxView() {
     setError("");
 
     try {
-      const payload = await fetchJson<ApiSandboxResponse>("/api/developer/api-sandbox", {
-        method: "POST",
-        body: JSON.stringify(submittedDraft),
-      });
+      const payload = await fetchJson<ApiSandboxResponse>(
+        "/api/developer/api-sandbox",
+        fetchFallbacks,
+        {
+          method: "POST",
+          body: JSON.stringify(submittedDraft),
+        }
+      );
       setResult(payload);
       setBaseline(submittedDraft);
     } catch (runError) {
@@ -544,11 +620,11 @@ function ApiSandboxView() {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <Section
-        title="요청 작성"
-        description="내부 API만 호출할 수 있고, 보호 API와 재귀 호출은 서버에서 차단합니다."
+        title={t("sandbox.title")}
+        description={t("sandbox.description")}
         action={
           <Badge variant={draft.allowWrite ? "warning" : "success"}>
-            {draft.allowWrite ? "쓰기 허용" : "읽기 우선"}
+            {draft.allowWrite ? t("sandbox.writeAllowed") : t("sandbox.readFirst")}
           </Badge>
         }
       >
@@ -586,7 +662,7 @@ function ApiSandboxView() {
             />
             <Button onClick={() => void runRequest()} disabled={loading}>
               <Play className="size-4" />
-              요청 실행
+              {t("sandbox.run")}
             </Button>
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -601,11 +677,11 @@ function ApiSandboxView() {
               }
               className="size-4"
             />
-            POST/PATCH/DELETE 같은 쓰기 요청 실행을 허용합니다.
+            {t("sandbox.allowWrite")}
           </label>
           <div className="grid gap-2 md:grid-cols-2">
             <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              Request JSON
+              {t("sandbox.requestJson")}
               <textarea
                 className="min-h-64 rounded-md border bg-background p-3 font-mono text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={draft.body}
@@ -619,13 +695,13 @@ function ApiSandboxView() {
               />
             </label>
             <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-              Response
+              {t("sandbox.response")}
               <textarea
                 className="min-h-64 rounded-md border bg-secondary/30 p-3 font-mono text-xs text-foreground outline-none"
                 value={
                   result
                     ? JSON.stringify(responsePreview, null, 2)
-                    : error || "응답 결과가 여기에 표시됩니다."
+                    : error || t("sandbox.responsePlaceholder")
                 }
                 readOnly
               />
@@ -634,24 +710,24 @@ function ApiSandboxView() {
         </div>
       </Section>
 
-      <Section title="샌드박스 보호 규칙">
+      <Section title={t("sandbox.rules")}>
         <div className="overflow-hidden rounded-md border bg-background">
           <ActionRow
             icon={ClipboardList}
-            title="/api 내부 경로만 허용"
-            description="외부 URL 호출과 SSRF 위험을 차단합니다."
+            title={t("sandbox.internalOnly")}
+            description={t("sandbox.internalOnlyDescription")}
             tone="success"
           />
           <ActionRow
             icon={LockKeyhole}
-            title="인증/OTP API 차단"
-            description="로그인, 로그아웃, OTP 등록/검증 API는 직접 호출할 수 없습니다."
+            title={t("sandbox.authBlocked")}
+            description={t("sandbox.authBlockedDescription")}
             tone="warning"
           />
           <ActionRow
             icon={AlertTriangle}
-            title="쓰기 요청 확인"
-            description="쓰기 method는 체크박스를 켜야 서버가 실행합니다."
+            title={t("sandbox.writeConfirm")}
+            description={t("sandbox.writeConfirmDescription")}
             tone="danger"
           />
         </div>
@@ -661,8 +737,11 @@ function ApiSandboxView() {
 }
 
 function AdbDiagnosticsView() {
+  const t = useTranslations("developer.tools");
+  const fetchFallbacks = useFetchJsonFallbacks();
+  const locale = useLocale();
   const { data, loading, error, reload } =
-    useApiResource<AdbDevicesPayload>("/api/adb/devices");
+    useApiResource<AdbDevicesPayload>("/api/adb/devices", fetchFallbacks);
   const devices = data?.devices ?? [];
   const offlineCount = devices.filter((device) =>
     ["offline", "unauthorized"].includes(String(device.connectionState ?? ""))
@@ -674,19 +753,19 @@ function AdbDiagnosticsView() {
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <StatusTile icon={Wrench} label="ADB API" value={data?.ok ? "응답" : "대기"} tone={data?.ok ? "success" : "neutral"} />
-        <StatusTile icon={Smartphone} label="연결 기기" value={numberText(devices.length)} tone="sky" />
-        <StatusTile icon={AlertTriangle} label="offline/unauthorized" value={numberText(offlineCount)} tone={offlineCount ? "warning" : "success"} />
-        <StatusTile icon={Bug} label="emulator" value={numberText(emulatorCount)} tone={emulatorCount ? "warning" : "neutral"} />
+        <StatusTile icon={Wrench} label={t("adb.api")} value={data?.ok ? t("adb.apiReady") : t("adb.apiWaiting")} tone={data?.ok ? "success" : "neutral"} />
+        <StatusTile icon={Smartphone} label={t("adb.connected")} value={numberText(devices.length, locale)} tone="sky" />
+        <StatusTile icon={AlertTriangle} label={t("adb.unavailable")} value={numberText(offlineCount, locale)} tone={offlineCount ? "warning" : "success"} />
+        <StatusTile icon={Bug} label={t("adb.emulator")} value={numberText(emulatorCount, locale)} tone={emulatorCount ? "warning" : "neutral"} />
       </div>
 
       <Section
-        title="ADB 기기 조회"
-        description={data?.message || "현재 실행 환경에서 ADB 연결 기기를 조회합니다."}
+        title={t("adb.title")}
+        description={t("adb.description")}
         action={
           <Button size="sm" variant="outline" onClick={() => void reload()} disabled={loading}>
             <RefreshCcw className="size-4" />
-            ADB 새로고침
+            {t("adb.refresh")}
           </Button>
         }
       >
@@ -697,14 +776,14 @@ function AdbDiagnosticsView() {
             <table className="min-w-[980px] w-full text-sm">
               <thead className="bg-secondary text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-left">Serial</th>
-                  <th className="px-3 py-2 text-left">상태</th>
-                  <th className="px-3 py-2 text-left">모델코드</th>
-                  <th className="px-3 py-2 text-left">통신사</th>
-                  <th className="px-3 py-2 text-left">용량</th>
-                  <th className="px-3 py-2 text-left">최초 통화일</th>
-                  <th className="px-3 py-2 text-left">카메라</th>
-                  <th className="px-3 py-2 text-left">경고</th>
+                  <th className="px-3 py-2 text-left">{t("adb.serial")}</th>
+                  <th className="px-3 py-2 text-left">{t("adb.status")}</th>
+                  <th className="px-3 py-2 text-left">{t("adb.model")}</th>
+                  <th className="px-3 py-2 text-left">{t("adb.carrier")}</th>
+                  <th className="px-3 py-2 text-left">{t("adb.storage")}</th>
+                  <th className="px-3 py-2 text-left">{t("adb.firstCall")}</th>
+                  <th className="px-3 py-2 text-left">{t("adb.camera")}</th>
+                  <th className="px-3 py-2 text-left">{t("adb.warning")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -717,14 +796,14 @@ function AdbDiagnosticsView() {
                     <td className="px-3 py-2">{String(device.storage ?? "-")}</td>
                     <td className="px-3 py-2">{String(device.firstCallDate ?? "-")}</td>
                     <td className="px-3 py-2">{String(device.cameraCheck ?? "-")}</td>
-                    <td className="px-3 py-2 whitespace-pre-line">{String(device.warning ?? "-")}</td>
+                    <td className="px-3 py-2 whitespace-pre-line">{adbWarningText(device, t)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : !loading ? (
-          <LoadingBox text="표시할 ADB 기기가 없습니다." />
+          <LoadingBox text={t("adb.empty")} />
         ) : null}
       </Section>
     </div>
@@ -732,19 +811,25 @@ function AdbDiagnosticsView() {
 }
 
 function DbMigrationView() {
+  const t = useTranslations("developer.tools");
+  const fetchFallbacks = useFetchJsonFallbacks();
+  const locale = useLocale();
   const { data, loading, error, reload } =
-    useApiResource<DbMigrationsPayload>("/api/developer/db-migrations");
+    useApiResource<DbMigrationsPayload>(
+      "/api/developer/db-migrations",
+      fetchFallbacks
+    );
   const migrationItems = data?.prisma.migrations.items ?? [];
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <Section
-        title="DB 상태"
-        description={data ? `최종 조회: ${data.checkedAt}` : "PostgreSQL과 Prisma 기준 상태를 조회합니다."}
+        title={t("database.title")}
+        description={data ? t("database.checkedAt", { date: data.checkedAt }) : t("database.description")}
         action={
           <Button size="sm" variant="outline" onClick={() => void reload()} disabled={loading}>
             <RefreshCcw className="size-4" />
-            상태 조회
+            {t("database.refresh")}
           </Button>
         }
       >
@@ -755,60 +840,60 @@ function DbMigrationView() {
           <InfoTable
             rows={[
               {
-                label: "DB 파일",
+                label: t("database.file"),
                 value: data.database.path || data.database.url,
                 tone: data.database.exists ? "success" : "danger",
-                note: data.database.exists ? bytesText(data.database.sizeBytes) : "없음",
+                note: data.database.exists ? bytesText(data.database.sizeBytes) : t("common.missing"),
               },
               {
-                label: "PostgreSQL 제약 무결성",
+                label: t("database.integrity"),
                 value: data.database.integrity.values.join(", ") || data.database.integrity.message || "-",
                 tone: data.database.integrity.ok ? "success" : "danger",
-                note: data.database.integrity.ok ? "정상" : "확인 필요",
+                note: data.database.integrity.ok ? t("common.normal") : t("common.check"),
               },
               {
                 label: "Prisma schema",
                 value: data.prisma.schemaPath,
                 tone: data.prisma.schemaExists ? "success" : "danger",
-                note: data.prisma.schemaExists ? "존재" : "없음",
+                note: data.prisma.schemaExists ? t("common.exists") : t("common.missing"),
               },
               {
                 label: "_prisma_migrations",
                 value: data.prisma.migrationTable.exists
-                  ? `${data.prisma.migrationTable.appliedCount}건 적용`
-                  : data.prisma.migrationTable.message || "테이블 없음",
+                  ? t("database.applied", { count: data.prisma.migrationTable.appliedCount })
+                  : data.prisma.migrationTable.message || t("database.tableMissing"),
                 tone: data.prisma.migrationTable.exists ? "success" : "warning",
-                note: data.prisma.migrationTable.exists ? "조회" : "주의",
+                note: data.prisma.migrationTable.exists ? t("database.queried") : t("database.caution"),
               },
             ]}
           />
         ) : null}
       </Section>
 
-      <Section title="마이그레이션 파일">
+      <Section title={t("database.migrations")}>
         {migrationItems.length ? (
           <div className="max-h-[360px] overflow-auto rounded-md border bg-background">
             {migrationItems.map((item) => (
               <div key={item.name} className="grid grid-cols-[minmax(0,1fr)_90px] gap-2 border-b px-3 py-2 text-sm last:border-b-0">
                 <div className="min-w-0 truncate font-mono text-xs">{item.name}</div>
                 <Badge variant={item.hasSql ? "success" : "warning"}>
-                  {item.hasSql ? bytesText(item.sqlSizeBytes) : "SQL 없음"}
+                  {item.hasSql ? bytesText(item.sqlSizeBytes) : t("database.noSql")}
                 </Badge>
               </div>
             ))}
           </div>
         ) : (
-          <LoadingBox text="마이그레이션 파일이 없거나 아직 조회되지 않았습니다." />
+          <LoadingBox text={t("database.noMigrations")} />
         )}
       </Section>
 
-      <Section title="주요 테이블">
+      <Section title={t("database.tables")}>
         {data ? (
           <div className="grid gap-2 sm:grid-cols-2">
             {Object.entries(data.tableCounts).map(([key, value]) => (
               <div key={key} className="rounded-md border bg-background px-3 py-2">
                 <div className="truncate text-xs text-muted-foreground">{key}</div>
-                <div className="mt-1 text-base font-semibold">{numberText(value)}</div>
+                <div className="mt-1 text-base font-semibold">{numberText(value, locale)}</div>
               </div>
             ))}
           </div>

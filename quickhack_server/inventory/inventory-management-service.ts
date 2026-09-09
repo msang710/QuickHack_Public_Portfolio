@@ -55,9 +55,7 @@ function assertInventoryManagementInitialStatus(status: string) {
     assertManualInventoryInitialStatus(status);
   } catch (error) {
     throw inventoryInputError(
-      error instanceof Error
-        ? error.message
-        : "신규 재고상태가 올바르지 않습니다."
+      "INVENTORY_INPUT_INVALID"
     );
   }
 }
@@ -92,7 +90,7 @@ function nullableDateTime(input: InventoryManagementInput, key: string) {
   try {
     return strictOptionalKstDateTime(value);
   } catch {
-    throw inventoryInputError(`${key} 값은 실제 존재하는 YYYY-MM-DD HH:mm:ss 형식이어야 합니다.`);
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 }
 
@@ -106,7 +104,7 @@ function nullableInspectionDateTime(
   try {
     return strictOptionalKstDateTime(value);
   } catch {
-    throw inventoryInputError(`${column} 값은 실제 존재하는 YYYY-MM-DD HH:mm:ss 형식이어야 합니다.`);
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 }
 
@@ -120,7 +118,7 @@ function nullableInspectionDate(
   try {
     return strictOptionalDatabaseDate(value);
   } catch {
-    throw inventoryInputError(`${column} 값은 실제 존재하는 YYYY-MM-DD 형식이어야 합니다.`);
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 }
 
@@ -132,7 +130,7 @@ function requiredText(
   const value = text(input, key);
 
   if (!value) {
-    throw inventoryInputError(`${label} 값이 필요합니다.`);
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 
   return value;
@@ -150,7 +148,7 @@ function nullableInt(
   }
 
   if (!/^-?\d+$/.test(value)) {
-    throw inventoryInputError(`${label} 값은 숫자로 입력해야 합니다.`);
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 
   return Number.parseInt(value, 10);
@@ -173,14 +171,14 @@ function nullableModelSeq(input: InventoryManagementInput) {
     return Number.parseInt(displayMatch[1], 10);
   }
 
-  throw inventoryInputError("고유번호는 숫자 또는 'S24-345' 형식으로 입력해야 합니다.");
+  throw inventoryInputError("INVENTORY_INPUT_INVALID");
 }
 
 function normalizePgNo(input: InventoryManagementInput) {
   const pgNo = normalizeCanonicalPgNo(requiredText(input, "pgNo", "PG"));
 
   if (!PG_NO_PATTERN.test(pgNo)) {
-    throw inventoryInputError("PG는 알파벳 2자리 + 숫자 10자리 형식이어야 합니다.");
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 
   return pgNo;
@@ -191,7 +189,7 @@ function normalizeImei(input: InventoryManagementInput) {
     return normalizeOptionalImei(input.imei);
   } catch (error) {
     throw inventoryInputError(
-      error instanceof Error ? error.message : "IMEI는 숫자 15자리 형식이어야 합니다."
+      "INVENTORY_INPUT_INVALID"
     );
   }
 }
@@ -200,7 +198,7 @@ function normalizeSaleGrade(input: InventoryManagementInput) {
   const saleGrade = nullableText(input, "saleGrade");
 
   if (saleGrade && !SALE_GRADE_VALUES.has(saleGrade)) {
-    throw inventoryInputError("판매등급은 A, A-, B+, B 중 하나만 입력할 수 있습니다.");
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 
   return saleGrade;
@@ -210,7 +208,7 @@ function normalizeWarranty(input: InventoryManagementInput) {
   const warranty = nullableText(input, "warranty");
 
   if (warranty && !WARRANTY_VALUES.has(warranty)) {
-    throw inventoryInputError("보증서는 1년 보증 또는 2년 보증만 입력할 수 있습니다.");
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 
   return warranty;
@@ -221,7 +219,7 @@ function normalizeInboundStatus(input: InventoryManagementInput) {
 
   if (inboundStatus !== INBOUND_STATUS.purchased) {
     throw inventoryInputError(
-      "재고 추가는 매입 완료(PURCHASED) 입고만 생성할 수 있습니다."
+      "INVENTORY_INPUT_INVALID"
     );
   }
 
@@ -233,7 +231,7 @@ function normalizeInventoryStatus(input: InventoryManagementInput) {
     text(input, "inventoryStatus") || INVENTORY_STATUS.sellable;
 
   if (!INVENTORY_STATUS_VALUES.has(inventoryStatus)) {
-    throw inventoryInputError("재고상태 값이 올바르지 않습니다.");
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
 
   assertInventoryManagementInitialStatus(inventoryStatus);
@@ -680,7 +678,7 @@ export async function createManualInventoryRecord(
     if (existing) {
       throw publicConflict(
         "INVENTORY_ALREADY_EXISTS",
-        `${pgNo}는 이미 등록된 PG입니다.`
+        "INVENTORY_ALREADY_EXISTS"
       );
     }
 
@@ -798,17 +796,17 @@ export async function deleteManualInventoryRecord(
   const timestamp = databaseNow();
 
   if (!pgNo) {
-    throw inventoryInputError("삭제할 PG가 필요합니다.");
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
-    throw inventoryInputError("삭제 대상 기기의 revision이 올바르지 않습니다.");
+    throw inventoryInputError("INVENTORY_INPUT_INVALID");
   }
   const targetExists = await client.devices.findUnique({
     where: { pg_no: pgNo },
     select: { device_id: true },
   });
   if (!targetExists) {
-    throw publicNotFound("INVENTORY_NOT_FOUND", `${pgNo} 재고를 찾을 수 없습니다.`);
+    throw publicNotFound("INVENTORY_NOT_FOUND", "INVENTORY_NOT_FOUND");
   }
 
   return runMeasuredTransaction(client, "inventory.manual.delete", async (tx) => {
@@ -818,7 +816,7 @@ export async function deleteManualInventoryRecord(
     if (!before) {
       throw publicNotFound(
         "INVENTORY_NOT_FOUND",
-        `${pgNo} 재고를 찾을 수 없습니다.`
+        "INVENTORY_NOT_FOUND"
       );
     }
 
@@ -831,7 +829,7 @@ export async function deleteManualInventoryRecord(
     if (linkedTotal > 0) {
       throw publicConflict(
         "INVENTORY_DELETE_CONFLICT",
-        `${pgNo}는 주문·판매·출고·채널 처리·재고실사·비품 사용 이력이 있어 삭제할 수 없습니다.`
+        "INVENTORY_DELETE_CONFLICT"
       );
     }
 
@@ -850,7 +848,7 @@ export async function deleteManualInventoryRecord(
     if (!current || current.revision !== expectedRevision) {
       throw publicConflict(
         "INVENTORY_DELETE_TARGET_CHANGED",
-        `${pgNo} 기기 정보가 조회 후 변경되었습니다. 목록을 새로 고쳐 주세요.`
+        "INVENTORY_DELETE_TARGET_CHANGED"
       );
     }
 
@@ -881,14 +879,14 @@ export async function deleteManualInventoryRecord(
     if (!manualOwnedShape) {
       throw publicConflict(
         "INVENTORY_DELETE_CONFLICT",
-        `${pgNo}는 수동 재고 추가에서 생성된 현재 행만 가진 기기가 아니므로 삭제할 수 없습니다.`
+        "INVENTORY_DELETE_CONFLICT"
       );
     }
 
     if (current?.inventory && !current.inventory_sku_id) {
       throw publicConflict(
         "INVENTORY_LEDGER_CONFLICT",
-        `${pgNo}의 재고 SKU가 확정되지 않아 수량 원장에 삭제 이력을 기록할 수 없습니다.`
+        "INVENTORY_LEDGER_CONFLICT"
       );
     }
 
@@ -916,7 +914,7 @@ export async function deleteManualInventoryRecord(
     if (deleted.count !== 1) {
       throw publicConflict(
         "INVENTORY_DELETE_TARGET_CHANGED",
-        `${pgNo} 기기 정보가 삭제 중 변경되었습니다. 목록을 새로 고쳐 주세요.`
+        "INVENTORY_DELETE_TARGET_CHANGED"
       );
     }
 

@@ -65,7 +65,8 @@ export type CoupangWriteVerificationTargetGroupResult = {
 export type CoupangWriteVerificationResult = {
   outcome: VerificationOutcome;
   code: string;
-  message: string;
+  messageArguments: Record<string, string | number | null>;
+  externalErrorSnapshot?: string | null;
   endpointPath: string;
   targetCount: number;
   confirmedCount: number;
@@ -223,9 +224,11 @@ async function verifyInventoryQuantityWrite(
       code: confirmed
         ? "INVENTORY_QUANTITY_CONFIRMED"
         : "INVENTORY_QUANTITY_NOT_CONFIRMED",
-      message: confirmed
-        ? `쿠팡 옵션 ${vendorItemId}의 재고수량 ${expectedQuantity}개를 확인했습니다.`
-        : `쿠팡 옵션 ${vendorItemId}의 재고수량은 ${observedQuantity}개이며 목표 ${expectedQuantity}개와 다릅니다.`,
+      messageArguments: {
+        vendorItemId,
+        expectedQuantity,
+        observedQuantity,
+      },
       endpointPath:
         "/v2/providers/seller_api/apis/api/v1/marketplace/vendor-items/{vendorItemId}/inventories",
       targetCount: 1,
@@ -556,11 +559,8 @@ async function verifyOrderInstruct(
           : mode === "INVOICE"
             ? "INVOICE_NOT_CONFIRMED"
             : "INSTRUCT_STATUS_NOT_CONFIRMED",
-      message: confirmed
-        ? `${confirmedCount}/${targetCount}건의 상품준비중 이상 상태를 확인했습니다.`
-        : `${confirmedCount}/${targetCount}건만 확인했습니다.${
-            firstError ? ` ${firstError}` : ""
-          }`,
+      messageArguments: { confirmedCount, targetCount },
+      externalErrorSnapshot: firstError ?? null,
       endpointPath:
         "/v2/providers/openapi/apis/api/v5/vendors/{vendorId}/{orderId}/ordersheets",
       targetCount,
@@ -698,12 +698,13 @@ async function verifyReturnWrite(
           : latestReturn
             ? "RETURN_STATUS_NOT_CONFIRMED"
             : "RETURN_RECEIPT_NOT_FOUND",
-      message: confirmed
-        ? `반품 접수번호 ${receiptId}의 목표 상태 ${expectedStatus}를 확인했습니다. (접수 ${latestReturn?.receiptStatus ?? "-"} / 출고중지 ${latestReturn?.releaseStatus ?? "-"})`
-        : latestError ||
-          `반품 접수번호 ${receiptId || "미확인"}의 기대 상태 ${
-            expectedStatus || "미확인"
-          }를 확인하지 못했습니다. (접수 ${latestReturn?.receiptStatus ?? "-"} / 출고중지 ${latestReturn?.releaseStatus ?? "-"})`,
+      messageArguments: {
+        receiptId,
+        expectedStatus,
+        receiptStatus: latestReturn?.receiptStatus ?? null,
+        releaseStatus: latestReturn?.releaseStatus ?? null,
+      },
+      externalErrorSnapshot: latestError,
       endpointPath:
         "/v2/providers/openapi/apis/api/v6/vendors/{vendorId}/returnRequests?searchType=orderId&orderId={orderId}",
       targetCount: 1,

@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -16,10 +18,12 @@ import { formatDate } from "@/quickhack_client/components/shared/device-detail-s
 
 type SecurityCheckDto = {
   key: string;
-  label: string;
   status: "OK" | "WARNING" | "FAIL" | string;
   value: string;
   detail: string;
+  valueCode?: string;
+  detailCode?: string;
+  messageArguments?: Record<string, string | number>;
 };
 
 type SecurityWorkerDto = {
@@ -44,15 +48,6 @@ type SecurityStatusApiResponse = {
   workers?: SecurityWorkerDto[];
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  IDLE: "대기",
-  RUNNING: "실행 중",
-  SUCCESS: "성공",
-  FAILED: "실패",
-  RETRY_WAITING: "재시도 대기",
-  DISABLED: "비활성",
-};
-
 function securityStatusVariant(value: string) {
   if (value === "OK") {
     return "success" as const;
@@ -67,26 +62,6 @@ function securityStatusVariant(value: string) {
   }
 
   return "neutral" as const;
-}
-
-function securityStatusLabel(value: string) {
-  if (value === "OK") {
-    return "정상";
-  }
-
-  if (value === "WARNING") {
-    return "주의";
-  }
-
-  if (value === "FAIL") {
-    return "위험";
-  }
-
-  return value || "-";
-}
-
-function workerStatusLabel(value: string) {
-  return STATUS_LABELS[value] ?? (value || "-");
 }
 
 function workerStatusVariant(value: string) {
@@ -139,14 +114,85 @@ function SummaryCard({
 }
 
 export function SecurityStatusView() {
+  const t = useTranslations("admin.securityStatus");
+  const tw = useTranslations("admin.systemStatus.status");
   const [checks, setChecks] = React.useState<SecurityCheckDto[]>([]);
   const [workers, setWorkers] = React.useState<SecurityWorkerDto[]>([]);
   const [summary, setSummary] =
     React.useState<SecurityStatusApiResponse["summary"] | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [message, setMessage] = React.useState("보안 점검 상태를 불러오는 중입니다.");
+  const [message, setMessage] = React.useState(() => t("message.loading"));
 
-  async function loadSecurityStatus() {
+  function statusLabel(value: string) {
+    if (value === "OK") return t("status.ok");
+    if (value === "WARNING") return t("status.warning");
+    if (value === "FAIL") return t("status.fail");
+    return value || "-";
+  }
+
+  function checkLabel(value: string) {
+    if (value === "runtime") return t("checkLabel.runtime");
+    if (value === "coupang-write-api-policy") return t("checkLabel.coupangWrite");
+    if (value === "logen-write-api-policy") return t("checkLabel.logenWrite");
+    if (value === "totp-key") return t("checkLabel.totpKey");
+    if (value === "totp-users") return t("checkLabel.totpUsers");
+    if (value === "backup-encryption") return t("checkLabel.backupEncryption");
+    if (value === "cookie-secure") return t("checkLabel.cookieSecure");
+    if (value === "coupang-auth") return t("checkLabel.coupangCredential");
+    if (value === "channel-credential-store") return t("checkLabel.credentialStore");
+    if (value === "logen-auth") return t("checkLabel.logenCredential");
+    if (value === "external-api-destination") return t("checkLabel.externalDestination");
+    if (value === "latest-backup") return t("checkLabel.latestBackup");
+    if (value === "security-status-load") return t("fallback.label");
+    return value;
+  }
+
+  function checkValue(check: SecurityCheckDto) {
+    if (check.valueCode === "ALLOWED") return t("value.allowed");
+    if (check.valueCode === "BLOCKED") return t("value.blocked");
+    if (check.valueCode === "AVAILABLE") return t("value.available");
+    if (check.valueCode === "UNAVAILABLE") return t("value.unavailable");
+    if (check.valueCode === "ENCRYPTED") return t("value.encrypted");
+    if (check.valueCode === "SECURE") return t("value.secure");
+    if (check.valueCode === "HTTP_ALLOWED") return t("value.httpAllowed");
+    if (check.valueCode === "NO_RECORD") return t("value.noRecord");
+    return check.value;
+  }
+
+  function checkDetail(check: SecurityCheckDto) {
+    const arguments_ = check.messageArguments ?? {};
+    if (check.detailCode === "RUNTIME_PRODUCTION") return t("detail.runtimeProduction");
+    if (check.detailCode === "RUNTIME_DEVELOPMENT") return t("detail.runtimeDevelopment");
+    if (check.detailCode === "COUPANG_WRITE_ALLOWED") return t("detail.coupangWriteAllowed");
+    if (check.detailCode === "COUPANG_WRITE_BLOCKED") return t("detail.coupangWriteBlocked");
+    if (check.detailCode === "LOGEN_WRITE_ALLOWED") return t("detail.logenWriteAllowed");
+    if (check.detailCode === "LOGEN_WRITE_BLOCKED") return t("detail.logenWriteBlocked");
+    if (check.detailCode === "TOTP_KEY_AVAILABLE") {
+      return t("detail.totpKeyAvailable", { protection: String(arguments_.protection ?? "-") });
+    }
+    if (check.detailCode === "TOTP_KEY_UNAVAILABLE") {
+      return t("detail.totpKeyUnavailable", { state: String(arguments_.state ?? "-") });
+    }
+    if (check.detailCode === "TOTP_USERS") return t("detail.totpUsers");
+    if (check.detailCode === "COOKIE_SECURE") return t("detail.cookieSecure");
+    if (check.detailCode === "COOKIE_HTTP_ALLOWED") return t("detail.cookieHttpAllowed");
+    if (check.detailCode === "EXTERNAL_API_MOCK") return t("detail.externalApiMock");
+    if (check.detailCode === "EXTERNAL_API_LIVE") return t("detail.externalApiLive");
+    if (check.detailCode === "NO_BACKUP_HISTORY") return t("detail.noBackupHistory");
+    return check.detail;
+  }
+
+  function workerLabel(value: string) {
+    if (value === "IDLE") return tw("idle");
+    if (value === "RUNNING") return tw("running");
+    if (value === "SUCCESS") return tw("success");
+    if (value === "FAILED") return tw("failed");
+    if (value === "RETRY_WAITING") return tw("retry");
+    if (value === "DISABLED") return tw("disabled");
+    return value || "-";
+  }
+
+  const loadSecurityStatus = React.useCallback(async () => {
     setLoading(true);
 
     try {
@@ -156,20 +202,19 @@ export function SecurityStatusView() {
       const payload = (await response.json()) as SecurityStatusApiResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.message || "보안 점검 상태를 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("message.loadFailed")));
       }
 
       setChecks(payload.checks ?? []);
       setWorkers(payload.workers ?? []);
       setSummary(payload.summary ?? null);
-      setMessage("보안 점검 상태를 갱신했습니다.");
+      setMessage(t("message.refreshed"));
     } catch (error) {
       setChecks([
         {
           key: "security-status-load",
-          label: "보안 점검 API",
           status: "FAIL",
-          value: "조회 실패",
+          value: t("fallback.value"),
           detail: error instanceof Error ? error.message : String(error),
         },
       ]);
@@ -179,7 +224,7 @@ export function SecurityStatusView() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -187,31 +232,31 @@ export function SecurityStatusView() {
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [loadSecurityStatus]);
 
   return (
     <section className="flex h-full min-h-0 w-full flex-1 flex-col gap-4 overflow-auto p-5">
       <section className="grid gap-3 md:grid-cols-4">
         <SummaryCard
           icon={ShieldCheck}
-          label="점검 항목"
+          label={t("summary.total")}
           value={summary?.total ?? checks.length}
         />
         <SummaryCard
           icon={CheckCircle2}
-          label="정상"
+          label={t("summary.ok")}
           value={summary?.ok ?? 0}
           variant="success"
         />
         <SummaryCard
           icon={AlertTriangle}
-          label="주의"
+          label={t("summary.warning")}
           value={summary?.warning ?? 0}
           variant="warning"
         />
         <SummaryCard
           icon={ShieldAlert}
-          label="위험"
+          label={t("summary.fail")}
           value={summary?.fail ?? 0}
           variant="danger"
         />
@@ -220,7 +265,7 @@ export function SecurityStatusView() {
       <section className="rounded-md border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">보안 점검</h2>
+            <h2 className="text-sm font-semibold">{t("checks.title")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">{message}</p>
           </div>
           <Button
@@ -230,7 +275,7 @@ export function SecurityStatusView() {
             onClick={() => void loadSecurityStatus()}
           >
             <RefreshCcw className="size-4" />
-            점검 갱신
+            {t("checks.refresh")}
           </Button>
         </div>
 
@@ -241,14 +286,14 @@ export function SecurityStatusView() {
               className="grid min-h-[126px] gap-2 rounded-md border bg-background px-4 py-3"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">{check.label}</span>
+                <span className="text-sm font-medium">{checkLabel(check.key)}</span>
                 <Badge variant={securityStatusVariant(check.status)}>
-                  {securityStatusLabel(check.status)}
+                  {statusLabel(check.status)}
                 </Badge>
               </div>
-              <div className="text-sm font-semibold">{check.value}</div>
+              <div className="text-sm font-semibold">{checkValue(check)}</div>
               <div className="text-xs leading-5 text-muted-foreground">
-                {check.detail}
+                {checkDetail(check)}
               </div>
             </div>
           ))}
@@ -259,10 +304,10 @@ export function SecurityStatusView() {
         <div className="border-b px-4 py-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
             <ServerCog className="size-4 text-primary" />
-            보안 관련 worker
+            {t("workers.title")}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            개인정보 정리, 백업 점검처럼 보안 정책을 자동으로 보조하는 작업입니다.
+            {t("workers.description")}
           </p>
         </div>
 
@@ -275,14 +320,14 @@ export function SecurityStatusView() {
                     {worker.workerName}
                   </span>
                   <Badge variant={workerStatusVariant(worker.status)}>
-                    {workerStatusLabel(worker.status)}
+                    {workerLabel(worker.status)}
                   </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {worker.scheduleEnabled ? "스케줄 활성" : "스케줄 비활성"}
+                  {worker.scheduleEnabled ? t("workers.scheduleEnabled") : t("workers.scheduleDisabled")}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  최근 실행 {formatDate(worker.lastRunAt)}
+                  {t("workers.lastRun", { date: formatDate(worker.lastRunAt) })}
                 </div>
                 {worker.lastErrorMessage ? (
                   <div className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">
@@ -293,7 +338,7 @@ export function SecurityStatusView() {
             ))
           ) : (
             <div className="col-span-full rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              보안 관련 worker가 없습니다.
+              {t("workers.empty")}
             </div>
           )}
         </div>

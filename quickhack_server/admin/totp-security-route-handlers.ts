@@ -21,7 +21,6 @@ function recoveryErrorResponse(error: unknown) {
     return apiFailureResponse({
       status: error.statusCode,
       code: error.code,
-      message: error.message,
       cause: error,
     });
   }

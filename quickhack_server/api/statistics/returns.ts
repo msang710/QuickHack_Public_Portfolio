@@ -9,7 +9,7 @@ import { isClientRuntime } from "@/quickhack_shared/core/runtime";
 import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
 import {
   resolveStatisticsPeriodRequest,
-  statisticsPeriodErrorMessage,
+  statisticsPeriodErrorCode,
   statisticsSearchUnsupportedMessage,
 } from "@/quickhack_server/statistics/statistics-period-request";
 import {
@@ -58,26 +58,26 @@ export async function GET(request: NextRequest) {
 
       if (!user) {
         return NextResponse.json(
-          { ok: false, message: "로그인이 필요합니다." },
+          { ok: false, code: "AUTH_REQUIRED" },
           { status: 401 }
         );
       }
 
       if (!canAccessRole(user.role, "LEADER")) {
         return NextResponse.json(
-          { ok: false, message: "반품 통계 조회 권한이 없습니다." },
+          { ok: false, code: "FORBIDDEN" },
           { status: 403 }
         );
       }
 
       setOperationTraceUserId(user.userId);
 
-      const unsupportedSearchMessage =
+      const unsupportedSearchCode =
         statisticsSearchUnsupportedMessage(requestUrl.searchParams);
 
-      if (unsupportedSearchMessage) {
+      if (unsupportedSearchCode) {
         return NextResponse.json(
-          { ok: false, message: unsupportedSearchMessage },
+          { ok: false, code: unsupportedSearchCode },
           { status: 400 }
         );
       }
@@ -90,13 +90,12 @@ export async function GET(request: NextRequest) {
           toDate: requestUrl.searchParams.get("toDate"),
         });
       } catch (error) {
-        const message = statisticsPeriodErrorMessage(error);
+        const code = statisticsPeriodErrorCode(error);
 
-        if (message) {
+        if (code) {
           return apiFailureResponse({
             status: 400,
-            code: "INVALID_STATISTICS_PERIOD",
-            message,
+            code,
             cause: error,
           });
         }

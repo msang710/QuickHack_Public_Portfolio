@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/quickhack_client/components/ui/button";
 import { cn } from "@/quickhack_shared/core/utils";
 
@@ -38,7 +39,7 @@ export function DialogFrame({
   beforeBody,
   footer,
   closeDisabled = false,
-  closeLabel = "닫기",
+  closeLabel,
   overlayClassName,
   contentClassName,
   headerClassName,
@@ -47,6 +48,8 @@ export function DialogFrame({
   bodyClassName,
   footerClassName,
 }: DialogFrameProps) {
+  const actionsT = useTranslations("common.actions");
+  const resolvedCloseLabel = closeLabel ?? actionsT("close");
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -94,8 +97,8 @@ export function DialogFrame({
                 variant="ghost"
                 size="icon"
                 disabled={closeDisabled}
-                title={closeLabel}
-                aria-label={closeLabel}
+                title={resolvedCloseLabel}
+                aria-label={resolvedCloseLabel}
               >
                 <X className="size-4" />
               </Button>

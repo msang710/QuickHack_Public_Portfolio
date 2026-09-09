@@ -490,7 +490,7 @@ function positiveInteger(value: unknown, label: string) {
 
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new InventoryQuantityQueryInputError(
-      `${label}은(는) 1 이상의 정수여야 합니다.`
+      "INVENTORY_QUANTITY_QUERY_INPUT_INVALID"
     );
   }
 

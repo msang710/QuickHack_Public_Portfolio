@@ -14,41 +14,52 @@ function response(status, payload, raw = null) {
 }
 
 let callCount = 0;
-await requestQuickHackLogout(async (input, init) => {
-  callCount += 1;
-  assert.equal(input, "/api/auth/logout");
-  assert.equal(init?.method, "POST");
-  return response(200, { ok: true });
-});
+await requestQuickHackLogout(
+  async (input, init) => {
+    callCount += 1;
+    assert.equal(input, "/api/auth/logout");
+    assert.equal(init?.method, "POST");
+    return response(200, { ok: true });
+  },
+  "로그아웃하지 못했습니다."
+);
 assert.equal(callCount, 1, "Logout helper sent more than one request.");
 
 await assert.rejects(
   () =>
-    requestQuickHackLogout(async () =>
-      response(503, {
-        ok: false,
-        code: "SERVER_PROXY_UNAVAILABLE",
-        message: "중앙 서버에 연결할 수 없습니다.",
-      })
+    requestQuickHackLogout(
+      async () =>
+        response(503, {
+          ok: false,
+          code: "SERVER_PROXY_UNAVAILABLE",
+          message: "중앙 서버에 연결할 수 없습니다.",
+        }),
+      "로그아웃하지 못했습니다."
     ),
   /중앙 서버에 연결할 수 없습니다/
 );
 
 await assert.rejects(
   () =>
-    requestQuickHackLogout(async () =>
-      response(504, {
-        ok: false,
-        code: "SERVER_PROXY_TIMEOUT",
-        uncertain: true,
-        message: "요청이 적용됐는지 확인할 수 없습니다.",
-      })
+    requestQuickHackLogout(
+      async () =>
+        response(504, {
+          ok: false,
+          code: "SERVER_PROXY_TIMEOUT",
+          uncertain: true,
+          message: "요청이 적용됐는지 확인할 수 없습니다.",
+        }),
+      "로그아웃하지 못했습니다."
     ),
   /적용됐는지 확인할 수 없습니다/
 );
 
 await assert.rejects(
-  () => requestQuickHackLogout(async () => response(200, null, "not-json")),
+  () =>
+    requestQuickHackLogout(
+      async () => response(200, null, "not-json"),
+      "로그아웃하지 못했습니다."
+    ),
   /로그아웃하지 못했습니다/
 );
 
@@ -64,7 +75,7 @@ const workspaceSource = fs.readFileSync(
 );
 assert.match(
   workspaceSource,
-  /await requestQuickHackLogout\(\);\s+allowNextBeforeUnload\(\);\s+window\.location\.reload\(\);/
+  /await requestQuickHackLogout\(fetch, workspace\("message\.logoutFailed"\)\);\s+allowNextBeforeUnload\(\);\s+window\.location\.reload\(\);/
 );
 assert.doesNotMatch(
   workspaceSource,

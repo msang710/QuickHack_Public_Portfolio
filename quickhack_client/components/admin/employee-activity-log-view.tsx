@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useLocale, useTranslations } from "next-intl";
 import {
   CheckCircle2,
   ClipboardList,
@@ -30,7 +32,6 @@ import {
 } from "@/quickhack_client/components/ui/virtualized-data-grid";
 import { DetailRow, formatDate } from "@/quickhack_client/components/shared/device-detail-sheet";
 import { cn } from "@/quickhack_shared/core/utils";
-import { downloadCsvFile } from "@/quickhack_client/lib/csv";
 
 type ActivityLogDto = {
   id: number;
@@ -73,62 +74,24 @@ type ActivityLogColumnKey =
   | "target"
   | "result";
 
-const ACTION_LABELS: Record<string, string> = {
-  INBOUND_BATCH_PLAN_CREATE: "차수 지정 생성",
-  INBOUND_BATCH_PLAN_UPDATE: "차수 지정 수정",
-  INBOUND_BATCH_PLAN_DELETE: "차수 지정 삭제",
-  PURCHASE_PRICE_RATE_UPSERT: "매입가 지정 저장",
-  PURCHASE_CONFIRM: "매입 확정",
-  INVENTORY_CORRECTION: "기존 재고 수정",
-  PRODUCT_CRITERIA_UPSERT: "상품 기준값 저장",
-  PRODUCT_CRITERIA_RELATIONS_UPDATE: "연결 기준값 저장",
-  CHANNEL_ORDER_MAPPING_SET: "채널 주문 매칭 저장",
-  CHANNEL_ORDER_MANUAL_ASSIGN: "주문 변경 PG 배정",
-  CHANNEL_ORDER_MANUAL_REPLACE: "주문 변경 PG 교체",
-  CHANNEL_ORDER_MANUAL_RELEASE: "주문 변경 PG 해제",
-  CHANNEL_ORDER_MAPPING_REAPPLY: "기존 주문 매핑 재적용",
-  COUPANG_ORDER_AUTO_MATCH: "쿠팡 주문 자동 매칭",
-  USER_ACCOUNT_CREATE: "사용자 계정 생성",
-  USER_ACCOUNT_UPDATE: "사용자 계정 수정",
-  USER_ACCOUNT_DEACTIVATE: "사용자 계정 비활성화",
-  USER_TOTP_RESET: "사용자 OTP 초기화",
-  USER_TOTP_RECOVERY_CODES_GENERATE: "OTP 복구코드 발급",
-  SYSTEM_TOTP_SECURITY_RESET: "OTP 보안 전체 초기화",
-  SALES_OFFER_CREATE: "판매 구성 생성",
-  SALES_OFFER_ACTIVATE: "판매 구성 활성화",
-  SALES_OFFER_DEACTIVATE: "판매 구성 비활성화",
-  SALES_OFFER_BOOTSTRAP: "기본 판매 구성 확인",
+const ACTION_MESSAGE_KEYS = {
+  INBOUND_BATCH_PLAN_CREATE: "inboundBatchPlanCreate", INBOUND_BATCH_PLAN_UPDATE: "inboundBatchPlanUpdate", INBOUND_BATCH_PLAN_DELETE: "inboundBatchPlanDelete", PURCHASE_PRICE_RATE_UPSERT: "purchasePriceRateUpsert", PURCHASE_CONFIRM: "purchaseConfirm", INVENTORY_CORRECTION: "inventoryCorrection", PRODUCT_CRITERIA_UPSERT: "productCriteriaUpsert", PRODUCT_CRITERIA_RELATIONS_UPDATE: "productCriteriaRelationsUpdate", CHANNEL_ORDER_MAPPING_SET: "channelOrderMappingSet", CHANNEL_ORDER_MANUAL_ASSIGN: "channelOrderManualAssign", CHANNEL_ORDER_MANUAL_REPLACE: "channelOrderManualReplace", CHANNEL_ORDER_MANUAL_RELEASE: "channelOrderManualRelease", CHANNEL_ORDER_MAPPING_REAPPLY: "channelOrderMappingReapply", COUPANG_ORDER_AUTO_MATCH: "coupangOrderAutoMatch", USER_ACCOUNT_CREATE: "userAccountCreate", USER_ACCOUNT_UPDATE: "userAccountUpdate", USER_ACCOUNT_DEACTIVATE: "userAccountDeactivate", USER_TOTP_RESET: "userTotpReset", USER_TOTP_RECOVERY_CODES_GENERATE: "userTotpRecoveryCodesGenerate", SYSTEM_TOTP_SECURITY_RESET: "systemTotpSecurityReset", SALES_OFFER_CREATE: "salesOfferCreate", SALES_OFFER_ACTIVATE: "salesOfferActivate", SALES_OFFER_DEACTIVATE: "salesOfferDeactivate", SALES_OFFER_BOOTSTRAP: "salesOfferBootstrap",
+} as const;
+const TARGET_MESSAGE_KEYS = { INBOUND_BATCH: "inboundBatch", INBOUND: "inbound", PURCHASE_PRICE_RATE: "purchasePriceRate", PURCHASE_CONFIRM: "purchaseConfirm", DEVICE: "device", USER: "user", PRODUCT_CRITERIA_OPTION: "productCriteriaOption", SALES_CHANNEL_ORDER_ITEM: "salesChannelOrderItem", CHANNEL_PRODUCT_MAPPING: "channelProductMapping", CHANNEL_ORDER_MAPPING: "channelOrderMapping", SALES_OFFER: "salesOffer" } as const;
+
+type ActivityLabelResolver = {
+  action: (value: string) => string;
+  target: (value: string) => string;
+  result: (value: string) => string;
 };
 
-const TARGET_LABELS: Record<string, string> = {
-  INBOUND_BATCH: "차수",
-  INBOUND: "입고",
-  PURCHASE_PRICE_RATE: "매입가",
-  PURCHASE_CONFIRM: "매입 확정",
-  DEVICE: "기기",
-  USER: "사용자 계정",
-  PRODUCT_CRITERIA_OPTION: "상품 기준값",
-  SALES_CHANNEL_ORDER_ITEM: "판매 채널 주문",
-  CHANNEL_PRODUCT_MAPPING: "채널 상품 매핑",
-  CHANNEL_ORDER_MAPPING: "채널 주문 매칭",
-  SALES_OFFER: "판매 구성",
-};
-
-function actionLabel(value: string) {
-  return ACTION_LABELS[value] ?? value;
-}
-
-function targetLabel(value: string) {
-  return TARGET_LABELS[value] ?? value;
-}
-
-function resultLabel(value: string) {
+function resultLabel(value: string, labels: { success: string; failure: string }) {
   if (value === "SUCCESS") {
-    return "성공";
+    return labels.success;
   }
 
   if (["FAIL", "FAILED", "ERROR"].includes(value)) {
-    return "실패";
+    return labels.failure;
   }
 
   return value || "-";
@@ -146,25 +109,6 @@ function resultVariant(value: string) {
   return "neutral" as const;
 }
 
-export function logSearchText(log: ActivityLogDto) {
-  return [
-    log.displayName,
-    log.username,
-    actionLabel(log.actionType),
-    log.actionType,
-    targetLabel(log.targetType),
-    log.targetType,
-    log.targetId,
-    resultLabel(log.result),
-    log.result,
-    log.createdAt,
-    ...log.changes.map((change) => change.fieldName),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
-
 function fileDate() {
   const now = new Date();
   const year = String(now.getFullYear());
@@ -174,46 +118,15 @@ function fileDate() {
   return `${year}${month}${day}`;
 }
 
-export function downloadCsv(rows: ActivityLogDto[]) {
-  const header = [
-    "일시",
-    "작업자",
-    "아이디",
-    "작업 유형",
-    "대상 유형",
-    "대상 ID",
-    "결과",
-    "변경 전",
-    "변경 후",
-  ];
-  const body = rows.map((row) => [
-    row.createdAt,
-    row.displayName,
-    row.username,
-    actionLabel(row.actionType),
-    targetLabel(row.targetType),
-    row.targetId,
-    resultLabel(row.result),
-    row.beforeSummaryText,
-    row.afterSummaryText,
-    row.changes
-      .map(
-        (change) =>
-          `${change.fieldName}: ${change.beforeValue || "-"} -> ${change.afterValue || "-"}`
-      )
-      .join(" / "),
-  ]);
-  downloadCsvFile(`직원작업이력_${fileDate()}.csv`, [header, ...body]);
-}
-
 function ChangeListBlock({
   changes,
 }: {
   changes: ActivityLogDto["changes"];
 }) {
+  const t = useTranslations("admin.activityLog");
   return (
     <div className="grid gap-2">
-      <div className="text-xs font-semibold text-muted-foreground">변경 상세</div>
+      <div className="text-xs font-semibold text-muted-foreground">{t("detail.changes")}</div>
       <div className="grid max-h-72 overflow-auto rounded-md border bg-secondary/40 p-3 text-xs leading-5">
         {changes.length > 0 ? (
           changes.map((change) => (
@@ -237,6 +150,19 @@ function ChangeListBlock({
 }
 
 export function EmployeeActivityLogView() {
+  const t = useTranslations("admin.activityLog");
+  const locale = useLocale();
+  const activityLabels = React.useMemo<ActivityLabelResolver>(() => ({
+    action: (value) => {
+      const key = ACTION_MESSAGE_KEYS[value as keyof typeof ACTION_MESSAGE_KEYS];
+      return key ? t(`action.${key}`) : value;
+    },
+    target: (value) => {
+      const key = TARGET_MESSAGE_KEYS[value as keyof typeof TARGET_MESSAGE_KEYS];
+      return key ? t(`target.${key}`) : value;
+    },
+    result: (value) => resultLabel(value, { success: t("result.success"), failure: t("result.failure") }),
+  }), [t]);
   const [logs, setLogs] = React.useState<ActivityLogDto[]>([]);
   const [query, setQuery] = React.useState("");
   const [selectedLogId, setSelectedLogId] = React.useState<number | null>(null);
@@ -286,7 +212,7 @@ export function EmployeeActivityLogView() {
         | null;
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "직원 작업 이력을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("state.loadFailed")));
       }
 
       if (generation !== generationRef.current) return;
@@ -315,7 +241,7 @@ export function EmployeeActivityLogView() {
     } finally {
       if (generation === generationRef.current) setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -336,7 +262,7 @@ export function EmployeeActivityLogView() {
       const response = await fetch(`/api/admin/activity-logs?${search}`, {
         cache: "no-store",
       });
-      if (!response.ok) throw new Error("CSV export failed.");
+      if (!response.ok) throw new Error(t("state.exportFailed"));
       const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -348,13 +274,13 @@ export function EmployeeActivityLogView() {
     } finally {
       setIsExporting(false);
     }
-  }, [query]);
+  }, [query, t]);
 
   const columns = React.useMemo<DataGridColumn<ActivityLogColumnKey, ActivityLogDto>[]>(
     () => [
       {
         key: "createdAt",
-        label: "일시",
+        label: t("columns.at"),
         width: "1.2fr",
         cellClassName: "flex h-full min-w-0 items-center pl-4 pr-3",
         text: (log) => log.createdAt,
@@ -366,7 +292,7 @@ export function EmployeeActivityLogView() {
       },
       {
         key: "actor",
-        label: "작업자",
+        label: t("columns.actor"),
         width: "1.1fr",
         cellClassName: "flex h-full min-w-0 items-center px-3",
         text: (log) => `${log.displayName} ${log.username}`,
@@ -381,13 +307,13 @@ export function EmployeeActivityLogView() {
       },
       {
         key: "actionType",
-        label: "작업 유형",
+        label: t("columns.action"),
         width: "1.35fr",
         cellClassName: "flex h-full min-w-0 items-center px-3",
-        text: (log) => `${actionLabel(log.actionType)} ${log.actionType}`,
+        text: (log) => `${activityLabels.action(log.actionType)} ${log.actionType}`,
         render: (log) => (
           <div className="min-w-0">
-            <div className="truncate font-medium">{actionLabel(log.actionType)}</div>
+            <div className="truncate font-medium">{activityLabels.action(log.actionType)}</div>
             <div className="truncate text-xs text-muted-foreground">
               {log.actionType}
             </div>
@@ -396,13 +322,13 @@ export function EmployeeActivityLogView() {
       },
       {
         key: "target",
-        label: "대상",
+        label: t("columns.target"),
         width: "1.35fr",
         cellClassName: "flex h-full min-w-0 items-center px-3",
-        text: (log) => `${targetLabel(log.targetType)} ${log.targetType} ${log.targetId}`,
+        text: (log) => `${activityLabels.target(log.targetType)} ${log.targetType} ${log.targetId}`,
         render: (log) => (
           <div className="min-w-0">
-            <div className="truncate">{targetLabel(log.targetType)}</div>
+            <div className="truncate">{activityLabels.target(log.targetType)}</div>
             <div className="truncate text-xs text-muted-foreground">
               {log.targetId || "-"}
             </div>
@@ -411,33 +337,33 @@ export function EmployeeActivityLogView() {
       },
       {
         key: "result",
-        label: "결과",
+        label: t("columns.result"),
         width: "0.75fr",
         cellClassName: "flex h-full min-w-0 items-center pl-3 pr-4",
-        text: (log) => `${resultLabel(log.result)} ${log.result}`,
+        text: (log) => `${activityLabels.result(log.result)} ${log.result}`,
         render: (log) => (
-          <Badge variant={resultVariant(log.result)}>{resultLabel(log.result)}</Badge>
+          <Badge variant={resultVariant(log.result)}>{activityLabels.result(log.result)}</Badge>
         ),
       },
     ],
-    []
+    [activityLabels, t]
   );
 
   return (
     <WorkspacePageFrame className="gap-4 p-5">
       <SummaryStrip className="grid-cols-2 xl:grid-cols-4">
-        <SummaryCard icon={ClipboardList} label="조회 로그" value={summary.total} />
-        <SummaryCard icon={UserRound} label="작업자" value={summary.workers} />
-        <SummaryCard icon={CheckCircle2} label="성공" value={summary.success} />
-        <SummaryCard icon={XCircle} label="실패" value={summary.failure} />
+        <SummaryCard icon={ClipboardList} label={t("summary.logs")} value={summary.total} />
+        <SummaryCard icon={UserRound} label={t("summary.actors")} value={summary.workers} />
+        <SummaryCard icon={CheckCircle2} label={t("summary.success")} value={summary.success} />
+        <SummaryCard icon={XCircle} label={t("summary.failure")} value={summary.failure} />
       </SummaryStrip>
 
       <MasterDetailLayout className="grid-cols-[minmax(720px,1fr)_420px] gap-4">
         <WorkspacePanel>
           <PanelToolbar className="grid-cols-[minmax(260px,1fr)_auto_auto]">
             <SearchInput
-              aria-label="직원 작업 이력 검색"
-              placeholder="작업자, 작업 유형, 대상, 결과 검색"
+              aria-label={t("toolbar.searchLabel")}
+              placeholder={t("toolbar.searchPlaceholder")}
               value={query}
               onValueChange={setQuery}
             />
@@ -447,7 +373,7 @@ export function EmployeeActivityLogView() {
               disabled={isLoading}
             >
               <RefreshCcw className="size-4" />
-              새로고침
+              {t("toolbar.refresh")}
             </Button>
             <Button
               variant="outline"
@@ -455,7 +381,7 @@ export function EmployeeActivityLogView() {
               disabled={summary.total === 0 || isExporting}
             >
               <Download className="size-4" />
-              CSV 내보내기
+              {t("toolbar.export")}
             </Button>
           </PanelToolbar>
 
@@ -471,8 +397,8 @@ export function EmployeeActivityLogView() {
             rowKey={(log) => log.id}
             emptyMessage={
               isLoading
-                ? "직원 작업 이력을 불러오는 중입니다."
-                : "조회된 직원 작업 이력이 없습니다."
+                ? t("state.loading")
+                : t("state.empty")
             }
             selectedRowKey={selectedLogId}
             onRowClick={(log) => setSelectedLogId(log.id)}
@@ -484,7 +410,7 @@ export function EmployeeActivityLogView() {
           />
           <div className="flex items-center justify-between border-t px-3 py-2 text-xs text-muted-foreground">
             <span>
-              {logs.length.toLocaleString("ko-KR")} / {summary.total.toLocaleString("ko-KR")}
+              {logs.length.toLocaleString(locale)} / {summary.total.toLocaleString(locale)}
             </span>
             <Button
               size="sm"
@@ -494,55 +420,55 @@ export function EmployeeActivityLogView() {
               }
               disabled={!hasMore || !nextCursor || isLoading}
             >
-              더 불러오기
+              {t("toolbar.loadMore")}
             </Button>
           </div>
         </WorkspacePanel>
 
         <WorkspacePanel as="aside">
           <div className="shrink-0 border-b p-4">
-            <h2 className="text-sm font-semibold">작업 이력 상세</h2>
+            <h2 className="text-sm font-semibold">{t("detail.title")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              선택한 로그의 대상과 변경 전후 데이터를 확인합니다.
+              {t("detail.description")}
             </p>
           </div>
 
           <div className="min-h-0 flex-1 overflow-auto p-4">
             {!selectedLog ? (
               <div className="grid h-full place-items-center rounded-md border border-dashed text-sm text-muted-foreground">
-                왼쪽 표에서 로그를 선택하세요.
+                {t("detail.select")}
               </div>
             ) : (
               <div className="grid gap-4">
                 <div className="grid gap-2 rounded-md border p-3">
-                  <DetailRow label="일시" value={formatDate(selectedLog.createdAt)} />
+                  <DetailRow label={t("columns.at")} value={formatDate(selectedLog.createdAt)} />
                   <DetailRow
-                    label="작업자"
+                    label={t("columns.actor")}
                     value={`${selectedLog.displayName || "-"} (${selectedLog.username || "-"})`}
                   />
                   <DetailRow
-                    label="작업 유형"
-                    value={`${actionLabel(selectedLog.actionType)} / ${selectedLog.actionType}`}
+                    label={t("columns.action")}
+                    value={`${activityLabels.action(selectedLog.actionType)} / ${selectedLog.actionType}`}
                   />
                   <DetailRow
-                    label="대상"
-                    value={`${targetLabel(selectedLog.targetType)} / ${selectedLog.targetId || "-"}`}
+                    label={t("columns.target")}
+                    value={`${activityLabels.target(selectedLog.targetType)} / ${selectedLog.targetId || "-"}`}
                   />
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">결과</span>
+                    <span className="text-muted-foreground">{t("columns.result")}</span>
                     <Badge variant={resultVariant(selectedLog.result)}>
-                      {resultLabel(selectedLog.result)}
+                      {activityLabels.result(selectedLog.result)}
                     </Badge>
                   </div>
                 </div>
 
                 <div className="grid gap-2 rounded-md border p-3">
                   <DetailRow
-                    label="변경 전 요약"
+                    label={t("detail.before")}
                     value={selectedLog.beforeSummaryText || "-"}
                   />
                   <DetailRow
-                    label="변경 후 요약"
+                    label={t("detail.after")}
                     value={selectedLog.afterSummaryText || "-"}
                   />
                 </div>

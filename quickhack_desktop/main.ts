@@ -6,6 +6,7 @@ import { createNativeBroker } from "./main/native-broker";
 import { createWindowManager, isAllowedDesktopUrl } from "./main/window-manager";
 import { createNativeAdapterHandlers } from "./main/native-adapters";
 import { createDesktopUpdateCoordinator, unavailablePackageUpdateAdapter } from "./shared/update-contract";
+import { desktopKo } from "../quickhack_client/i18n/catalogs/ko/desktop";
 
 const appRoot = path.resolve(process.env.QUICKHACK_APP_ROOT || app.getAppPath());
 const origin = process.env.QUICKHACK_CLIENT_ORIGIN || "http://127.0.0.1:3001";
@@ -142,9 +143,10 @@ if (!app.requestSingleInstanceLock()) {
       await runtime.start();
       attachMainCloseGuard(windows.create("main"));
     } catch (error) {
+      console.error("DESKTOP_START_FAILED", error);
       await import("electron").then(({ dialog }) => dialog.showErrorBox(
-        "QuickHack 시작 실패",
-        error instanceof Error ? error.message : String(error),
+        desktopKo.updateStatus.nativeStartFailureTitle,
+        desktopKo.updateStatus.nativeStartFailureBody,
       ));
       app.quit();
     }

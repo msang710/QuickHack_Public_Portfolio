@@ -27,6 +27,7 @@ const visuals = read(
 const formLayout = read(
   "quickhack_client/components/ui/form-layout.tsx"
 );
+const koStatistics = read("quickhack_client/i18n/catalogs/ko/statistics.ts");
 
 assert.match(panel, /\/api\/statistics\/purchases/);
 assert.match(panel, /new AbortController\(\)/);
@@ -35,7 +36,8 @@ assert.match(panel, /requestId !== requestSequence\.current/);
 assert.match(panel, /buildStatisticsPeriodRequestQuery/);
 assert.match(panel, /requestState\.requestKey === requestKey/);
 assert.match(panel, /retryRevision/);
-assert.match(panel, /다시 시도/);
+assert.match(panel, /t\("loading\.retry"\)/);
+assert.match(panel, /t\("loading\.refresh"\)/);
 assert.match(panel, /cache: "no-store"/);
 assert.match(panel, /aria-busy=/);
 assert.doesNotMatch(panel, /buildPreviewSalesStatistics/);
@@ -58,7 +60,7 @@ for (const section of [
   "기능 하자 항목",
   "매입 처리시간",
 ]) {
-  assert.match(panel, new RegExp(section));
+  assert.match(koStatistics, new RegExp(section));
 }
 
 for (const forbiddenUserFacingConcept of [
@@ -85,8 +87,9 @@ assert.match(panel, /maturityPending: true/);
 assert.match(panel, /formatPurchaseAmount\(row\.purchaseAmount\)/);
 assert.match(panel, /StatisticsCoverageItem/);
 assert.match(panel, /StatisticsCalculationScope/);
-assert.match(calculationScope, /기본 90일/);
-assert.match(calculationScope, /직접 지정/);
+assert.match(calculationScope, /useTranslations\("statistics\.calculationScope"\)/);
+assert.match(koStatistics, /기본 90일/);
+assert.match(koStatistics, /직접 지정/);
 assert.match(panel, /minWidth=\{1480\}/);
 assert.match(panel, /maxHeight=\{560\}/);
 assert.match(panel, /gridTemplateColumns=/);
@@ -101,12 +104,11 @@ assert.match(
 
 assert.match(
   presentation,
-  /unavailableValue: options\.maturityPending \? "관찰 중" : "-"/
+  /unavailableValue: options\.maturityPending \? t\("observing"\) : "-"/
 );
-assert.match(presentation, /RATE: "기준가 적용"/);
-assert.match(presentation, /OVERRIDE: "기준가 조정"/);
-assert.match(presentation, /MANUAL: "수동 입력"/);
-assert.match(presentation, /UNKNOWN: "과거 미기록"/);
+for (const label of ["기준가 적용", "기준가 조정", "수동 입력", "과거 미기록"]) {
+  assert.match(koStatistics, new RegExp(label));
+}
 assert.match(commonPresentation, /metric\.value === null/);
 assert.match(commonPresentation, /metric\.amount === null/);
 assert.match(commonPresentation, /metric\.sampleCount === 0/);

@@ -48,7 +48,7 @@ type PackingCheckCode =
 type PackingCheckResult = {
   matched: boolean;
   code: PackingCheckCode;
-  message: string;
+  messageArgs?: { currentStatus?: string };
   orderLookupSource?: "ORDER_OR_SHIPMENT" | "CURRENT_INVOICE";
   device?: {
     pgNo: string;
@@ -291,22 +291,21 @@ function baseResult(input: {
 }): PackingCheckResult {
   const scanned = { values: input.scannedValues, componentBarcodes: input.componentBarcodes };
   if (input.scannedValues.length < 2 && (!input.orderBarcode || !input.deviceBarcode)) {
-    return { matched: false, code: "MISSING_INPUT", message: "주문/송장과 기기 바코드를 모두 스캔하세요.", scanned };
+    return { matched: false, code: "MISSING_INPUT", scanned };
   }
   if (!input.device) {
-    return { matched: false, code: "DEVICE_NOT_FOUND", message: "QuickHack에서 스캔한 PG/IMEI를 찾을 수 없습니다.", scanned };
+    return { matched: false, code: "DEVICE_NOT_FOUND", scanned };
   }
   if (input.ambiguousInvoice) {
-    return { matched: false, code: "ORDER_SCAN_AMBIGUOUS", message: "같은 송장번호가 둘 이상의 현재 포장 그룹에 연결되어 있습니다.", device: summarizeDevice(input.device), scanned };
+    return { matched: false, code: "ORDER_SCAN_AMBIGUOUS", device: summarizeDevice(input.device), scanned };
   }
   if (input.allocations.length === 0) {
     if (input.staleInvoice) {
-      return { matched: false, code: "STALE_INVOICE", message: "교체되었거나 현재 포장 그룹에서 제거된 송장입니다.", device: summarizeDevice(input.device), scanned };
+      return { matched: false, code: "STALE_INVOICE", device: summarizeDevice(input.device), scanned };
     }
     return {
       matched: false,
       code: input.orderWorkCount > 0 ? "ORDER_NOT_ALLOCATED" : "ORDER_NOT_FOUND",
-      message: input.orderWorkCount > 0 ? "주문은 확인되지만 현재 활성 배정이 없습니다." : "주문·배송·현재 송장 바코드를 찾을 수 없습니다.",
       device: summarizeDevice(input.device),
       scanned,
     };
@@ -316,7 +315,6 @@ function baseResult(input: {
     return {
       matched: false,
       code: "ORDER_DEVICE_MISMATCH",
-      message: "스캔한 PG가 이 주문·배송·현재 송장에 배정되지 않았습니다.",
       orderLookupSource: input.lookupSource,
       device: summarizeDevice(input.device),
       order: summarizeOrder(input.allocations[0]),
@@ -328,7 +326,6 @@ function baseResult(input: {
     return {
       matched: false,
       code: "MODEL_MISMATCH",
-      message: "스캔한 기기의 모델·용량·색상이 주문 조건과 일치하지 않습니다.",
       orderLookupSource: input.lookupSource,
       device: summarizeDevice(input.device),
       order: summarizeOrder(matching),
@@ -339,7 +336,6 @@ function baseResult(input: {
   return {
     matched: true,
     code: "MATCH",
-    message: "주문과 기기가 일치합니다.",
     orderLookupSource: input.lookupSource,
     device: summarizeDevice(input.device),
     order: summarizeOrder(matching),
@@ -349,7 +345,7 @@ function baseResult(input: {
 }
 
 function packingStatusRequiredResult(result: PackingCheckResult, currentStatus?: string | null): PackingCheckResult {
-  return { ...result, matched: false, code: "PACKING_STATUS_REQUIRED", message: `포장 검수는 PACKING 재고만 확정할 수 있습니다. 현재 상태: ${currentStatus || "-"}` };
+  return { ...result, matched: false, code: "PACKING_STATUS_REQUIRED", messageArgs: { currentStatus: currentStatus || "-" } };
 }
 
 function returnBlockedResult(result: PackingCheckResult, code: "RETURN_PROCESSING_REQUIRED" | "RETURNED_ALLOCATION"): PackingCheckResult {
@@ -357,7 +353,6 @@ function returnBlockedResult(result: PackingCheckResult, code: "RETURN_PROCESSIN
     ...result,
     matched: false,
     code,
-    message: code === "RETURNED_ALLOCATION" ? "반품 처리로 취소된 배정입니다." : "반품 접수가 연결된 주문입니다. 반품 업무를 먼저 처리하세요.",
   };
 }
 
@@ -522,7 +517,6 @@ export async function checkPackingIntegrity(
         ...result,
         matched: false,
         code: "STALE_INVOICE",
-        message: "검증 중 현재 송장 또는 합포장 구성이 변경되었습니다. 다시 스캔하세요.",
       };
     } else if (
       !currentAllocation ||
@@ -537,7 +531,6 @@ export async function checkPackingIntegrity(
         ...result,
         matched: false,
         code: "MODEL_MISMATCH",
-        message: "검증 중 기기 또는 주문 옵션 조건이 변경되었습니다. 다시 스캔하세요.",
         expected: summarizeExpected(currentAllocation),
       };
     } else if ((await findShipmentReturnConflicts(tx, [currentAllocation.allocation_id])).length > 0) {

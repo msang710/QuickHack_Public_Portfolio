@@ -38,21 +38,21 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json(
-      { ok: false, message: "Login is required." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
 
   if (!canAccessRole(user.role, "STAFF")) {
     return NextResponse.json(
-      { ok: false, message: "Order matching requires staff role or higher." },
+      { ok: false, code: "FORBIDDEN" },
       { status: 403 }
     );
   }
 
   if (!parseJsonObject(bodyText)) {
     return NextResponse.json(
-      { ok: false, message: "Request body must be a JSON object." },
+      { ok: false, code: "INVALID_BODY" },
       { status: 400 }
     );
   }

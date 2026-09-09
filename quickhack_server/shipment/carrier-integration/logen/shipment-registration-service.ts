@@ -150,7 +150,7 @@ function takeDate(value: Date | string) {
   if (!/^\d{8}$/.test(normalized)) {
     throw new RegistrationBlockedError(
       "INVALID_TAKE_DATE",
-      "출고 차수의 접수일자를 YYYYMMDD 형식으로 만들 수 없습니다."
+      "INVALID_TAKE_DATE"
     );
   }
   return normalized;
@@ -246,7 +246,7 @@ export async function enqueueLogenRegistrationWork(
   ) {
     throw publicConflict(
       "LOGEN_REGISTRATION_ITEM_UNAVAILABLE",
-      "로젠 등록 작업에 연결할 송장 발급 항목을 찾지 못했습니다."
+      "LOGEN_REGISTRATION_ITEM_UNAVAILABLE"
     );
   }
 
@@ -425,7 +425,7 @@ async function ensureStructuredReceiverSnapshot(work: RegistrationWork) {
   if (!firstOrder) {
     throw new RegistrationBlockedError(
       "RECEIVER_SNAPSHOT_MISSING",
-      "합포장 그룹에 수취정보를 복구할 원주문이 없습니다."
+      "RECEIVER_SNAPSHOT_MISSING"
     );
   }
   const combined = compactText(
@@ -442,7 +442,7 @@ async function ensureStructuredReceiverSnapshot(work: RegistrationWork) {
   ) {
     throw new RegistrationBlockedError(
       "RECEIVER_SNAPSHOT_CHANGED",
-      "원주문 수취정보가 확정된 합포장 그룹 스냅샷과 다릅니다."
+      "RECEIVER_SNAPSHOT_CHANGED"
     );
   }
   if (
@@ -452,7 +452,7 @@ async function ensureStructuredReceiverSnapshot(work: RegistrationWork) {
   ) {
     throw new RegistrationBlockedError(
       "RECEIVER_REQUIRED_FIELD_MISSING",
-      "로젠 등록에 필요한 수취인 전화번호 또는 주소가 누락되었습니다."
+      "RECEIVER_REQUIRED_FIELD_MISSING"
     );
   }
 
@@ -484,7 +484,7 @@ async function goodsSnapshot(work: RegistrationWork) {
   if (members.length === 0 || vendorItemIds.some((value) => !value)) {
     throw new RegistrationBlockedError(
       "PACKAGE_GROUP_ITEM_MISSING",
-      "합포장 그룹의 상품 식별자가 누락되었습니다."
+      "PACKAGE_GROUP_ITEM_MISSING"
     );
   }
 
@@ -522,7 +522,7 @@ async function goodsSnapshot(work: RegistrationWork) {
   if (prices.some((price) => price == null || price < 0)) {
     throw new RegistrationBlockedError(
       "GOODS_AMOUNT_MISSING",
-      "합포장 구성원의 판매가가 누락되어 로젠 물품가액을 계산할 수 없습니다."
+      "GOODS_AMOUNT_MISSING"
     );
   }
   const goodsAmount = (prices as number[]).reduce(
@@ -532,7 +532,7 @@ async function goodsSnapshot(work: RegistrationWork) {
   if (goodsAmount > MAX_GOODS_AMOUNT) {
     throw new RegistrationBlockedError(
       "GOODS_AMOUNT_TOO_LARGE",
-      "합포장 물품가액이 로젠 API 7자리 한도를 초과했습니다."
+      "GOODS_AMOUNT_TOO_LARGE"
     );
   }
 
@@ -563,13 +563,13 @@ function assertWorkPreconditions(work: RegistrationWork) {
   ) {
     throw new RegistrationBlockedError(
       "REGISTRATION_TARGET_CHANGED",
-      "합포장 그룹의 현재 송장 또는 발급 revision이 변경되었습니다."
+      "REGISTRATION_TARGET_CHANGED"
     );
   }
   if (!TRACKING_NUMBER_PATTERN.test(shipment.tracking_number)) {
     throw new RegistrationBlockedError(
       "INVALID_TRACKING_NUMBER",
-      "로젠 송장번호는 11자리 숫자여야 합니다."
+      "INVALID_TRACKING_NUMBER"
     );
   }
   const expectedAllocationIds = work.issue_item.issue_batch.shipment_list_print_batch.items
@@ -587,7 +587,7 @@ function assertWorkPreconditions(work: RegistrationWork) {
   ) {
     throw new RegistrationBlockedError(
       "PACKAGE_GROUP_MEMBERSHIP_CHANGED",
-      "합포장 그룹 구성원이 확정된 출고 차수와 다릅니다."
+      "PACKAGE_GROUP_MEMBERSHIP_CHANGED"
     );
   }
   if (
@@ -596,7 +596,7 @@ function assertWorkPreconditions(work: RegistrationWork) {
   ) {
     throw new RegistrationBlockedError(
       "INVALID_CARRIER_INVOICE_STATUS",
-      `로젠 등록할 수 없는 송장 상태입니다: ${shipment.invoice_status}`
+      "INVALID_CARRIER_INVOICE_STATUS"
     );
   }
   for (const member of group.members) {
@@ -611,7 +611,7 @@ function assertWorkPreconditions(work: RegistrationWork) {
     ) {
       throw new RegistrationBlockedError(
         "CHANNEL_INVOICE_NOT_CONFIRMED",
-        "쿠팡 배송지시 상태 또는 송장번호가 PR3 확정 결과와 다릅니다."
+        "CHANNEL_INVOICE_NOT_CONFIRMED"
       );
     }
   }
@@ -708,7 +708,7 @@ async function prepareRegistration(
   if (!fareType) {
     throw new RegistrationBlockedError(
       "LOGEN_FARE_TYPE_MISSING",
-      "로젠 거래처 계약 응답에 운임타입이 없습니다."
+      "LOGEN_FARE_TYPE_MISSING"
     );
   }
 
@@ -735,7 +735,7 @@ async function prepareRegistration(
   ) {
     throw new RegistrationBlockedError(
       "LOGEN_CONTRACT_FARE_MISSING",
-      `박스타입 ${config.boxTypeCode}의 계약운임을 찾지 못했습니다.`
+      "LOGEN_CONTRACT_FARE_MISSING"
     );
   }
 
@@ -762,7 +762,7 @@ async function prepareRegistration(
   if (!receiverBranchCode) {
     throw new RegistrationBlockedError(
       "LOGEN_RECEIVER_BRANCH_MISSING",
-      "로젠 주소 분류 응답에 배송점코드가 없습니다."
+      "LOGEN_RECEIVER_BRANCH_MISSING"
     );
   }
 
@@ -900,7 +900,7 @@ async function finalizeRegistrationSuccess(input: {
     ) {
       throw new RegistrationBlockedError(
         "REGISTRATION_TARGET_CHANGED",
-        "로젠 성공 결과를 반영하기 전에 현재 송장이 변경되었습니다."
+        "REGISTRATION_TARGET_CHANGED"
       );
     }
     try {
@@ -937,14 +937,14 @@ async function finalizeRegistrationSuccess(input: {
       if (updated.count !== 1) {
         throw new RegistrationBlockedError(
           "CARRIER_SHIPMENT_FINALIZE_CONFLICT",
-          "로젠 등록 성공 결과를 현재 송장에 반영하지 못했습니다."
+          "CARRIER_SHIPMENT_FINALIZE_CONFLICT"
         );
       }
     } catch (error) {
       if (error instanceof CarrierShipmentStateConflictError) {
         throw new RegistrationBlockedError(
           "CARRIER_SHIPMENT_FINALIZE_CONFLICT",
-          "Carrier shipment state changed before registration finalization."
+          "CARRIER_SHIPMENT_FINALIZE_CONFLICT"
         );
       }
       throw error;
@@ -1400,7 +1400,7 @@ export async function queueLogenRegistrationForIssueBatch(input: {
   if (!batch) {
     throw publicNotFound(
       "INVOICE_ISSUE_BATCH_NOT_FOUND",
-      "송장 발급 차수를 찾지 못했습니다."
+      "INVOICE_ISSUE_BATCH_NOT_FOUND"
     );
   }
   let queuedCount = 0;

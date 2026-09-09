@@ -1,6 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
+import { packageGroupStatusLabel } from "@/quickhack_client/components/shipment/package-group-status-presentation";
 import { AlertTriangle, RefreshCcw } from "lucide-react";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -16,9 +19,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/quickhack_client/components/ui/sheet";
-import { inventoryStatusLabel } from "@/quickhack_shared/inventory/inventory-status";
+import { statusLabel } from "@/quickhack_client/components/shared/device-detail-sheet";
 import {
-  SHIPMENT_DELIVERY_STAGE_LABELS,
   type ShipmentDeliverySearchDetail,
   type ShipmentDeliveryTrackingEvent,
 } from "@/quickhack_shared/shipment/delivery-search";
@@ -39,24 +41,6 @@ function textOrDash(value: string | number | null | undefined) {
 
 function formatDateTime(value: string | null | undefined) {
   return textOrDash(value).replace("T", " ").slice(0, 19);
-}
-
-function workflowStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    PENDING: "대기",
-    IN_PROGRESS: "처리 중",
-    COMPLETED: "완료",
-    REGISTERED: "등록 완료",
-    CONFIRMED: "확정",
-    NOT_PRINTED: "출력 전",
-    SPOOLED: "프린터 전송",
-    PRINTED: "출력 완료",
-    FAILED: "실패",
-    BLOCKED: "처리 중단",
-    REVIEW_REQUIRED: "직접 확인 필요",
-    LOCAL_PENDING: "내부 확정 필요",
-  };
-  return labels[status] ?? status;
 }
 
 function statusVariant(status: string) {
@@ -105,6 +89,45 @@ export function ShipmentDeliverySearchDetailSheet({
   error: string;
   onRetry: () => void;
 }) {
+  const t = useTranslations("shipment.deliverySearch");
+  const packageStatusT = useTranslations("shipment.packageGroupStatus");
+  const detailT = useTranslations("common.deviceDetail");
+
+  function stageLabel(value: ShipmentDeliverySearchDetail["summary"]["deliveryStage"]) {
+    if (value === "INVOICE_ALLOCATED") return t("stage.invoiceAllocated");
+    if (value === "REGISTERED") return t("stage.registered");
+    if (value === "IN_TRANSIT") return t("stage.inTransit");
+    if (value === "DELIVERED") return t("stage.delivered");
+    if (value === "ON_HOLD") return t("stage.onHold");
+    if (value === "EXCEPTION") return t("stage.exception");
+    if (value === "CLOSED") return t("stage.closed");
+    return t("stage.preparing");
+  }
+
+  function workflowStatusLabel(status: string) {
+    if (status === "IN_PROGRESS") return t("workflowStatus.inProgress");
+    if (status === "COMPLETED") return t("workflowStatus.completed");
+    if (status === "REGISTERED") return t("workflowStatus.registered");
+    if (status === "CONFIRMED") return t("workflowStatus.confirmed");
+    if (status === "NOT_PRINTED") return t("workflowStatus.notPrinted");
+    if (status === "SPOOLED") return t("workflowStatus.spooled");
+    if (status === "PRINTED") return t("workflowStatus.printed");
+    if (status === "FAILED") return t("workflowStatus.failed");
+    if (status === "BLOCKED") return t("workflowStatus.blocked");
+    if (status === "REVIEW_REQUIRED") return t("workflowStatus.reviewRequired");
+    if (status === "LOCAL_PENDING") return t("workflowStatus.localPending");
+    if (status === "PENDING") return t("workflowStatus.pending");
+    return status;
+  }
+
+  function workflowLabel(key: ShipmentDeliverySearchDetail["workflows"][number]["key"]) {
+    if (key === "INVOICE_ISSUE") return t("workflow.invoiceIssue");
+    if (key === "LABEL_PRINT") return t("workflow.labelPrint");
+    if (key === "CHANNEL_WRITE") return t("workflow.channelWrite");
+    if (key === "CARRIER_REGISTRATION") return t("workflow.carrierRegistration");
+    return t("workflow.invoiceReplacement");
+  }
+
   const summary = detail?.summary ?? null;
   const [selectedTrackingShipmentId, setSelectedTrackingShipmentId] =
     React.useState<number | null>(null);
@@ -147,7 +170,7 @@ export function ShipmentDeliverySearchDetailSheet({
         | TrackingPageResponse
         | null;
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "배송 추적 이력을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("fallback.trackingLoadFailed")));
       }
       const next = payload.items ?? [];
       setTrackingEvents((current) => append ? [...current, ...next] : next);
@@ -159,7 +182,7 @@ export function ShipmentDeliverySearchDetailSheet({
     } finally {
       if (!signal?.aborted) setTrackingLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     if (!open || !trackingShipmentId) return;
@@ -179,7 +202,7 @@ export function ShipmentDeliverySearchDetailSheet({
         <SheetHeader>
           <div className="flex flex-wrap items-center gap-2 pr-8">
             <SheetTitle>
-              {summary?.trackingNumber || `배송 건 #${summary?.packageGroupId ?? ""}`}
+              {summary?.trackingNumber || t("detail.title", { id: String(summary?.packageGroupId ?? "") })}
             </SheetTitle>
             {summary ? (
               <Badge
@@ -191,30 +214,29 @@ export function ShipmentDeliverySearchDetailSheet({
                       : "secondary"
                 }
               >
-                {SHIPMENT_DELIVERY_STAGE_LABELS[summary.deliveryStage]}
+                {stageLabel(summary.deliveryStage)}
               </Badge>
             ) : null}
             {summary?.reviewRequired ? (
-              <Badge variant="warning">확인 필요 {summary.reviewCount}</Badge>
+              <Badge variant="warning">{t("reviewCount", { count: summary.reviewCount })}</Badge>
             ) : null}
           </div>
           <SheetDescription>
-            물리 포장 그룹 #{summary?.packageGroupId ?? "-"} · 구성품{" "}
-            {summary?.memberCount ?? 0}개
+            {t("detail.packageSummary", { group: String(summary?.packageGroupId ?? "-"), members: summary?.memberCount ?? 0 })}
           </SheetDescription>
         </SheetHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {loading ? (
             <div className="grid min-h-48 place-items-center text-sm text-muted-foreground">
-              배송 건 상세 정보를 불러오는 중입니다.
+              {t("loading")}
             </div>
           ) : error ? (
             <div className="space-y-3">
               <FeedbackBanner tone="danger">{error}</FeedbackBanner>
               <Button type="button" variant="outline" onClick={onRetry}>
                 <RefreshCcw className="size-4" />
-                다시 불러오기
+                {t("actions.retry")}
               </Button>
             </div>
           ) : detail ? (
@@ -223,7 +245,7 @@ export function ShipmentDeliverySearchDetailSheet({
                 <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <div className="mb-2 flex items-center gap-2 font-semibold">
                     <AlertTriangle className="size-4" />
-                    판매 채널 동기화 점검 필요
+                    {t("detail.reviewRequired")}
                   </div>
                   <div className="space-y-2">
                     {detail.reviews.map((review) => (
@@ -243,16 +265,16 @@ export function ShipmentDeliverySearchDetailSheet({
                 </div>
               ) : null}
 
-              <h3 className="mb-2 text-sm font-semibold">배송지 정보</h3>
+              <h3 className="mb-2 text-sm font-semibold">{t("detail.destination")}</h3>
               <DescriptionList className="mb-5 rounded-md border bg-background px-4">
                 <DetailRow
-                  label="수취인"
+                  label={t("detail.receiver")}
                   value={`${detail.receiver.name} / ${textOrDash(
                     detail.receiver.maskedPhone
                   )}`}
                 />
                 <DetailRow
-                  label="주소"
+                  label={t("detail.address")}
                   value={[
                     detail.receiver.postCode,
                     detail.receiver.address1,
@@ -262,30 +284,30 @@ export function ShipmentDeliverySearchDetailSheet({
                     .join(" ")}
                 />
                 <DetailRow
-                  label="배송 메모"
+                  label={t("detail.deliveryMemo")}
                   value={detail.receiver.shippingMemo}
                 />
                 <DetailRow
-                  label="포장 상태"
-                  value={detail.packageGroup.groupStatus}
+                  label={t("detail.packageStatus")}
+                  value={packageGroupStatusLabel(detail.packageGroup.groupStatus, packageStatusT)}
                 />
                 <DetailRow
-                  label="생성 일시"
+                  label={t("detail.createdAt")}
                   value={formatDateTime(detail.packageGroup.createdAt)}
                 />
                 {detail.packageGroup.invalidationReason ? (
                   <DetailRow
-                    label="종료 사유"
+                    label={t("detail.invalidationReason")}
                     value={detail.packageGroup.invalidationReason}
                   />
                 ) : null}
               </DescriptionList>
 
-              <h3 className="mb-2 text-sm font-semibold">처리 진행 상태</h3>
+              <h3 className="mb-2 text-sm font-semibold">{t("detail.workflow")}</h3>
               <div className="mb-5 overflow-hidden rounded-md border bg-background">
                 {detail.workflows.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    아직 시작된 송장 처리 작업이 없습니다.
+                    {t("detail.workflowEmpty")}
                   </div>
                 ) : (
                   detail.workflows.map((workflow) => (
@@ -293,7 +315,7 @@ export function ShipmentDeliverySearchDetailSheet({
                       key={`${workflow.key}:${workflow.relatedId ?? "none"}`}
                       className="grid grid-cols-[125px_120px_minmax(0,1fr)] gap-3 border-b px-4 py-3 text-xs last:border-b-0"
                     >
-                      <span className="font-medium">{workflow.label}</span>
+                      <span className="font-medium">{workflowLabel(workflow.key)}</span>
                       <Badge
                         variant={statusVariant(workflow.status)}
                         className="w-fit"
@@ -318,7 +340,7 @@ export function ShipmentDeliverySearchDetailSheet({
                 )}
               </div>
 
-              <h3 className="mb-2 text-sm font-semibold">포장 구성</h3>
+              <h3 className="mb-2 text-sm font-semibold">{t("detail.members")}</h3>
               <div className="mb-5 overflow-hidden rounded-md border bg-background">
                 {detail.members.map((member) => (
                   <div
@@ -336,7 +358,7 @@ export function ShipmentDeliverySearchDetailSheet({
                             : "secondary"
                         }
                       >
-                        {inventoryStatusLabel(member.inventoryStatus)}
+                        {statusLabel(member.inventoryStatus ?? "", detailT)}
                       </Badge>
                       <span className="text-muted-foreground">
                         {member.uniqueNo}
@@ -344,8 +366,7 @@ export function ShipmentDeliverySearchDetailSheet({
                     </div>
                     <div className="mt-1 break-words">{member.productName}</div>
                     <div className="mt-1 text-muted-foreground">
-                      주문 {member.externalOrderId} · 묶음배송{" "}
-                      {member.externalShipmentId}
+                      {t("detail.orderMember", { orderId: member.externalOrderId, shipmentId: member.externalShipmentId })}
                       {member.batchLabel
                         ? ` · ${member.batchLabel}-${member.printLineNo ?? "-"}`
                         : ""}
@@ -354,11 +375,11 @@ export function ShipmentDeliverySearchDetailSheet({
                 ))}
               </div>
 
-              <h3 className="mb-2 text-sm font-semibold">송장 이력</h3>
+              <h3 className="mb-2 text-sm font-semibold">{t("detail.invoiceHistory")}</h3>
               <div className="mb-5 overflow-hidden rounded-md border bg-background">
                 {detail.revisions.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    아직 발급된 송장이 없습니다.
+                    {t("detail.invoicesEmpty")}
                   </div>
                 ) : (
                   detail.revisions.map((revision) => (
@@ -394,18 +415,18 @@ export function ShipmentDeliverySearchDetailSheet({
                       <Badge
                         variant={revision.isCurrent ? "success" : "neutral"}
                       >
-                        {revision.isCurrent ? "현재 송장" : "이전 송장"}
+                        {revision.isCurrent ? t("detail.currentInvoice") : t("detail.previousInvoice")}
                       </Badge>
                     </div>
                   ))
                 )}
               </div>
 
-              <h3 className="mb-2 text-sm font-semibold">배송 추적 이력</h3>
+              <h3 className="mb-2 text-sm font-semibold">{t("detail.tracking")}</h3>
               <div className="overflow-hidden rounded-md border bg-background">
                 {trackingEvents.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    수집된 배송 추적 이력이 없습니다.
+                    {t("detail.trackingEmpty")}
                   </div>
                 ) : (
                   trackingEvents.map((event) => (
@@ -434,8 +455,7 @@ export function ShipmentDeliverySearchDetailSheet({
               ) : null}
               <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                 <span>
-                  {trackingEvents.length.toLocaleString("ko-KR")} /{" "}
-                  {trackingTotal.toLocaleString("ko-KR")}건
+                  {t("detail.trackingSummary", { loaded: trackingEvents.length, total: trackingTotal })}
                 </span>
                 {trackingCursor && trackingShipmentId ? (
                   <Button
@@ -450,7 +470,7 @@ export function ShipmentDeliverySearchDetailSheet({
                       )
                     }
                   >
-                    {trackingLoading ? "불러오는 중" : "더 보기"}
+                    {trackingLoading ? t("actions.loading") : t("actions.loadMore")}
                   </Button>
                 ) : null}
               </div>

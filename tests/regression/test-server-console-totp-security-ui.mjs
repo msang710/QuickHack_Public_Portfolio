@@ -22,6 +22,18 @@ const sensitiveGuardSource = fs.readFileSync(
   "quickhack_client/components/security/sensitive-action-guards.tsx",
   "utf8"
 );
+const consoleI18nSource = fs.readFileSync(
+  "tools/server-console-i18n.mjs",
+  "utf8"
+);
+const koSettingsCatalog = fs.readFileSync(
+  "quickhack_client/i18n/catalogs/ko/settings.ts",
+  "utf8"
+);
+const koAuthCatalog = fs.readFileSync(
+  "quickhack_client/i18n/catalogs/ko/auth.ts",
+  "utf8"
+);
 
 assert.match(
   routeHandlersSource,
@@ -51,7 +63,8 @@ assert.match(
 assert.match(consoleSource, /id="otp-security-state"/);
 assert.match(consoleSource, /id="otp-security-confirm"/);
 assert.match(consoleSource, /id="otp-security-recover"/);
-assert.match(consoleSource, /키나 암호를 입력받지 않습니다/);
+assert.match(consoleI18nSource, /키나 암호를 입력받지 않습니다/);
+assert.match(consoleSource, /actionMessages\[p\.messageCode\]/);
 assert.match(consoleSource, /confirmText: String\(payload\.confirmText/);
 assert.doesNotMatch(
   consoleSource,
@@ -64,13 +77,15 @@ assert.match(recoveryServiceSource, /SYSTEM_TOTP_SECURITY_RESET/);
 assert.match(recoveryServiceSource, /TOTP_SECURITY_ALREADY_READY/);
 assert.match(recoveryServiceSource, /TOTP_SECURITY_RESET_CONFIRMATION_REQUIRED/);
 assert.match(
-  accountPanelSource,
+  koSettingsCatalog,
   /QuickHack 본서버 콘솔에서 OTP 보안 상태를 확인해야 합니다/
 );
 assert.match(
-  sensitiveGuardSource,
+  koAuthCatalog,
   /QuickHack 본서버 콘솔에서 OTP 보안 상태를 확인해야 합니다/
 );
+assert.match(accountPanelSource, /useTranslations/);
+assert.match(sensitiveGuardSource, /useTranslations/);
 
 console.log(
   "Server-owned OTP recovery route, console confirmation UI, and no-secret-input contract verified."

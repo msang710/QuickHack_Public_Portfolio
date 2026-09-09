@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { legacyApiMessage } from "@/quickhack_client/api/legacy-api-message";
+import { useTranslations } from "next-intl";
 import { AlertTriangle, RefreshCcw } from "lucide-react";
 import { Badge } from "@/quickhack_client/components/ui/badge";
 import { Button } from "@/quickhack_client/components/ui/button";
@@ -21,7 +23,7 @@ import {
   type DataGridColumn,
   VirtualizedDataGrid,
 } from "@/quickhack_client/components/ui/virtualized-data-grid";
-import { inventoryStatusLabel } from "@/quickhack_shared/inventory/inventory-status";
+import { statusLabel } from "@/quickhack_client/components/shared/device-detail-sheet";
 
 type TrackingMember = {
   allocationId: number;
@@ -132,8 +134,6 @@ type TrackingColumnKey =
   | "receiverName"
   | "receiverAddress";
 
-const numberFormatter = new Intl.NumberFormat("ko-KR");
-
 function textOrDash(value: string | number | null | undefined) {
   const text = String(value ?? "").trim();
   return text || "-";
@@ -165,15 +165,18 @@ function MultiLineText({ value }: { value: string | null | undefined }) {
   );
 }
 
-function carrierStatusLabel(value: string | null | undefined) {
-  if (value === "REGISTERED") return "송장 등록";
-  if (value === "IN_TRANSIT") return "배송 중";
-  if (value === "DELIVERED") return "배송 완료";
-  if (value === "EXCEPTION") return "배송 예외";
+type InTransitTranslator = ReturnType<typeof useTranslations<"shipment.inTransit">>;
+
+function carrierStatusLabel(value: string | null | undefined, t: InTransitTranslator) {
+  if (value === "REGISTERED") return t("status.registered");
+  if (value === "IN_TRANSIT") return t("status.inTransit");
+  if (value === "DELIVERED") return t("status.delivered");
+  if (value === "EXCEPTION") return t("status.exception");
   return textOrDash(value);
 }
 
 function CarrierStatusBadge({ row }: { row: TrackingRow }) {
+  const t = useTranslations("shipment.inTransit");
   const variant =
     row.carrierStatus === "EXCEPTION"
       ? "danger"
@@ -182,15 +185,16 @@ function CarrierStatusBadge({ row }: { row: TrackingRow }) {
         : "neutral";
   return (
     <div className="flex flex-col items-start gap-1">
-      <Badge variant={variant}>{carrierStatusLabel(row.carrierStatus)}</Badge>
+      <Badge variant={variant}>{carrierStatusLabel(row.carrierStatus, t)}</Badge>
       {row.reviewRequired ? (
-        <Badge variant="warning">확인 필요</Badge>
+        <Badge variant="warning">{t("reviewRequired")}</Badge>
       ) : null}
     </div>
   );
 }
 
 function InventoryStatusBadges({ value }: { value: string }) {
+  const detailT = useTranslations("common.deviceDetail");
   const statuses = Array.from(
     new Set(
       value
@@ -207,7 +211,7 @@ function InventoryStatusBadges({ value }: { value: string }) {
           key={status}
           variant={status === "NONE_TRACKING" ? "danger" : "secondary"}
         >
-          {inventoryStatusLabel(status)}
+          {statusLabel(status, detailT)}
         </Badge>
       ))}
     </div>
@@ -240,6 +244,8 @@ function TrackingDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useTranslations("shipment.inTransit");
+  const detailT = useTranslations("common.deviceDetail");
   const [trackingEvents, setTrackingEvents] = React.useState<TrackingEvent[]>([]);
   const [trackingCursor, setTrackingCursor] = React.useState<string | null>(null);
   const [trackingTotal, setTrackingTotal] = React.useState(0);
@@ -270,7 +276,7 @@ function TrackingDetailSheet({
         | TrackingEventPageResponse
         | null;
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "배송 추적 이력을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("fallback.trackingLoadFailed")));
       }
       const next = payload.items ?? [];
       setTrackingEvents((current) => append ? [...current, ...next] : next);
@@ -282,7 +288,7 @@ function TrackingDetailSheet({
     } finally {
       if (!signal?.aborted) setTrackingLoading(false);
     }
-  }, [carrierShipmentId]);
+  }, [carrierShipmentId, t]);
 
   React.useEffect(() => {
     if (!open || !carrierShipmentId) return;
@@ -306,7 +312,10 @@ function TrackingDetailSheet({
             <CarrierStatusBadge row={row} />
           </div>
           <SheetDescription>
-            합포장 그룹 #{row.packageGroupId} / 구성품 {row.memberCount}대
+            {t("detail.packageSummary", {
+              group: row.packageGroupId,
+              members: row.memberCount,
+            })}
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -314,7 +323,7 @@ function TrackingDetailSheet({
             <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <div className="mb-2 flex items-center gap-2 font-semibold">
                 <AlertTriangle className="size-4" />
-                자동 반영 확인 필요
+                {t("detail.autoReview")}
               </div>
               {row.reviews.map((review) => (
                 <div key={review.id} className="mt-2 border-t border-amber-200 pt-2 first:mt-0 first:border-0 first:pt-0">
@@ -329,26 +338,26 @@ function TrackingDetailSheet({
             </div>
           ) : null}
 
-          <h3 className="mb-2 text-sm font-semibold">배송 요약</h3>
+          <h3 className="mb-2 text-sm font-semibold">{t("detail.summary")}</h3>
           <DescriptionList className="mb-5 rounded-md border bg-background px-4">
-            <DetailRow label="택배사" value={row.carrierCode} />
-            <DetailRow label="현재 상태" value={carrierStatusLabel(row.carrierStatus)} />
-            <DetailRow label="최근 스캔" value={row.latestStatusName} />
-            <DetailRow label="스캔 지점" value={row.latestBranchName} />
+            <DetailRow label={t("detail.carrier")} value={row.carrierCode} />
+            <DetailRow label={t("detail.currentStatus")} value={carrierStatusLabel(row.carrierStatus, t)} />
+            <DetailRow label={t("detail.latestScan")} value={row.latestStatusName} />
+            <DetailRow label={t("detail.scanLocation")} value={row.latestBranchName} />
             <DetailRow
-              label="스캔 일시"
+              label={t("detail.scanAt")}
               value={formatScanDateTime(row.latestScanDate, row.latestScanTime)}
             />
-            <DetailRow label="최근 조회" value={formatDateTime(row.lastTrackedAt)} />
-            <DetailRow label="수취인" value={`${row.receiverName} / ${row.receiverSafeNumber}`} />
-            <DetailRow label="주소" value={row.receiverAddress} />
+            <DetailRow label={t("detail.lastTracked")} value={formatDateTime(row.lastTrackedAt)} />
+            <DetailRow label={t("detail.receiver")} value={`${row.receiverName} / ${row.receiverSafeNumber}`} />
+            <DetailRow label={t("detail.address")} value={row.receiverAddress} />
           </DescriptionList>
 
-          <h3 className="mb-2 text-sm font-semibold">배송 추적 이력</h3>
+          <h3 className="mb-2 text-sm font-semibold">{t("detail.events")}</h3>
           <div className="mb-5 overflow-hidden rounded-md border bg-background">
             {trackingEvents.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                수집된 배송 스캔 이력이 없습니다.
+                {t("detail.eventsEmpty")}
               </div>
             ) : (
               trackingEvents.map((event) => (
@@ -366,19 +375,22 @@ function TrackingDetailSheet({
             )}
           </div>
 
-          <h3 className="mb-2 text-sm font-semibold">합포장 구성품</h3>
+          <h3 className="mb-2 text-sm font-semibold">{t("detail.members")}</h3>
           <div className="overflow-hidden rounded-md border bg-background">
             {row.members.map((member) => (
               <div key={member.allocationId} className="border-b px-4 py-3 text-sm last:border-b-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono font-medium">{member.pgNo}</span>
                   <Badge variant={member.inventoryStatus === "NONE_TRACKING" ? "danger" : "secondary"}>
-                    {inventoryStatusLabel(member.inventoryStatus)}
+                    {statusLabel(member.inventoryStatus ?? "", detailT)}
                   </Badge>
                   <span className="text-muted-foreground">{member.uniqueNo}</span>
                 </div>
                 <div className="mt-1 break-words text-muted-foreground">
-                  {member.productName} / 주문 {member.externalOrderId}
+                  {t("detail.order", {
+                    orderId: member.externalOrderId,
+                    product: member.productName,
+                  })}
                 </div>
               </div>
             ))}
@@ -390,8 +402,10 @@ function TrackingDetailSheet({
           ) : null}
           <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
             <span>
-              추적 이력 {trackingEvents.length.toLocaleString("ko-KR")} /{" "}
-              {trackingTotal.toLocaleString("ko-KR")}건
+              {t("detail.eventsSummary", {
+                loaded: trackingEvents.length,
+                total: trackingTotal,
+              })}
             </span>
             {trackingCursor ? (
               <Button
@@ -400,7 +414,7 @@ function TrackingDetailSheet({
                 disabled={trackingLoading}
                 onClick={() => void loadTrackingEvents(trackingCursor, true)}
               >
-                {trackingLoading ? "불러오는 중" : "더 보기"}
+                {trackingLoading ? t("actions.loading") : t("actions.loadMore")}
               </Button>
             ) : null}
           </div>
@@ -411,6 +425,7 @@ function TrackingDetailSheet({
 }
 
 export function ShipmentInTransitListView() {
+  const t = useTranslations("shipment.inTransit");
   const [rows, setRows] = React.useState<TrackingRow[]>([]);
   const [summary, setSummary] = React.useState<TrackingApiResponse["summary"]>();
   const [selectedRow, setSelectedRow] = React.useState<TrackingRow | null>(null);
@@ -436,7 +451,7 @@ export function ShipmentInTransitListView() {
         | TrackingApiResponse
         | null;
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || "배송 현황을 불러오지 못했습니다.");
+        throw new Error(legacyApiMessage(payload, t("fallback.listLoadFailed")));
       }
       const nextRows = payload.items ?? [];
       setRows((current) => append ? [...current, ...nextRows] : nextRows);
@@ -459,7 +474,7 @@ export function ShipmentInTransitListView() {
       if (append) setIsLoadingMore(false);
       else setIsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     const timerId = window.setTimeout(() => void loadRows(), 0);
@@ -472,15 +487,16 @@ export function ShipmentInTransitListView() {
     () => [
       {
         key: "carrierStatus",
-        label: "택배 상태",
+        label: t("columns.carrierStatus"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3",
-        text: (row) => `${row.carrierStatus} ${row.reviewRequired ? "확인 필요" : ""}`,
+        text: (row) =>
+          `${row.carrierStatus} ${row.reviewRequired ? t("reviewRequired") : ""}`,
         render: (row) => <CarrierStatusBadge row={row} />,
       },
       {
         key: "latestStatus",
-        label: "최근 스캔",
+        label: t("columns.latestScan"),
         width: "130px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => `${row.latestStatusName ?? ""} ${row.latestBranchName ?? ""}`,
@@ -493,7 +509,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "lastTrackedAt",
-        label: "최근 조회",
+        label: t("columns.lastTracked"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => formatDateTime(row.lastTrackedAt),
@@ -501,7 +517,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "trackingNumber",
-        label: "송장번호",
+        label: t("columns.trackingNumber"),
         width: "135px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.trackingNumber,
@@ -509,7 +525,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "shipmentBatch",
-        label: "출고 차수",
+        label: t("columns.shipmentBatch"),
         width: "150px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.shipmentBatchText,
@@ -517,7 +533,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "inventoryStatus",
-        label: "재고 상태",
+        label: t("columns.inventoryStatus"),
         width: "130px",
         cellClassName: "flex min-w-0 items-center px-3",
         text: (row) => row.inventoryStatusText,
@@ -533,7 +549,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "externalOrderId",
-        label: "주문번호",
+        label: t("columns.orderId"),
         width: "160px",
         cellClassName: "flex min-w-0 items-center px-3 font-mono text-xs",
         text: (row) => row.externalOrderIds,
@@ -541,7 +557,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "product",
-        label: "상품",
+        label: t("columns.product"),
         width: "minmax(260px,1.1fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.productText,
@@ -549,7 +565,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "channelStatus",
-        label: "쿠팡 상태",
+        label: t("columns.channelStatus"),
         width: "110px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.channelStatusText,
@@ -557,7 +573,7 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "receiverName",
-        label: "수취인",
+        label: t("columns.receiver"),
         width: "120px",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverName,
@@ -565,26 +581,28 @@ export function ShipmentInTransitListView() {
       },
       {
         key: "receiverAddress",
-        label: "주소",
+        label: t("columns.address"),
         width: "minmax(300px,1.3fr)",
         cellClassName: "flex min-w-0 items-center px-3 text-xs",
         text: (row) => row.receiverAddress,
         render: (row) => <span className="line-clamp-2 break-words">{row.receiverAddress}</span>,
       },
     ],
-    []
+    [t]
   );
 
   return (
     <WorkspacePageFrame className="p-5">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">현재 배송 중 목록</h2>
+          <h2 className="text-sm font-semibold">{t("title")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            합포장 {numberFormatter.format(summary?.packageGroupCount ?? 0)}건 / PG{" "}
-            {numberFormatter.format(summary?.memberCount ?? 0)}대 / 배송 중{" "}
-            {numberFormatter.format(summary?.inTransitCount ?? 0)}건 / 예외{" "}
-            {numberFormatter.format(summary?.exceptionCount ?? 0)}건
+            {t("summary", {
+              exceptions: summary?.exceptionCount ?? 0,
+              inTransit: summary?.inTransitCount ?? 0,
+              members: summary?.memberCount ?? 0,
+              packages: summary?.packageGroupCount ?? 0,
+            })}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -594,12 +612,12 @@ export function ShipmentInTransitListView() {
             onClick={() => void loadRows(nextCursor, true)}
             disabled={isLoadingMore}
           >
-            {isLoadingMore ? "불러오는 중" : "더 보기"}
+            {isLoadingMore ? t("actions.loading") : t("actions.loadMore")}
           </Button>
         ) : null}
         <Button variant="outline" onClick={() => void loadRows()} disabled={isLoading}>
           <RefreshCcw className="size-4" />
-          목록 새로고침
+          {t("actions.refresh")}
         </Button>
         </div>
       </div>
@@ -618,8 +636,8 @@ export function ShipmentInTransitListView() {
         onRowClick={setSelectedRow}
         emptyMessage={
           isLoading
-            ? "배송 현황을 불러오는 중입니다."
-            : "배송 중이거나 확인이 필요한 합포장 건이 없습니다."
+            ? t("loading")
+            : t("empty")
         }
         minWidth="1880px"
         rowHeight={58}

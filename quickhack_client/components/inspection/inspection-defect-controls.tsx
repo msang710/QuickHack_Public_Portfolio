@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/quickhack_client/components/ui/button";
 
@@ -58,6 +59,7 @@ export function DefectSelector({
   actionLabel?: string;
   onAction?: () => void;
 }) {
+  const t = useTranslations("inspection.defects");
   const parts = React.useMemo(() => Object.keys(defectMap), [defectMap]);
   const [activePart, setActivePart] = React.useState(parts[0] ?? "");
   const selectedText = defectStateToText(selected);
@@ -74,7 +76,7 @@ export function DefectSelector({
             size="sm"
             onClick={() => onSelectedChange({})}
           >
-            선택 초기화
+            {t("reset")}
           </Button>
         </div>
 
@@ -94,7 +96,7 @@ export function DefectSelector({
 
         <div className="min-h-14 rounded-md border bg-background p-3">
           <div className="mb-2 text-xs font-medium text-muted-foreground">
-            상태
+            {t("state")}
           </div>
           <div className="flex flex-wrap gap-x-5 gap-y-3">
             {activeStates.map((state) => (
@@ -126,7 +128,7 @@ export function DefectSelector({
 
       <div className="flex min-h-36 flex-col gap-3 rounded-md border bg-background p-3">
         <div className="text-xs font-medium text-muted-foreground">
-          선택 결과
+          {t("result")}
         </div>
         <div className="min-h-16 flex-1 whitespace-pre-wrap text-sm">
           {selectedText || emptyLabel}

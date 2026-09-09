@@ -13,7 +13,7 @@ import {
 const appliedRows = QUICKHACK_POSTGRESQL_MIGRATIONS.map((migration) => ({
   migration_name: migration.name,
   checksum: migration.checksum,
-  finished_at: new Date("2026-08-26T00:00:00.000Z"),
+  finished_at: new Date("2026-09-07T00:00:00.000Z"),
   rolled_back_at: null,
 }));
 
@@ -40,10 +40,18 @@ assert.equal(
 assert.match(QUICKHACK_POSTGRESQL_SCHEMA_VERSION, /^qhpg1-[a-f0-9]{64}$/u);
 for (const mutation of [
   appliedRows.slice(0, -1),
-  appliedRows.map((row, index) => index === 1 ? { ...row, checksum: "0".repeat(64) } : row),
-  [appliedRows[1], appliedRows[0], ...appliedRows.slice(2)],
+  appliedRows.map((row, index) => index === 0 ? { ...row, checksum: "0".repeat(64) } : row),
+  appliedRows.map((row, index) => index === 0 ? { ...row, migration_name: "unknown_migration" } : row),
+  appliedRows.map((row, index) => index === 0 ? { ...row, finished_at: null } : row),
+  appliedRows.map((row, index) => index === 0 ? { ...row, rolled_back_at: new Date() } : row),
+  [...appliedRows, { ...appliedRows[0], migration_name: "unexpected_migration" }],
 ]) {
   assert.throws(() => assertAppliedPostgresqlMigrations(mutation));
+}
+if (appliedRows.length > 1) {
+  assert.throws(() => assertAppliedPostgresqlMigrations([
+    appliedRows[1], appliedRows[0], ...appliedRows.slice(2),
+  ]));
 }
 
 const validIndex = {

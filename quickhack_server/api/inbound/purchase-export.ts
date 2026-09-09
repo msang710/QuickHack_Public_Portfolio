@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 401,
       code: "AUTHENTICATION_REQUIRED",
-      message: "로그인이 필요합니다.",
+
     });
   }
 
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 403,
       code: "PERMISSION_DENIED",
-      message: "매입 내보내기 권한이 없습니다.",
+
     });
   }
 
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVALID_REQUEST_BODY",
-      message: "요청 본문이 올바르지 않습니다.",
+
     });
   }
   setOperationTraceTargetCount(Array.isArray(body.items) ? body.items.length : 0);

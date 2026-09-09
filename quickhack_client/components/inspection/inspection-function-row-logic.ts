@@ -25,8 +25,11 @@ export type ConnectedAdbDevice = {
   storage: string;
   firstCallDate: string;
   account: string;
+  accountStatus: "UNKNOWN" | "NONE" | "PRESENT" | "QUERY_FAILED";
   cameraCheck: string;
   warning: string;
+  warningCodes: FunctionRow["warningCodes"];
+  warningDetail: string | null;
 };
 
 export function isAdbVirtualEmulatorPort(device: ConnectedAdbDevice) {
@@ -45,9 +48,12 @@ export function createFunctionRow(id?: string): FunctionRow {
     csc: "",
     storage: "",
     firstCallDate: "",
-    account: "연결되지 않음",
+    account: "",
+    accountStatus: "UNKNOWN",
     cameraCheck: "-",
     warning: "",
+    warningCodes: [],
+    warningDetail: null,
     pg: "",
     imei: "",
     functionDefect: "",
@@ -71,7 +77,7 @@ export function parseBarcodeScans(rawValue: string) {
     return {
       ok: false as const,
       scans: [] as BarcodeScan[],
-      message: "PG 또는 IMEI 바코드 형식이 아닙니다.",
+      errorCode: "INVALID_BARCODE" as const,
     };
   }
 
@@ -95,11 +101,11 @@ export function parseBarcodeScans(rawValue: string) {
     return {
       ok: false as const,
       scans: [] as BarcodeScan[],
-      message: "PG 또는 IMEI 바코드 형식이 아닙니다.",
+      errorCode: "INVALID_BARCODE" as const,
     };
   }
 
-  return { ok: true as const, scans, message: "스캔값 입력 완료" };
+  return { ok: true as const, scans };
 }
 
 export function fieldForBarcodeScan(target: BarcodeScanTarget): "pg" | "imei" {
@@ -156,7 +162,7 @@ function preserveDisconnectedDraft(row: FunctionRow): FunctionRow {
   return {
     ...row,
     connectionState: "disconnected",
-    warning: row.warning || "ADB 연결 해제",
+    warning: row.warning,
   };
 }
 
@@ -185,8 +191,11 @@ function createFunctionRowFromAdbDevice(
       : "",
     firstCallDate: device.firstCallDate,
     account: device.account,
+    accountStatus: device.accountStatus,
     cameraCheck: device.cameraCheck,
     warning: device.warning,
+    warningCodes: device.warningCodes,
+    warningDetail: device.warningDetail,
     pg: existing?.pg ?? "",
     imei: existing?.imei ?? "",
     functionDefect: existing?.functionDefect ?? "",

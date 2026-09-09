@@ -45,7 +45,7 @@ export async function authorizeAccountMutation(
   ) {
     throw publicConflict(
       "ACCOUNT_AUTHORIZATION_CHANGED",
-      "계정 관리 권한 또는 인증 상태가 변경되었습니다. 다시 인증한 뒤 시도하세요."
+      "ACCOUNT_AUTHORIZATION_CHANGED"
     );
   }
 
@@ -65,12 +65,12 @@ export async function lockAccountTarget(
   `;
 
   if (rows.length !== 1) {
-    throw publicNotFound("ACCOUNT_NOT_FOUND", "계정을 찾을 수 없습니다.");
+    throw publicNotFound("ACCOUNT_NOT_FOUND", "ACCOUNT_NOT_FOUND");
   }
   if (rows[0].revision !== expectedRevision) {
     throw publicConflict(
       "ACCOUNT_CHANGED",
-      "다른 요청에서 계정 정보가 변경되었습니다. 목록을 새로고침한 뒤 다시 시도하세요."
+      "ACCOUNT_CHANGED"
     );
   }
 
@@ -96,7 +96,7 @@ export async function assertActiveLeaderRemains(
   if (otherLeaderCount === 0) {
     throw publicConflict(
       "ACTIVE_LEADER_REQUIRED",
-      "활성 LEADER 계정은 최소 1개 이상 유지해야 합니다."
+      "ACTIVE_LEADER_REQUIRED"
     );
   }
 }

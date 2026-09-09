@@ -88,7 +88,7 @@ export function presentSalesChannelWriteRequest(
     requestedBy:
       row.requested_by?.employee_profiles?.display_name ??
       row.requested_by?.username ??
-      "시스템",
+      "",
     manualVerifiedBy:
       row.manual_verified_by?.employee_profiles?.display_name ??
       row.manual_verified_by?.username ??

@@ -28,7 +28,7 @@ async function authorizeStaff(request: NextRequest) {
       response: apiFailureResponse({
         status: 401,
         code: "AUTHENTICATION_REQUIRED",
-        message: "로그인이 필요합니다.",
+
       }),
       user: null,
     };
@@ -39,7 +39,7 @@ async function authorizeStaff(request: NextRequest) {
       response: apiFailureResponse({
         status: 403,
         code: "PERMISSION_DENIED",
-        message: "판매 채널 동기화 점검 권한이 없습니다.",
+
       }),
       user: null,
     };
@@ -55,7 +55,7 @@ function positiveVerificationStateId(value: unknown) {
   if (!/^\d+$/.test(text)) {
     throw publicBadRequest(
       "INVALID_INVENTORY_VERIFICATION_STATE_ID",
-      "재고 동기화 점검 상태 ID가 올바르지 않습니다."
+      "INVALID_INVENTORY_VERIFICATION_STATE_ID"
     );
   }
 
@@ -64,7 +64,7 @@ function positiveVerificationStateId(value: unknown) {
   if (!Number.isSafeInteger(id) || id <= 0) {
     throw publicBadRequest(
       "INVALID_INVENTORY_VERIFICATION_STATE_ID",
-      "재고 동기화 점검 상태 ID가 올바르지 않습니다."
+      "INVALID_INVENTORY_VERIFICATION_STATE_ID"
     );
   }
 
@@ -77,7 +77,7 @@ function positiveSafeInteger(value: unknown, fieldLabel: string) {
   if (!/^\d+$/.test(text)) {
     throw publicBadRequest(
       "INVALID_INVENTORY_REPAIR_SNAPSHOT",
-      `${fieldLabel} 값이 올바르지 않습니다.`
+      "INVALID_INVENTORY_REPAIR_SNAPSHOT"
     );
   }
 
@@ -86,7 +86,7 @@ function positiveSafeInteger(value: unknown, fieldLabel: string) {
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw publicBadRequest(
       "INVALID_INVENTORY_REPAIR_SNAPSHOT",
-      `${fieldLabel} 값이 올바르지 않습니다.`
+      "INVALID_INVENTORY_REPAIR_SNAPSHOT"
     );
   }
 
@@ -99,7 +99,7 @@ function nonNegativeSafeInteger(value: unknown, fieldLabel: string) {
   if (!/^\d+$/.test(text)) {
     throw publicBadRequest(
       "INVALID_INVENTORY_REPAIR_SNAPSHOT",
-      `${fieldLabel} 값이 올바르지 않습니다.`
+      "INVALID_INVENTORY_REPAIR_SNAPSHOT"
     );
   }
 
@@ -108,7 +108,7 @@ function nonNegativeSafeInteger(value: unknown, fieldLabel: string) {
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw publicBadRequest(
       "INVALID_INVENTORY_REPAIR_SNAPSHOT",
-      `${fieldLabel} 값이 올바르지 않습니다.`
+      "INVALID_INVENTORY_REPAIR_SNAPSHOT"
     );
   }
 
@@ -121,7 +121,7 @@ function requiredSnapshotText(value: unknown, fieldLabel: string) {
   if (!text || text.length > 100) {
     throw publicBadRequest(
       "INVALID_INVENTORY_REPAIR_SNAPSHOT",
-      `${fieldLabel} 값이 올바르지 않습니다.`
+      "INVALID_INVENTORY_REPAIR_SNAPSHOT"
     );
   }
 
@@ -136,14 +136,14 @@ async function readJsonObject(request: NextRequest) {
   } catch {
     throw publicBadRequest(
       "INVALID_SALES_CHANNEL_SYNC_CHECK_ACTION",
-      "요청 본문이 올바른 JSON 형식이 아닙니다."
+      "INVALID_SALES_CHANNEL_SYNC_CHECK_ACTION"
     );
   }
 
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw publicBadRequest(
       "INVALID_SALES_CHANNEL_SYNC_CHECK_ACTION",
-      "요청 본문이 올바르지 않습니다."
+      "INVALID_SALES_CHANNEL_SYNC_CHECK_ACTION"
     );
   }
 
@@ -245,7 +245,7 @@ export async function PATCH(request: NextRequest) {
         if (action !== "recheckInventory" && action !== "repairInventory") {
           throw publicBadRequest(
             "INVALID_SALES_CHANNEL_SYNC_CHECK_ACTION",
-            "지원하지 않는 판매 채널 동기화 점검 처리입니다."
+            "INVALID_SALES_CHANNEL_SYNC_CHECK_ACTION"
           );
         }
 

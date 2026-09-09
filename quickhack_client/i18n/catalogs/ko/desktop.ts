@@ -1,0 +1,28 @@
+export const desktopKo = {
+  commandPalette: { title: "QuickHack 명령", description: "권한이 있는 메뉴와 안전한 데스크톱 작업만 표시합니다.", search: "메뉴 또는 작업 검색", output: { title: "출력 미리보기 창", description: "현재 출력 작업을 별도 모니터에서 확인" }, adb: { title: "ADB 장치 도구 창", description: "연결 장치 상태를 별도 창에 고정" }, empty: "조건에 맞는 메뉴가 없습니다." },
+  outputWindow: { loading: "출력 상태를 확인하는 중입니다.", loadFailed: "출력 상태를 불러오지 못했습니다.", blocker: "차단 사유", title: "출력 미리보기", description: "읽기 전용 창입니다. 출력 확정과 재고·송장 변경은 메인 창에서만 수행합니다.", revision: "revision {revision, number}", count: "{count, number}건", verified: "현재 배치를 서버에서 다시 검증했습니다.", select: "메인 창의 송장 출력 화면에서 미리보기 배치를 선택하세요.", status: { NOT_PRINTED: "출력 전", SPOOLED: "인쇄 대기열 전달", PARTIAL: "일부 출력", CONFIRMED: "출력 확인", FAILED: "출력 실패", UNKNOWN: "출력 결과 불명" }, blockerCode: { ISSUE_ITEM_NOT_ALLOCATED: "송장 항목이 출력 대상으로 배정되지 않았습니다.", CARRIER_SHIPMENT_MISSING: "현재 택배 송장이 연결되지 않았습니다.", INVALID_TRACKING_NUMBER: "로젠 송장번호 형식이 올바르지 않습니다.", PACKAGE_GROUP_NOT_READY: "합포장 그룹이 출력 준비 상태가 아닙니다.", LOGEN_REGISTRATION_NOT_READY: "로젠 주문 등록이 완료되지 않았습니다.", LABEL_SNAPSHOT_INCOMPLETE: "송장 출력에 필요한 정보가 누락되었습니다.", ISSUE_BATCH_NOT_ALLOCATED: "송장 차수가 출력 대상으로 배정되지 않았습니다.", ISSUE_BATCH_EMPTY: "송장 차수에 출력할 항목이 없습니다.", LABEL_BATCH_TOO_LARGE: "한 번에 출력할 수 있는 송장 수를 초과했습니다.", SHIPMENT_RETURN_CONFLICT: "반품 처리 중인 출고가 포함되어 있습니다." } },
+  adbWindow: { title: "ADB 장치 도구", description: "목록 revision이 바뀌면 선택 작업을 거부합니다.", refresh: "새로고침", empty: "연결된 장치가 없습니다.", check: "상태 확인", loadFailed: "ADB 목록을 불러오지 못했습니다.", checkFailed: "장치 상태 확인 실패", checkResult: "{serial}: {state}" },
+  updateStatus: { desktop: "데스크톱", apply: "업데이트 적용", checkAgain: "다시 확인", checking: "업데이트를 확인하고 있습니다.", latest: "최신 버전입니다.", downloading: "업데이트를 다운로드하고 있습니다.", ready: "업데이트를 적용할 준비가 됐습니다.", applying: "업데이트를 적용하고 있습니다.", failed: "업데이트 처리에 실패했습니다.", unavailable: "이 패키지에서는 업데이트 기능을 사용할 수 없습니다.", unknown: "업데이트 상태를 확인할 수 없습니다.", nativeStartFailureTitle: "QuickHack 시작 실패", nativeStartFailureBody: "QuickHack을 시작하지 못했습니다. 실행 기록을 확인하세요." },
+  notificationCenter: { aria: "알림 {count, number}개", empty: "새 알림이 없습니다.", messages: {
+    inspectionComplete: { title: "검수 저장 완료", body: "{pgNo} 검수 결과가 저장되었습니다." },
+    inspectionCompleteGrouped: { title: "검수 완료 {count, number}건", body: "{count, number}건의 검수 결과가 저장되었습니다." },
+    shipmentAddressChange: { title: "배송지 변경 요청", body: "판매채널 배송지 변경 요청이 접수되었습니다." },
+    returnRequest: { title: "반품 요청 접수", body: "판매채널 반품 요청이 동기화되었습니다." },
+  } },
+  appearance: {
+    title: "화면과 데스크톱",
+    theme: "테마",
+    font: "글꼴",
+    fontSize: "기본 글자 크기 · {size}px",
+    scale: "화면 배율 · {percent}%",
+    system: "시스템 설정",
+    light: "라이트",
+    dark: "다크",
+    systemFont: "시스템 기본",
+    compactFont: "업무용 고밀도",
+    browser: "개발용 웹",
+    reset: "기본값 복원",
+    note: "이 설정은 현재 PC에만 저장되며 라벨·송장 인쇄 크기에는 적용되지 않습니다.",
+  },
+  windows: { output: "출력 작업", adb: "ADB 장치 도구" },
+} as const;

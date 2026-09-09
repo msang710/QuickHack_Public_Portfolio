@@ -34,19 +34,21 @@ const PROJECTABLE_CARRIER_STATUSES = new Set<CarrierShipmentStatus>([
 
 export class DeliveryStatusProjectionConflictError extends Error {
   readonly code = "DELIVERY_STATUS_PROJECTION_CONFLICT";
+  readonly reasonCode: string;
   readonly packageGroupId: number;
   readonly pgNo: string | null;
   readonly inventoryStatus: string | null;
 
   constructor(input: {
     packageGroupId: number;
-    message: string;
+    reasonCode: string;
     pgNo?: string | null;
     inventoryStatus?: string | null;
   }) {
-    super(input.message);
+    super(input.reasonCode);
     this.name = "DeliveryStatusProjectionConflictError";
     this.packageGroupId = input.packageGroupId;
+    this.reasonCode = input.reasonCode;
     this.pgNo = input.pgNo ?? null;
     this.inventoryStatus = input.inventoryStatus ?? null;
   }
@@ -130,7 +132,7 @@ async function loadCurrentPackageGroup(
   if (!group) {
     throw new DeliveryStatusProjectionConflictError({
       packageGroupId: input.packageGroupId,
-      message: `합포장 그룹을 찾을 수 없습니다: ${input.packageGroupId}`,
+      reasonCode: "PACKAGE_GROUP_NOT_FOUND",
     });
   }
   if (
@@ -139,7 +141,7 @@ async function loadCurrentPackageGroup(
   ) {
     throw new DeliveryStatusProjectionConflictError({
       packageGroupId: input.packageGroupId,
-      message: `합포장 그룹 ${input.packageGroupId}의 현행 송장이 변경되었습니다.`,
+      reasonCode: "CURRENT_CARRIER_SHIPMENT_CHANGED",
     });
   }
 
@@ -147,7 +149,7 @@ async function loadCurrentPackageGroup(
   if (pgNos.length === 0) {
     throw new DeliveryStatusProjectionConflictError({
       packageGroupId: input.packageGroupId,
-      message: `합포장 그룹 ${input.packageGroupId}에 활성 구성품이 없습니다.`,
+      reasonCode: "PACKAGE_GROUP_HAS_NO_ACTIVE_MEMBERS",
     });
   }
 
@@ -182,7 +184,7 @@ export async function confirmPackageGroupDeparture(
   if (group.group_status !== "READY") {
     throw new DeliveryStatusProjectionConflictError({
       packageGroupId: input.packageGroupId,
-      message: `합포장 그룹 ${input.packageGroupId}이 READY 상태가 아닙니다: ${group.group_status}`,
+      reasonCode: "PACKAGE_GROUP_NOT_READY",
     });
   }
 
@@ -202,7 +204,7 @@ export async function confirmPackageGroupDeparture(
         packageGroupId: input.packageGroupId,
         pgNo,
         inventoryStatus: status,
-        message: `PG ${pgNo}의 재고 상태를 찾을 수 없습니다.`,
+        reasonCode: "INVENTORY_STATUS_NOT_FOUND",
       });
     }
     if (
@@ -218,7 +220,7 @@ export async function confirmPackageGroupDeparture(
         packageGroupId: input.packageGroupId,
         pgNo,
         inventoryStatus: status,
-        message: `PG ${pgNo}가 포장완료 상태가 아니어서 배송지시로 전환할 수 없습니다: ${status}`,
+        reasonCode: "INVENTORY_NOT_PACKED",
       });
     }
 
@@ -331,7 +333,7 @@ export async function projectPackageGroupDeliveryStatus(
         packageGroupId: input.packageGroupId,
         pgNo,
         inventoryStatus: fromStatus,
-        message: `PG ${pgNo}의 재고 상태를 찾을 수 없습니다.`,
+        reasonCode: "INVENTORY_STATUS_NOT_FOUND",
       });
     }
     if (

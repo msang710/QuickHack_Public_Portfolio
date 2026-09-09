@@ -8,6 +8,7 @@ test:native-runtime-contract
 test:postgresql-service-runtime-contract
 test:postgresql-staging-runtime-contract
 test:android-runtime-contract
+test:i18n-contracts
 test:platform-composition-roots
 test:runtime-directories
 test:process-execution-boundary
@@ -95,7 +96,6 @@ test:worker-daily-schedule
 test:worker-bootstrap
 test:standalone-sanitization
 test:operation-tracing
-test:api-error-contract
 test:response-performance
 test:client-http-trace
 test:server-proxy-query

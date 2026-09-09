@@ -29,7 +29,7 @@ type ExpectedOwnedAttempt = {
 function ownershipLost() {
   return publicConflict(
     OWNERSHIP_LOST_CODE,
-    "판매 채널 쓰기 실행 소유권이 만료되었거나 다른 실행으로 넘어갔습니다. 최신 처리 상태를 확인하세요."
+    OWNERSHIP_LOST_CODE
   );
 }
 

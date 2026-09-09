@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest) {
 
   if (!session) {
     return NextResponse.json(
-      { ok: false, message: "로그인이 필요합니다." },
+      { ok: false, code: "AUTH_REQUIRED" },
       { status: 401 }
     );
   }
@@ -46,7 +46,7 @@ export async function PUT(request: NextRequest) {
 
   if (!body) {
     return NextResponse.json(
-      { ok: false, message: "개인 설정 저장 요청 형식이 올바르지 않습니다." },
+      { ok: false, code: "PERSONAL_SETTINGS_INPUT_INVALID" },
       { status: 400 }
     );
   }
@@ -61,11 +61,16 @@ export async function PUT(request: NextRequest) {
       body
     );
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
-      message: "개인 설정을 저장했습니다.",
+      resultCode: "PERSONAL_SETTINGS_SAVED",
       personalSettings,
     });
+    const { setLocaleSnapshotCookie } = await import(
+      "@/quickhack_server/i18n/locale-cookie"
+    );
+    setLocaleSnapshotCookie(request, response, personalSettings.locale);
+    return response;
   } catch (error) {
     const { PersonalSettingsValidationError } = await import(
       "@/quickhack_server/user/personal-settings-service"
@@ -81,7 +86,6 @@ export async function PUT(request: NextRequest) {
       return apiFailureResponse({
         status,
         code: "PERSONAL_SETTINGS_VALIDATION_FAILED",
-        message: validationError.message,
         extra: { actionCode: validationError.actionCode },
         cause: validationError,
       });

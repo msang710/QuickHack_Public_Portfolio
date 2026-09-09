@@ -11,8 +11,8 @@ import {
 
 export const runtime = "nodejs";
 
-function badRequest(message: string) {
-  return NextResponse.json({ ok: false, message }, { status: 400 });
+function badRequest(code: string) {
+  return NextResponse.json({ ok: false, code }, { status: 400 });
 }
 
 function requestedRange(value: string | null): ResponsePerformanceRange | null {
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
   const logId = requestedLogId(request.nextUrl.searchParams.get("logId"));
 
   if (Number.isNaN(logId)) {
-    return badRequest("성능 trace 로그 ID가 올바르지 않습니다.");
+    return badRequest("INVALID_TRACE_LOG_ID");
   }
 
   if (logId !== null) {
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     if (!item) {
       return NextResponse.json(
-        { ok: false, message: "성능 trace를 찾을 수 없습니다." },
+        { ok: false, code: "TRACE_NOT_FOUND" },
         { status: 404 }
       );
     }
@@ -91,11 +91,11 @@ export async function GET(request: NextRequest) {
   const status = requestedStatus(request.nextUrl.searchParams.get("status"));
 
   if (!range) {
-    return badRequest("조회 기간이 올바르지 않습니다.");
+    return badRequest("INVALID_PERFORMANCE_RANGE");
   }
 
   if (!status) {
-    return badRequest("조회 상태가 올바르지 않습니다.");
+    return badRequest("INVALID_PERFORMANCE_STATUS");
   }
 
   const operation = String(
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
   ).trim();
 
   if (operation.length > 120) {
-    return badRequest("조작 이름은 120자 이내여야 합니다.");
+    return badRequest("PERFORMANCE_OPERATION_NAME_TOO_LONG");
   }
 
   const report = await performanceService.loadResponsePerformanceReport({

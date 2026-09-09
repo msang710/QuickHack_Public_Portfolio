@@ -79,7 +79,7 @@ function fixture() {
     true
   );
   assert.deepEqual(
-    inventoryCorrectionPatches(changes).map((patch) => ({
+    inventoryCorrectionPatches(changes, "missing revision").map((patch) => ({
       kind: patch.recordKind,
       id: patch.recordId,
       revision: patch.expectedRevision,

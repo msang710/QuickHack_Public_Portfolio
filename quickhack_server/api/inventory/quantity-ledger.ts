@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     return apiFailureResponse({
       status: 401,
       code: "AUTHENTICATION_REQUIRED",
-      message: "로그인이 필요합니다.",
+
     });
   }
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     return apiFailureResponse({
       status: 403,
       code: "PERMISSION_DENIED",
-      message: "재고 수량 원장 조회 권한이 없습니다.",
+
     });
   }
   setOperationTraceUserId(user.userId);
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     return apiFailureResponse({
       status: 400,
       code: "INVENTORY_QUANTITY_FORMAT_INVALID",
-      message: "지원하지 않는 재고 수량 원장 응답 형식입니다.",
+
     });
   }
 
