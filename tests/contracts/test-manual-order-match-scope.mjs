@@ -17,7 +17,7 @@ const aggregateLock = read("quickhack_server/inventory/device-aggregate-lock.ts"
 const quantityLedger = read("quickhack_server/inventory/inventory-quantity-ledger-service.ts");
 const rematchService = read("quickhack_server/sales-channel/coupang/order-rematch-service.ts");
 const auditTool = read("tools/audit-manual-order-match-readiness.mjs");
-const activeAllocationMigration = read("prisma/migrations/20260826143000_active_allocation_pg_unique/migration.sql");
+const baselineMigration = read("prisma/migrations/20260811010000_postgresql_baseline/migration.sql");
 const workerRegistry = read("quickhack_server/workers/registry.ts");
 const orderMatchingService = read("quickhack_server/sales-channel/coupang/order-matching-service.ts");
 
@@ -92,7 +92,7 @@ assert.match(auditTool, /activeAllocationDuplicates/);
 assert.match(auditTool, /activeAllocationOrphans/);
 assert.match(service, /acquireManualOrderMatchIntent/);
 assert.match(service, /releaseManualOrderMatchIntent/);
-assert.match(activeAllocationMigration, /uq_match_worker_allocation_active_pg/);
+assert.match(baselineMigration, /uq_match_worker_allocation_active_pg/);
 const orderMatchingWorkerBlock = workerRegistry.match(
   /key: ORDER_MATCHING_WORKER_KEY,[\s\S]*?\n  },/
 )?.[0] ?? "";
@@ -101,7 +101,7 @@ assert.doesNotMatch(orderMatchingWorkerBlock, /defaultScheduleEnabled:\s*true/);
 assert.match(orderMatchingService, /recoverPendingOrderInstructLocalProjections/);
 assert.match(orderMatchingService, /loadAcknowledgementRecoveryShipments/);
 for (const status of ["ALLOCATED", "API_ACKED", "SHIPMENT_LIST_PRINTED"]) {
-  assert.match(activeAllocationMigration, new RegExp(`'${status}'`));
+  assert.match(baselineMigration, new RegExp(`'${status}'`));
 }
 
 console.log("Manual order match scope, authorization, and inventory contracts verified.");

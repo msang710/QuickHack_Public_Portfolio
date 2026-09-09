@@ -1,8 +1,24 @@
 # QuickHack
 
+**한국어** | [English](README.en.md)
+
 QuickHack은 기기 한 대의 입고 예정부터 검수, 매입 확정, 재고, 판매 채널 주문 매칭, 송장, 배송, 반품까지를 **PG·IMEI 단위로 연결하는 사내용 ERP/WMS**입니다.
 
 핵심 목표는 화면 수를 늘리는 것이 아니라, 물류 단계가 바뀔 때마다 **실물 기기 상태, 수량 원장, 외부 채널 상태가 서로 어긋나지 않도록 만드는 것**입니다.
+
+## 현재 구현 범위
+
+입고·검수·매입·재고·주문·출고·반품 서비스 외에 다음 기능이 소스에 구현되어 있습니다. 아래 설명은 기능의 코드 경계이며 실제 운영 수용 여부는 [검증 범위](#검증-범위와-아직-mock인-범위)에서 구분합니다.
+
+| 기능 | 구현 내용 | 주요 소스 |
+| --- | --- | --- |
+| 검수 PG 자동 발급 | 업로드 행별 PG 예약, 동일 요청 재실행, 소비·포기·24시간 만료. PG는 영문 대문자 2자와 숫자 10자로 구성 | [pg-issuance-service.ts](quickhack_server/inspection/pg-issuance-service.ts) |
+| 수동 주문 매칭 | 이미 수집된 판매 채널 주문의 PG 배정·교체·해제. STAFF 조회/미리보기, MANAGER 실행 및 민감 작업 인증. 커밋 이후 후속 worker 처리 | [manual-order-matches.ts](quickhack_server/api/sales-channel/coupang/manual-order-matches.ts), [service](quickhack_server/sales-channel/coupang/manual-order-match-service.ts) |
+| 한국어·영어 UI | `ko`·`en` 카탈로그, 사용자 언어 저장·동기화, API 메시지 소유권 계약 | [locales.ts](quickhack_shared/i18n/locales.ts), [catalogs](quickhack_client/i18n/catalogs) |
+| Electron 클라이언트 | main/preload, 로컬 클라이언트 runtime, 네이티브 broker, 출력·ADB 창, 알림 및 업데이트 상태 처리 | [quickhack_desktop](quickhack_desktop) |
+| DB baseline | 전체 초기 스키마를 단일 마이그레이션으로 생성하고 적용 이력·SQL 체크섬·활성 PG 부분 인덱스를 검증 | [schema contract](quickhack_shared/core/postgresql-schema-contract.mjs) |
+
+Electron 업데이트 조정기는 현재 `unavailablePackageUpdateAdapter`를 사용합니다. 자동 업데이트 배포가 연결되었다는 의미는 아닙니다. 한국어·영어 계약 검사 역시 모든 네이티브 화면의 번역 수용을 보장하지 않습니다.
 
 ## 해결하려는 물류 문제
 
@@ -62,9 +78,10 @@ QuickHack은 이 문제를 다음 원칙으로 풉니다.
 
 ```mermaid
 flowchart LR
-    Operator["작업자 PC"] --> Client["Next.js 클라이언트<br/>로컬 UI·ADB"]
+    Operator["작업자 PC"] --> Desktop["Electron main/preload<br/>네이티브 broker"]
+    Desktop --> Client["Next.js 클라이언트<br/>로컬 UI·중앙 서버 프록시"]
     Client -->|"업무 API 전달"| Server["QuickHack 중앙 서버<br/>Next.js API"]
-    Client --> ADB["Android platform-tools<br/>기기 로컬 작업"]
+    Desktop --> ADB["Android platform-tools·프린터<br/>기기 로컬 작업"]
 
     Server --> Services["도메인 서비스<br/>입고·재고·주문·출고·반품"]
     Services --> Prisma["Prisma"]
@@ -83,7 +100,7 @@ flowchart LR
 
 소스 개발 모드는 한 PC에서 실행할 수 있고, 배포 패키지는 역할을 분리합니다.
 
-- 서버 패키지: 중앙 DB, 업무 API, worker, 백업 도구, Coupang Mock
+- 서버 패키지: 중앙 DB, 업무 API, worker, 백업 도구. 데모 서버는 Mock 연동을 포함합니다.
 - 클라이언트 패키지: 로컬 UI, ADB, 중앙 서버 프록시
 - 클라이언트에는 DB, worker, QHKEY, 외부 API Secret을 포함하지 않습니다.
 
@@ -91,16 +108,19 @@ flowchart LR
 
 | 경로 | 책임 |
 | --- | --- |
-| `quickhack_client/` | 화면, 폼 상태, 로컬 ADB 호출 |
+| `quickhack_client/` | 화면, 폼 상태, 다국어 카탈로그, 로컬 작업 요청 |
+| `quickhack_desktop/` | Electron main/preload, 창 관리, 네이티브 broker |
+| `quickhack_android/` | Android 기기 검사 애플리케이션 |
 | `app/api/` | Next.js route wrapper |
 | `quickhack_server/` | 권한 검사, 트랜잭션, 도메인 서비스, worker, 외부 연동 |
 | `quickhack_shared/` | 상태 코드, 전이 정책, DTO, 순수 유틸리티 |
 | `prisma/` | 현재 DB 스키마와 마이그레이션의 단일 기준 |
-| `packaging/` | Windows 서버·클라이언트 데모 패키징 경계 |
+| `packaging/` | Windows MSIX·CachyOS/Arch, 데모/운영 × 서버/클라이언트 패키징 |
+| `tests/` | 정적 계약, 회귀, PostgreSQL·OS 통합, 시각 검증 |
 
 ## 핵심 DB 모델과 상태 전이
 
-83개 Prisma 모델 전체를 나열하는 대신, 물류 정합성을 만드는 핵심 묶음만 표시합니다.
+현재 [Prisma 스키마](prisma/schema.prisma)의 100개 모델 전체를 나열하는 대신, 물류 정합성을 만드는 핵심 묶음만 표시합니다.
 
 | 모델 묶음 | 역할 |
 | --- | --- |
@@ -111,6 +131,9 @@ flowchart LR
 | `shipment_package_groups` · `carrier_shipments` · `sales_records` | 묶음 배송, 택배 송장, 판매 확정 이력 |
 | `sales_channel_write_requests` · `sales_channel_write_request_targets` · `sales_channel_write_request_attempts` | 외부 쓰기 요청, 불변 대상 스냅샷, 실행·검증·내부 확정 시도 |
 | `server_worker_jobs` · `server_job_logs` | 작업 상태·lease·재시도와 실행 결과 이력 |
+| `manual_order_match_selection_receipts` · `manual_order_match_intent_leases` | 후보 선택 증거와 수동 매칭 우선권 lease |
+| `inspection_pg_reservations` | 검수 행과 PG 예약·소비 상태 연결 |
+| `desktop_notification_events` · `desktop_notification_recipients` · `user_preferences` | 알림 수신/읽음 상태와 사용자별 언어 설정 |
 
 ### 검수와 재고 상태
 
@@ -210,9 +233,29 @@ Secret Key는 브라우저나 클라이언트 패키지에 전달하지 않습�
 
 ## 검증 범위와 아직 Mock인 범위
 
+### 2026-09-09 재검사 결과
+
+기준은 `8b46e12` 위의 baseline 스쿼시를 포함한 작업 트리입니다. 아래 결과는 소스 분석과 선택 검사이며, 전체 운영 검증이나 원격 CI 상태를 뜻하지 않습니다.
+
+| 검사 | 결과 |
+| --- | --- |
+| 전체 TypeScript 및 carrier TypeScript | PASS |
+| 전체 ESLint | PASS — 오류 0건, 경고 71건 |
+| 마이그레이션 디렉터리·SQL 체크섬 계약 | PASS |
+| 수동 매칭 범위·후보 선택/배송 안전성 검사 | PASS |
+| PG 발급 회귀 검사 | PASS |
+| 다국어 계약 묶음 | PASS |
+| Electron 보안 계약 | PASS |
+| 서버 migration 패키지·플랫폼/패키지 소스 경계·검증 그래프 | PASS |
+| 실제 DB 통합·production build·설치·GUI·실기기·취약점 조회 | NOT_RUN — 이번 정적 분석 범위 밖 |
+
+ESLint 경고는 미사용 변수 70건과 `<img>` 관련 1건입니다. 2026-09-07의 별도 임시 PostgreSQL 18.6 검증에서는 기존 8개와 단일 baseline의 스키마 덤프 동등성, 새 DB 적용·audit·반복 배포, PG 예약 및 사용자 언어 저장이 통과했습니다. 이는 당시 검증 결과이며 이번에 다시 실행한 DB 검사는 아닙니다.
+
 ### 자동 검증 범위
 
 `npm run verify`는 PostgreSQL clean baseline, 실제 DB 통합 테스트, worker lease, 재고 수량 원장, 외부 쓰기 실패·검증, 주문 매칭, 묶음 배송, 반품, 송장, 로젠 연동 계약과 standalone build를 한 번에 실행합니다.
+
+현재 마이그레이션은 새 DB용 단일 `20260811010000_postgresql_baseline`으로 통합되어 있습니다. 스쿼시 이전 DB·백업과의 호환성은 지원하지 않으며, baseline의 SQL 체크섬과 적용 이력을 릴리스 계약으로 검증합니다.
 
 특히 다음 불변 조건을 독립 테스트로 다룹니다.
 
@@ -229,77 +272,79 @@ Secret Key는 브라우저나 클라이언트 패키지에 전달하지 않습�
 | --- | --- | --- |
 | Coupang Open API | Mock이 기본값이며 주문·반품 생성, timeout, 5xx, malformed JSON 실패 주입 지원 | 실제 판매자 계정의 GET 검증, 판매채널 WRITE 토글 기반 쓰기, 벤더 응답 차이 확인 |
 | 로젠택배 Open API | Mock으로 송장·추적·반품과 실패 응답 검증 | 계약 고객 코드, 운영 인증, 실제 라벨 프린터·집하 흐름 검증 |
-| 데이터베이스 | PostgreSQL clean baseline과 실제 DB 통합 검증 | Windows service 설치와 native 백업·복구 운영 검증 |
-| 배포 | 서버·클라이언트 데모 패키지 경계 구현 | ERP 전체 코드 리뷰 후 production 패키지 활성화 |
-| 설치 신뢰 | Windows installer 생성 가능 | 코드 서명 인증서 연결과 SmartScreen 평판 확보 |
+| 데이터베이스 | 단일 baseline 계약 PASS, 선택 DB 검사는 2026-09-07 통과 | 전체 DB 그래프, 운영 백업·복구 및 OS 서비스 수용 |
+| 배포 | 데모/운영 × 서버/클라이언트 4개 논리 제품, Windows MSIX·CachyOS/Arch 8개 플랫폼 변형의 소스 존재 | 실제 패키지 생성·서명·설치·수리·제거·교차 호스트 연결 검증 |
+| 설치 신뢰 | MSIX 서명·후보 검증·공개 릴리스 gate 구현. Inno Setup은 이전 호환용 소스 | 실제 서명 산출물과 Windows 설치 신뢰 검증 |
+| Electron | 네이티브 broker·창·알림·출력 경로 구현, 업데이트 adapter는 unavailable | 실제 창·프린터·ADB·알림 및 패키지 업데이트 수용 |
 | 성능 수치 | Trace·p50·p95 측정 기능 구현 | 운영과 같은 데이터 규모의 기준선·전후 반복 측정 |
 
 데모 패키지와 운영 패키지의 경계는 [`packaging/README-RELEASE.md`](packaging/README-RELEASE.md)에 별도로 기록합니다.
 
-## 실행 가능한 데모 절차
+## 개발 환경과 실행
 
-다음 절차는 **Windows PowerShell, Node.js 24.x, Git**이 있는 새 clone을 기준으로 합니다.
+[package.json](package.json)은 **Node.js 24.x, npm 12.x**를 요구하며 `npm@12.0.2`를 지정합니다. 서버는 PostgreSQL 18과 서버 소유 설정·역할별 자격증명이 필요합니다. ADB·프린터·QHKEY는 해당 기능을 검증할 때 준비합니다.
 
-### 1. 설치와 로컬 DB 준비
+### 소스 준비
 
-```powershell
+Bash와 PowerShell에서 동일하게 사용할 수 있는 명령입니다.
+
+```sh
 git clone https://github.com/msang710/QuickHack_Public_Portfolio.git
-Set-Location QuickHack
+cd QuickHack_Public_Portfolio
 npm ci
-npm run db:init
-npm run prisma:seed:test-users
-npm run mock:coupang:init
-npm run mock:logen:init
 ```
 
-테스트 계정은 개발 모드에서만 사용합니다.
+`npm ci`의 postinstall은 Prisma client를 생성합니다. [Prisma 설정](prisma.config.ts)은 서버 소유 자격증명 resolver를 사용하므로 현재 환경의 서버 설정·활성화 자격증명 상태에 따라 준비가 필요합니다. 의존성 설치만으로 DB·계정·Mock이 준비되지는 않습니다.
 
-```text
-ID: developer
-PW: QuickHack!234
+### 서버 설정과 계정
+
+1. 서버 패키지 설치/Setup과 역할별 저장 경로는 [패키지·릴리스 계약](packaging/README-RELEASE.md)을 따릅니다. 소스 콘솔은 `config/server-console.local.json`, 명시적 구성은 `--runtime-config`로 읽습니다.
+2. PostgreSQL과 migrator/runtime 등 필요한 역할·보호된 자격증명이 준비된 후 `npm run db:init`으로 새 baseline을 적용합니다. 이 명령은 PostgreSQL 설치나 계정 프로비저닝을 대신하지 않습니다.
+3. 최초 관리자 생성은 [provision-initial-leader.mjs](tools/provision-initial-leader.mjs)와 서버 Setup 경로가 담당합니다. 공통 개발자 ID/비밀번호나 `prisma:seed:test-users` 명령은 현재 실행 계약에 없습니다.
+
+기존 DB·백업을 스쿼시된 baseline에 그대로 적용하는 호환 경로는 지원하지 않습니다.
+
+### 준비된 환경에서 실행
+
+| 명령 | 용도 |
+| --- | --- |
+| `npm run server:console` | 서버 콘솔. 기본 콘솔 포트 2999, backend 3000, HTTPS gateway 3443 |
+| `npm run dev` | Next.js 개발 서버 |
+| `npm run mock:coupang` / `npm run mock:logen` | 설정된 데모 환경의 Mock 실행 |
+| `npm run build:electron` | Electron main/preload 번들 생성 |
+| `npm run desktop` | Electron 번들 생성 후 실행. 로컬 클라이언트 runtime·중앙 서버 설정 필요 |
+
+단독 개발 서버와 콘솔이 관리하는 backend를 같은 포트에서 동시에 실행하지 않습니다. Electron의 클라이언트 기본 origin은 `http://127.0.0.1:3001`이며 서버의 3000번 포트와 역할이 다릅니다. 명령의 존재는 새 clone에서 로그인까지 자동 완성되는 데모를 보장하지 않습니다.
+
+### 검증 명령
+
+DB를 사용하지 않는 주요 검사:
+
+```sh
+npm run typecheck -- --incremental false
+npm run typecheck:carrier -- --incremental false
+npm run lint
+npm run test:postgresql-schema-contract
+npm run test:manual-order-match-contract
+npm run test:inspection-pg-issuance
+npm run test:i18n-contracts
+npm run test:electron-security
+npm run test:server-migration-runtime-package
 ```
 
-### 2. Mock과 애플리케이션 실행
+전체 검증은 다음 명령을 사용합니다.
 
-PowerShell 창을 각각 열어 실행합니다.
-
-```powershell
-# 창 1: Coupang Mock
-npm run mock:coupang
-```
-
-```powershell
-# 창 2: 로젠택배 Mock
-npm run mock:logen
-```
-
-```powershell
-# 창 3: QuickHack
-$env:QUICKHACK_COOKIE_SECURE="0"
-npm run dev -- --hostname 127.0.0.1 --port 3000
-```
-
-브라우저에서 `http://127.0.0.1:3000`을 열고 개발자 테스트 계정으로 로그인합니다.
-
-서명된 Coupang Mock 요청, QHKEY, worker와 중앙 서버 분리 구조까지 확인하려면 위의 간단 실행 대신 다음 명령을 사용합니다.
-
-```powershell
-npm run server:console
-```
-
-열린 `http://127.0.0.1:2999`에서 HTTPS 인증서를 준비하고 Coupang Mock, 로젠택배 Mock, QuickHack App을 시작합니다. 그다음 **API 키 관리**에서 개발용 Mock 자격 증명을 발급합니다. 간단 실행과 서버 콘솔 실행은 같은 QuickHack 포트를 사용하므로 동시에 시작하지 않습니다.
-
-### 3. 3분 데모 확인 순서
-
-1. **입고 → 차수 지정**에서 예정 입고를 등록합니다.
-2. **입고 → 외관 검수 / 기능 검수**에서 같은 PG의 검수 이력이 분리되어 쌓이는지 확인합니다.
-3. **입고 → 매입 대기 목록**에서 매입을 확정하고 **재고 → 재고 조회**에서 상태를 확인합니다.
-4. **시스템 관리 → 상품 기준값 관리**에서 내부 SKU 조합을 확인합니다.
-5. Coupang Mock 주문을 동기화한 뒤 **채널별 주문 매칭 관리**에서 재고 배정 결과와 실패 사유를 확인합니다.
-6. Mock 실패 정책에서 timeout 또는 503을 주입하고 **처리 확인 / 서버 작업 로그 / 응답 성능**에서 복구 경로를 확인합니다.
-
-검증 명령은 다음과 같습니다.
-
-```powershell
+```sh
 npm run verify
 ```
+
+PostgreSQL 통합 테스트에는 격리 테스트 스키마를 생성할 수 있는 `QUICKHACK_TEST_ADMIN_DATABASE_URL` 또는 `QUICKHACK_TEST_DATABASE_URL`이 필요합니다. 운영 DB를 테스트 대상으로 지정하지 않습니다. 테스트 구조와 플랫폼별 범위는 [tests/README.md](tests/README.md)에 설명되어 있습니다.
+
+### 데모 확인 순서
+
+1. 입고 차수와 외관·기능 검수를 등록하고 PG 예약·검수 이력 연결을 확인합니다.
+2. 매입 확정 후 기기별 재고 상태와 SKU 수량 원장을 비교합니다.
+3. 내부 SKU와 판매 채널 상품 매핑을 설정하고 Mock 주문을 수집합니다.
+4. 자동 매칭 결과를 확인하고 수동 PG 배정·교체·해제의 미리보기와 권한 검사를 확인합니다.
+5. 포장·송장 처리 후 Mock timeout/503을 주입하고 처리 확인·서버 작업 로그·응답 성능에서 복구 경로를 확인합니다.
+6. 한국어·영어 전환과 사용자 설정 저장, Electron 출력·ADB·알림 경로를 별도로 확인합니다.

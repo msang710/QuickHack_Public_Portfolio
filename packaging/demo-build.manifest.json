@@ -88,6 +88,7 @@
     "tools/quickhack-shutdown-coordinator.d.mts",
     "tools/server-console-qhkey.mjs",
     "tools/server-console-qhkey-common.mjs",
+    "tools/server-console-i18n.mjs",
     "tools/server-console-qhkey-demonstration.mjs",
     "tools/server-console-qhkey-operational.mjs",
     "tools/server-console-tls.mjs",

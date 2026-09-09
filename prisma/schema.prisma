@@ -442,7 +442,7 @@ model desktop_notification_events {
   title                String
   body                 String
   message_key          String?
-  message_arguments    Json?
+  message_arguments    Json?                             @db.JsonB
   occurred_at          DateTime                          @default(now()) @db.Timestamptz(3)
   resolved_at          DateTime?                         @db.Timestamptz(3)
   created_at           DateTime                          @default(now()) @db.Timestamptz(3)
