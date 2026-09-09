@@ -14,7 +14,8 @@ try {
   const { saveInspectionRecord } = await import(
     "@/quickhack_server/inspection/inspection-save-service"
   );
-  const now = new Date("2026-09-04T00:00:00.000Z");
+  // Saving consumes reservations against the real clock; issue active fixtures now.
+  const now = new Date();
   const userRow = await prisma.users.create({
     data: {
       username: "pg-issuance-worker",
@@ -105,7 +106,7 @@ try {
     prisma,
     { clientRecordId: "function-row-expired", inspectionKind: "function" },
     user,
-    { now: new Date("2026-09-01T00:00:00.000Z") }
+    { now: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000) }
   );
   const expiry = await issuance.expireInspectionPgReservations({ now, limit: 10 });
   assert.equal(expiry.abandonedCount, 1);

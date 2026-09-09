@@ -1,3 +1,4 @@
+-- Fresh-database baseline; supersedes the pre-squash migration history.
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -297,6 +298,8 @@ CREATE TABLE "user_preferences" (
     "settings_revision" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "locale" TEXT NOT NULL DEFAULT 'ko',
+
 
     CONSTRAINT "user_preferences_pkey" PRIMARY KEY ("user_id")
 );
@@ -759,6 +762,10 @@ CREATE TABLE "order_matching_work_queue" (
     "matched_at" TIMESTAMPTZ(3),
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "manual_recovery_status" TEXT NOT NULL DEFAULT 'NONE',
+    "manual_recovery_started_at" TIMESTAMPTZ(3),
+    "manual_recovery_started_by_user_id" INTEGER,
+
 
     CONSTRAINT "order_matching_work_queue_pkey" PRIMARY KEY ("work_item_id")
 );
@@ -4979,3 +4986,162 @@ $$;
 CREATE TRIGGER "trg_sales_channel_write_controls_integrity_update"
   BEFORE UPDATE ON "sales_channel_write_controls"
   FOR EACH ROW EXECUTE FUNCTION "quickhack_sales_channel_write_control_update_guard"();
+
+CREATE UNIQUE INDEX "uq_match_worker_allocation_active_pg"
+  ON "match_worker_allocation" ("pg_no")
+  WHERE "allocation_status" IN ('ALLOCATED', 'API_ACKED', 'SHIPMENT_LIST_PRINTED');
+
+ALTER TABLE "order_matching_work_queue"
+  ADD CONSTRAINT "ck_order_matching_work_queue_manual_recovery"
+  CHECK (
+    ("manual_recovery_status" = 'NONE'
+      AND "manual_recovery_started_at" IS NULL
+      AND "manual_recovery_started_by_user_id" IS NULL)
+    OR
+    ("manual_recovery_status" = 'REASSIGNMENT_REQUIRED'
+      AND "manual_recovery_started_at" IS NOT NULL
+      AND "manual_recovery_started_by_user_id" IS NOT NULL)
+  );
+
+ALTER TABLE "order_matching_work_queue"
+  ADD CONSTRAINT "order_matching_work_queue_manual_recovery_user_fkey"
+  FOREIGN KEY ("manual_recovery_started_by_user_id") REFERENCES "users"("user_id")
+  ON DELETE RESTRICT ON UPDATE CASCADE;
+
+CREATE INDEX "idx_order_matching_work_queue_manual_recovery"
+  ON "order_matching_work_queue"("manual_recovery_status");
+CREATE INDEX "idx_order_matching_work_queue_manual_recovery_user"
+  ON "order_matching_work_queue"("manual_recovery_started_by_user_id");
+
+CREATE TABLE "manual_order_match_selection_receipts" (
+  "receipt_id" UUID NOT NULL,
+  "work_item_id" INTEGER NOT NULL,
+  "operation" TEXT NOT NULL,
+  "pg_no" TEXT NOT NULL,
+  "candidate_fingerprint_hash" TEXT NOT NULL,
+  "issued_to_user_id" INTEGER NOT NULL,
+  "work_revision" INTEGER NOT NULL,
+  "inventory_revision" INTEGER,
+  "issued_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "expires_at" TIMESTAMPTZ(3) NOT NULL,
+  "consumed_at" TIMESTAMPTZ(3),
+  CONSTRAINT "manual_order_match_selection_receipts_pkey" PRIMARY KEY ("receipt_id"),
+  CONSTRAINT "ck_manual_order_match_receipt_operation"
+    CHECK ("operation" IN ('ASSIGN', 'REPLACE')),
+  CONSTRAINT "ck_manual_order_match_receipt_expiry"
+    CHECK ("expires_at" > "issued_at"),
+  CONSTRAINT "manual_order_match_receipt_work_item_fkey"
+    FOREIGN KEY ("work_item_id") REFERENCES "order_matching_work_queue"("work_item_id")
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "manual_order_match_receipt_user_fkey"
+    FOREIGN KEY ("issued_to_user_id") REFERENCES "users"("user_id")
+    ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX "idx_manual_order_match_receipts_scope"
+  ON "manual_order_match_selection_receipts"("work_item_id", "operation", "pg_no");
+CREATE INDEX "idx_manual_order_match_receipts_user_expiry"
+  ON "manual_order_match_selection_receipts"("issued_to_user_id", "expires_at");
+CREATE INDEX "idx_manual_order_match_receipts_expiry"
+  ON "manual_order_match_selection_receipts"("expires_at");
+
+CREATE TABLE "manual_order_match_intent_leases" (
+  "lease_id" UUID NOT NULL,
+  "external_order_id" TEXT NOT NULL,
+  "external_shipment_id" TEXT NOT NULL,
+  "pg_nos" TEXT[] NOT NULL,
+  "command_key" TEXT NOT NULL,
+  "owner_user_id" INTEGER NOT NULL,
+  "lease_status" TEXT NOT NULL DEFAULT 'ACTIVE',
+  "acquired_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "expires_at" TIMESTAMPTZ(3) NOT NULL,
+  "released_at" TIMESTAMPTZ(3),
+
+  CONSTRAINT "manual_order_match_intent_leases_pkey" PRIMARY KEY ("lease_id"),
+  CONSTRAINT "ck_manual_match_intent_status" CHECK ("lease_status" IN ('ACTIVE', 'RELEASED', 'EXPIRED')),
+  CONSTRAINT "ck_manual_match_intent_expiry" CHECK ("expires_at" > "acquired_at"),
+  CONSTRAINT "manual_order_match_intent_leases_owner_user_id_fkey"
+    FOREIGN KEY ("owner_user_id") REFERENCES "users"("user_id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX "idx_manual_match_intent_shipment_active"
+  ON "manual_order_match_intent_leases" ("external_order_id", "external_shipment_id", "lease_status", "expires_at");
+CREATE INDEX "idx_manual_match_intent_owner_active"
+  ON "manual_order_match_intent_leases" ("owner_user_id", "lease_status", "expires_at");
+CREATE INDEX "idx_manual_match_intent_expiry"
+  ON "manual_order_match_intent_leases" ("expires_at");
+CREATE INDEX "idx_manual_match_intent_pg_nos"
+  ON "manual_order_match_intent_leases" USING GIN ("pg_nos");
+
+CREATE TABLE "desktop_notification_events" (
+  "notification_event_id" BIGSERIAL PRIMARY KEY,
+  "event_kind" TEXT NOT NULL,
+  "source_type" TEXT NOT NULL,
+  "source_id" TEXT NOT NULL,
+  "dedupe_key" TEXT NOT NULL,
+  "menu_id" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "body" TEXT NOT NULL,
+  "occurred_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "resolved_at" TIMESTAMPTZ(3),
+  "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "message_key" TEXT,
+  "message_arguments" JSONB
+);
+
+CREATE TABLE "desktop_notification_recipients" (
+  "notification_recipient_id" BIGSERIAL PRIMARY KEY,
+  "notification_event_id" BIGINT NOT NULL,
+  "user_id" INTEGER NOT NULL,
+  "delivered_at" TIMESTAMPTZ(3),
+  "read_at" TIMESTAMPTZ(3),
+  "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "desktop_notification_recipients_notification_event_id_fkey"
+    FOREIGN KEY ("notification_event_id") REFERENCES "desktop_notification_events"("notification_event_id") ON DELETE CASCADE,
+  CONSTRAINT "desktop_notification_recipients_user_id_fkey"
+    FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX "uq_desktop_notification_events_dedupe_key" ON "desktop_notification_events"("dedupe_key");
+CREATE INDEX "idx_desktop_notification_events_time" ON "desktop_notification_events"("occurred_at", "notification_event_id");
+CREATE INDEX "idx_desktop_notification_events_source" ON "desktop_notification_events"("source_type", "source_id");
+CREATE UNIQUE INDEX "uq_desktop_notification_recipients_event_user" ON "desktop_notification_recipients"("notification_event_id", "user_id");
+CREATE INDEX "idx_desktop_notification_recipients_inbox" ON "desktop_notification_recipients"("user_id", "read_at", "notification_recipient_id");
+
+ALTER TABLE "user_preferences"
+ADD CONSTRAINT "ck_user_preferences_locale"
+CHECK ("locale" IN ('ko', 'en'));
+
+CREATE TABLE "inspection_pg_reservations" (
+    "inspection_pg_reservation_id" UUID NOT NULL,
+    "client_record_id" TEXT NOT NULL,
+    "pg_no" TEXT NOT NULL,
+    "inspection_kind" TEXT NOT NULL,
+    "request_digest" TEXT NOT NULL,
+    "issued_by_user_id" INTEGER,
+    "status" TEXT NOT NULL DEFAULT 'RESERVED',
+    "expires_at" TIMESTAMPTZ(3) NOT NULL,
+    "consumed_at" TIMESTAMPTZ(3),
+    "abandoned_at" TIMESTAMPTZ(3),
+    "result_payload" JSONB,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "inspection_pg_reservations_pkey" PRIMARY KEY ("inspection_pg_reservation_id"),
+    CONSTRAINT "ck_inspection_pg_reservations_kind" CHECK ("inspection_kind" IN ('appearance', 'function')),
+    CONSTRAINT "ck_inspection_pg_reservations_status" CHECK ("status" IN ('RESERVED', 'CONSUMED', 'ABANDONED')),
+    CONSTRAINT "ck_inspection_pg_reservations_lifecycle" CHECK (
+      ("status" = 'RESERVED' AND "consumed_at" IS NULL AND "abandoned_at" IS NULL AND "result_payload" IS NULL)
+      OR ("status" = 'CONSUMED' AND "consumed_at" IS NOT NULL AND "abandoned_at" IS NULL AND "result_payload" IS NOT NULL)
+      OR ("status" = 'ABANDONED' AND "consumed_at" IS NULL AND "abandoned_at" IS NOT NULL AND "result_payload" IS NULL)
+    )
+);
+
+CREATE UNIQUE INDEX "uq_inspection_pg_reservations_client_record" ON "inspection_pg_reservations"("client_record_id");
+CREATE UNIQUE INDEX "uq_inspection_pg_reservations_pg_no" ON "inspection_pg_reservations"("pg_no");
+CREATE INDEX "idx_inspection_pg_reservations_status_expiry" ON "inspection_pg_reservations"("status", "expires_at");
+CREATE INDEX "idx_inspection_pg_reservations_issued_by" ON "inspection_pg_reservations"("issued_by_user_id");
+CREATE INDEX "idx_inspection_pg_reservations_created_at" ON "inspection_pg_reservations"("created_at");
+
+ALTER TABLE "inspection_pg_reservations"
+  ADD CONSTRAINT "inspection_pg_reservations_issued_by_user_id_fkey"
+  FOREIGN KEY ("issued_by_user_id") REFERENCES "users"("user_id") ON DELETE SET NULL ON UPDATE CASCADE;
