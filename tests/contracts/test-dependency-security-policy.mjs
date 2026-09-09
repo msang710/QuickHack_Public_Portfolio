@@ -89,11 +89,11 @@ function assertApprovedRemoteActions(relativePath, source) {
 }
 
 const packageJson = JSON.parse(await readProjectFile("package.json"));
-assert.equal(packageJson.dependencies.next, "^16.3.1");
-assert.equal(packageJson.devDependencies["eslint-config-next"], "^16.3.1");
-assert.equal(packageJson.dependencies.prisma, "^7.9.1");
-assert.equal(packageJson.dependencies["@prisma/client"], "^7.9.1");
-assert.equal(packageJson.dependencies["@prisma/adapter-pg"], "^7.9.1");
+assert.equal(packageJson.dependencies.next, "^16.3.4");
+assert.equal(packageJson.devDependencies["eslint-config-next"], "^16.3.4");
+assert.equal(packageJson.dependencies.prisma, "^7.10.0");
+assert.equal(packageJson.dependencies["@prisma/client"], "^7.10.0");
+assert.equal(packageJson.dependencies["@prisma/adapter-pg"], "^7.10.0");
 assert.equal(packageJson.devDependencies.postcss, "^8.5.23");
 assert.deepEqual(packageJson.overrides, {
   "@prisma/config": {
@@ -108,6 +108,7 @@ assert.equal(packageLock.packages["node_modules/deepmerge-ts"]?.version, "8.0.0"
 assert.equal(packageLock.packages["node_modules/browserslist"]?.version, "4.28.8");
 assert.equal(packageLock.packages["node_modules/fast-uri"]?.version, "4.1.4");
 assert.equal(packageLock.packages["node_modules/mysql2"]?.version, "3.24.3");
+assert.equal(packageLock.packages["node_modules/js-yaml"]?.version, "4.3.2");
 assert.equal(packageJson.scripts["audit:dependencies"], "npm audit --package-lock-only --audit-level=low");
 assert.equal(
   packageJson.scripts["test:dependency-security-policy"],
