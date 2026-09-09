@@ -888,12 +888,10 @@ export async function executeManualOrderMatch(
   requiredInteger(raw.workItemId, "workItemId");
   const selectedOperation = operation(raw.operation);
   requiredText(raw.idempotencyKey, "idempotencyKey", 160);
-  const expectedManifest = requiredText(raw.manifestToken, "manifestToken", 64);
+  requiredText(raw.manifestToken, "manifestToken", 64);
   if (selectedOperation !== "RELEASE") requireCanonicalPgNo(raw.pgNo);
-  const validatedPreview = await previewManualOrderMatch(raw, user);
-  if (!validatedPreview.eligible || validatedPreview.manifestToken !== expectedManifest) {
-    throw publicConflict("MANUAL_ORDER_MATCH_PREVIEW_STALE", "MANUAL_ORDER_MATCH_PREVIEW_STALE", { refreshRequired: true, reasonCodes: validatedPreview.reasonCodes });
-  }
+  // Mutable eligibility is checked inside the transaction, after identifying
+  // replays: a successful command invalidates its own original preview.
   const lease = await acquireManualOrderMatchIntent(raw, user);
   let leaseLost = false;
   const renewal = setInterval(() => {

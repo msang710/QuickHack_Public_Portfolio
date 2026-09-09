@@ -184,30 +184,6 @@ try {
     },
   };
 
-  async function execute(input, idempotencyKey) {
-    const selectionReceiptId = input.operation === "RELEASE"
-      ? null
-      : (await listManualOrderMatchCandidates({
-          search: input.pgNo,
-          limit: 10,
-          workItemId: input.workItemId,
-          operation: input.operation,
-        }, user)).items
-          .find((candidate) => candidate.pgNo === input.pgNo)?.selectionReceiptId ?? null;
-    const selectedInput = { ...input, selectionReceiptId };
-    const preview = await previewManualOrderMatch(selectedInput, user);
-    assert.equal(preview.eligible, true, preview.reasonCodes.join(","));
-    return executeManualOrderMatch(
-      {
-        ...selectedInput,
-        manifestToken: preview.manifestToken,
-        idempotencyKey,
-      },
-      user,
-      dependencies
-    );
-  }
-
   const common = {
     workItemId: work.work_item_id,
     requestChannel: "PHONE",
@@ -343,8 +319,20 @@ try {
   assert.equal(automaticAttempt.summary.deferredItemCount, 1);
   assert.equal(automaticAttempt.summary.matchedDeviceCount, 0);
   assert.equal(automaticAttempt.items[0]?.failureReason, "MANUAL_ORDER_MATCH_INTENT_ACTIVE");
+  const duplicateHarness = createDeterministicConcurrencyHarness("MANUAL-DUPLICATE");
+  const duplicateAssignment = executeManualOrderMatch(assignRequest, user, {
+    ...dependencies,
+    async afterIntentAcquire(input) {
+      await dependencies.afterIntentAcquire(input);
+      await duplicateHarness.arrive("manual", "AFTER_INTENT_ACQUIRE");
+    },
+  });
+  await duplicateHarness.waitFor("manual", "AFTER_INTENT_ACQUIRE");
   priorityHarness.release("manual", "AFTER_INTENT_ACQUIRE");
-  const assigned = await manualAssignment;
+  duplicateHarness.release("manual", "AFTER_INTENT_ACQUIRE");
+  const assignmentResults = await Promise.all([manualAssignment, duplicateAssignment]);
+  assert.equal(assignmentResults.filter((result) => result.replayed).length, 1);
+  const assigned = assignmentResults.find((result) => !result.replayed);
   assert.deepEqual(
     priorityHarness.artifact({ winner: "manual", loser: "auto" }),
     {
@@ -371,6 +359,18 @@ try {
     "RESERVED"
   );
 
+  async function mutationSnapshot() {
+    return Promise.all([
+      prisma.match_worker_allocation.findMany({ orderBy: { allocation_id: "asc" } }),
+      prisma.inventory.findMany({ orderBy: { pg_no: "asc" } }),
+      prisma.employee_activity_logs.count(),
+      prisma.domain_operation_keys.count(),
+      prisma.inventory_quantity_balances.findMany({ orderBy: { inventory_quantity_balance_id: "asc" } }),
+      prisma.inventory_quantity_movements.count(),
+      prisma.manual_order_match_selection_receipts.findMany({ orderBy: { receipt_id: "asc" } }),
+    ]);
+  }
+  const beforeReplay = await mutationSnapshot();
   const replayed = await executeManualOrderMatch(
     {
       ...assignRequest,
@@ -381,6 +381,34 @@ try {
   assert.equal(replayed.replayed, true);
   assert.equal(replayed.postCycle.status, "PENDING");
   assert.equal(postCycleCount, 1);
+
+  assert.deepEqual(await mutationSnapshot(), beforeReplay);
+  await assert.rejects(
+    executeManualOrderMatch({ ...assignRequest, reason: "다른 요청" }, user, dependencies),
+    (error) => error?.code === "DOMAIN_OPERATION_KEY_CONFLICT"
+  );
+  await assert.rejects(
+    executeManualOrderMatch({ ...assignRequest, idempotencyKey: "stale-new-key" }, user, dependencies),
+    (error) => error?.code === "MANUAL_ORDER_MATCH_PREVIEW_STALE"
+  );
+  await assert.rejects(
+    executeManualOrderMatch(assignRequest, user, { ...dependencies, sensitiveActionVerified: false }),
+    (error) => error?.code === "MANUAL_ORDER_MATCH_OTP_REQUIRED"
+  );
+  await assert.rejects(
+    executeManualOrderMatch(assignRequest, { ...user, role: "STAFF" }, dependencies),
+    (error) => error?.code === "MANUAL_ORDER_MATCH_FORBIDDEN"
+  );
+  const concurrentReplays = await Promise.all([
+    executeManualOrderMatch(assignRequest, user, dependencies),
+    executeManualOrderMatch(assignRequest, user, dependencies),
+  ]);
+  assert.ok(concurrentReplays.every((result) => result.replayed));
+  assert.equal(postCycleCount, 1);
+  assert.deepEqual(await mutationSnapshot(), beforeReplay);
+  assert.equal(await prisma.manual_order_match_intent_leases.count({
+    where: { lease_status: "ACTIVE" },
+  }), 0);
 
   const replaceReceipt = (await listManualOrderMatchCandidates({
     search: devices[1].pgNo,
@@ -423,11 +451,12 @@ try {
   replacePreview = await previewManualOrderMatch(replaceInput, user);
   assert.equal(replacePreview.eligible, true, replacePreview.reasonCodes.join(","));
   const rematchPriorityHarness = createDeterministicConcurrencyHarness("BM-02");
-  const manualReplacement = executeManualOrderMatch({
+  const replaceRequest = {
     ...replaceInput,
     manifestToken: replacePreview.manifestToken,
     idempotencyKey: "manual-order-match-replace",
-  }, user, {
+  };
+  const manualReplacement = executeManualOrderMatch(replaceRequest, user, {
     ...dependencies,
     async afterIntentAcquire(input) {
       await dependencies.afterIntentAcquire(input);
@@ -460,6 +489,11 @@ try {
     where: { allocation_id: replaced.allocationId },
   });
   assert.equal(replacement.pg_no, devices[1].pgNo);
+
+  const beforeReplaceReplay = await mutationSnapshot();
+  assert.equal((await executeManualOrderMatch(replaceRequest, user, dependencies)).replayed, true);
+  assert.equal(postCycleCount, 2);
+  assert.deepEqual(await mutationSnapshot(), beforeReplaceReplay);
 
   const releaseInput = {
     ...common,
@@ -586,10 +620,19 @@ try {
     data: { allocation_status: "API_ACKED" },
   });
 
-  const released = await execute(
-    releaseInput,
-    "manual-order-match-release"
-  );
+  const releasePreview = await previewManualOrderMatch(releaseInput, user);
+  assert.equal(releasePreview.eligible, true);
+  const releaseRequest = {
+    ...releaseInput,
+    manifestToken: releasePreview.manifestToken,
+    idempotencyKey: "manual-order-match-release",
+  };
+  const released = await executeManualOrderMatch(releaseRequest, user, dependencies);
+  const beforeReleaseReplay = await mutationSnapshot();
+  const releaseReplay = await executeManualOrderMatch(releaseRequest, user, dependencies);
+  assert.equal(releaseReplay.replayed, true);
+  assert.equal(releaseReplay.postCycle.status, "NOT_REQUIRED");
+  assert.deepEqual(await mutationSnapshot(), beforeReleaseReplay);
   assert.equal(released.workStatus, "UNMATCHED");
   assert.equal(released.postCycle.status, "NOT_REQUIRED");
   assert.equal(postCycleCount, 2);
