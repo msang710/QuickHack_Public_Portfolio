@@ -10,7 +10,7 @@ const readProjectFile = (relativePath) =>
 const approvedActions = new Map([
   ["actions/checkout", Object.freeze({ sha: "3d3c42e5aac5ba805825da76410c181273ba90b1", version: "v7.0.1" })],
   ["actions/setup-node", Object.freeze({ sha: "48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e", version: "v6" })],
-  ["actions/setup-java", Object.freeze({ sha: "b6effb05e454b25005698d916606bdc6ffcbf961", version: "v5.7.0" })],
+  ["actions/setup-java", Object.freeze({ sha: "dd06d9cba3e5552c54d9f8ea23572deb30010f7c", version: "v6.0.0" })],
   ["actions/upload-artifact", Object.freeze({ sha: "ea165f8d65b6e75b540449e92b4886f43607fa02", version: "v4.6.2" })],
   ["actions/download-artifact", Object.freeze({ sha: "d3f86a106a0bac45b974a628896c90dbdf5c8093", version: "v4.3.0" })],
   ["azure/login", Object.freeze({ sha: "f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca", version: "v3" })],
