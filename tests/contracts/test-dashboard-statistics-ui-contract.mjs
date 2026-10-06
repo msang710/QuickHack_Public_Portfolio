@@ -14,6 +14,7 @@ const route = read("quickhack_server/api/statistics/dashboard.ts");
 const workspace = read(
   "quickhack_client/components/app-shell/device-workspace.tsx"
 );
+const navigationKo = read("quickhack_client/i18n/catalogs/ko/navigation.ts");
 
 for (const field of [
   "inboundBatchId: number",
@@ -48,14 +49,16 @@ assert.doesNotMatch(
 );
 
 assert.match(route, /setOperationTraceTargetCount\(data\.batches\.length\)/);
-assert.match(route, /대시보드 통계를 불러오지 못했습니다/);
+assert.match(route, /code: "DASHBOARD_LOAD_FAILED"/);
 
 assert.match(workspace, /key=\{batch\.inboundBatchId\}/);
-assert.match(workspace, /\{batch\.batchDate\} · \{batch\.batchNo\}차/);
-assert.match(workspace, /label="현재 연결"/);
-assert.match(workspace, /label="정상 입고 대상"/);
-assert.match(workspace, /label="매입처 반품"/);
-assert.match(workspace, /오늘 등록된 입고 차수가 없습니다/);
+assert.match(workspace, /t\("dashboard\.batch", \{ date: batch\.batchDate, batch: batch\.batchNo \}\)/);
+assert.match(workspace, /label=\{t\("dashboard\.currentlyLinked"\)\}/);
+assert.match(workspace, /label=\{t\("dashboard\.normalInbound"\)\}/);
+assert.match(workspace, /label=\{t\("dashboard\.supplierReturn"\)\}/);
+assert.match(workspace, /t\("dashboard\.empty"\)/);
+assert.match(navigationKo, /"loadFailed": "대시보드 통계를 불러오지 못했습니다\."/);
+assert.match(navigationKo, /"empty": "오늘 등록된 입고 차수가 없습니다\."/);
 assert.match(workspace, /!isLoading && !errorMessage && data/);
 assert.doesNotMatch(
   workspace,
