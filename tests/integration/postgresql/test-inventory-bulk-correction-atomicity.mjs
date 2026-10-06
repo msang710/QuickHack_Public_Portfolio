@@ -91,7 +91,7 @@ try {
       [
         inventoryCorrectionItem(inventories[0], "HOLD", "ATOMIC-HOLD-1"),
         {
-          pgNo: "ZZZ-MISSING-PG",
+          pgNo: "ZZ9999999999",
           patches: [
             {
               recordKind: "inventory",
@@ -107,7 +107,7 @@ try {
       "Atomic rollback verification",
       user
     ),
-    (error) => error?.code === "INVENTORY_NOT_FOUND"
+    (error) => /Device root does not exist for PG ZZ9999999999\./.test(error?.message ?? "")
   );
 
   const rolledBackInventories = await prisma.inventory.findMany({

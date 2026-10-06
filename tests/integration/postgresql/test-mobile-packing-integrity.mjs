@@ -57,6 +57,10 @@ function registrationProof(input) {
   };
 }
 
+function packingPg(index) {
+  return `MP${String(index).padStart(10, "0")}`;
+}
+
 let prisma;
 
 try {
@@ -151,7 +155,7 @@ try {
   });
   await prisma.devices.createMany({
     data: Array.from({ length: 52 }, (_, index) => ({
-      pg_no: `MOBILEPACKPG${String(index + 1).padStart(3, "0")}`,
+      pg_no: packingPg(index + 1),
       model: catalog.options.model.label,
       model_code: catalog.options.model.option_key,
       model_seq: index + 1,
@@ -169,7 +173,7 @@ try {
       external_order_id: bulkOrderId,
       external_shipment_id: bulkShipmentId,
       external_vendor_item_id: `MOBILE-PACKING-ITEM-${index + 1}`,
-      pg_no: `MOBILEPACKPG${String(index + 1).padStart(3, "0")}`,
+      pg_no: packingPg(index + 1),
       sales_offer_id: catalog.salesOffer.sales_offer_id,
       inventory_sku_id: catalog.sku.inventory_sku_id,
       required_model: catalog.options.model.label,
@@ -182,8 +186,8 @@ try {
     })),
   });
 
-  const exactMismatchPg = "MOBILEPACKEXACT001";
-  const invoicePg = "MOBILEPACKINVOICE001";
+  const exactMismatchPg = packingPg(53);
+  const invoicePg = packingPg(54);
   await prisma.devices.createMany({
     data: [exactMismatchPg, invoicePg].map((pgNo, index) => ({
       pg_no: pgNo,
@@ -201,7 +205,7 @@ try {
   });
   await prisma.inventory.createMany({
     data: [
-      { pg_no: "MOBILEPACKPG052", inventory_status: "PACKING" },
+      { pg_no: packingPg(52), inventory_status: "PACKING" },
       { pg_no: exactMismatchPg, inventory_status: "PACKING" },
       { pg_no: invoicePg, inventory_status: "PACKING" },
     ].map((row) => ({
@@ -325,13 +329,13 @@ try {
 
   const credential = { appInstanceId, deviceToken };
   const bulkResult = await checkPackingIntegrity(
-    { ...credential, scannedValues: [bulkOrderId, "MOBILEPACKPG052"] },
+    { ...credential, scannedValues: [bulkOrderId, packingPg(52)] },
     user,
     context
   );
   assert.equal(bulkResult.code, "MATCH");
   assert.equal(
-    (await prisma.inventory.findUniqueOrThrow({ where: { pg_no: "MOBILEPACKPG052" } }))
+    (await prisma.inventory.findUniqueOrThrow({ where: { pg_no: packingPg(52) } }))
       .inventory_status,
     "PACKED",
     "The 52nd active allocation or RANDOM/ANY option did not pack."

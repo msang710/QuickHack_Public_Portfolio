@@ -5,7 +5,6 @@ import { createChildProcessEnvironment } from "../../../quickhack_shared/core/ch
 import { createLinuxChildProcessPolicy } from "../../../quickhack_shared/platform/linux/child-process-policy.mjs";
 
 const SS_EXECUTABLE = "/usr/bin/ss";
-const TIMEDATECTL_EXECUTABLE = "/usr/bin/timedatectl";
 const XDG_OPEN_EXECUTABLE = "/usr/bin/xdg-open";
 
 function execute(file, args, options = {}) {
@@ -40,17 +39,6 @@ export function createLinuxServerConsoleRuntime(options = {}) {
     return execute(file, args, { env: execOptions.env ?? childEnvironment(), ...execOptions });
   }
 
-  async function timeStatus() {
-    const result = await execFileText(TIMEDATECTL_EXECUTABLE, ["show", "--property=NTPSynchronized", "--value"]);
-    const value = result.stdout.trim().toLowerCase();
-    return Object.freeze({
-      ok: result.ok && value === "yes",
-      source: "systemd-timesyncd",
-      rawStatus: value,
-      error: result.ok ? "" : "TIME_STATUS_UNAVAILABLE",
-    });
-  }
-
   async function portPids(port, { strict = false } = {}) {
     if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new TypeError("A valid TCP port is required.");
     const result = await execFileText(SS_EXECUTABLE, ["-H", "-ltnp", `sport = :${port}`]);
@@ -78,28 +66,6 @@ export function createLinuxServerConsoleRuntime(options = {}) {
     } catch (error) {
       return error?.code === "ESRCH";
     }
-  }
-
-  async function processMetadata(pid) {
-    if (!Number.isSafeInteger(pid) || pid < 1) return null;
-    try {
-      const [executablePath, commandLine] = await Promise.all([
-        fs.readlink(`/proc/${pid}/exe`),
-        fs.readFile(`/proc/${pid}/cmdline`, "utf8"),
-      ]);
-      return { ProcessId: pid, ExecutablePath: executablePath, CommandLine: commandLine.replaceAll("\0", " ").trim() };
-    } catch (error) {
-      if (error?.code === "ENOENT") return null;
-      throw error;
-    }
-  }
-
-  function sameExecutablePath(left, right) {
-    return path.posix.normalize(String(left ?? "")) === path.posix.normalize(String(right ?? ""));
-  }
-
-  function commandContainsPath(commandLine, expectedPath) {
-    return String(commandLine ?? "").includes(path.posix.normalize(String(expectedPath ?? "")));
   }
 
   function launch(target) {
@@ -134,17 +100,11 @@ export function createLinuxServerConsoleRuntime(options = {}) {
   const api = Object.freeze({
     descriptor: Object.freeze({ id: "server-console-runtime", role: "operator", platform: "linux", state: "READY", ownerStage: "PR-09" }),
     interactive,
-    requiresExternalDatabaseOperations: true,
     childEnvironment,
     execFileText,
-    timeStatus,
     portPids,
     terminateOwnedProcess,
-    processMetadata,
-    sameExecutablePath,
-    commandContainsPath,
     openUrl: launch,
-    openPath: launch,
     secureDirectory,
     initializeTls,
   });

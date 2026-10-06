@@ -208,13 +208,17 @@ const serverConsoleSource = readFileSync(
   path.join(projectRoot, "tools", "server-console-core.mjs"),
   "utf8"
 );
+const serverConsolePageSource = readFileSync(
+  path.join(projectRoot, "tools", "server-console-page.mjs"),
+  "utf8"
+);
 assert.match(serverConsoleSource, /sourceServerRuntimeConfigPath\(root\)/);
 assert.match(serverConsoleSource, /\/api\/runtime\/toggle-environment/);
 assert.match(serverConsoleSource, /\/api\/runtime\/toggle-coupang-write-api/);
 assert.match(serverConsoleSource, /\/api\/runtime\/toggle-logen-write-api/);
-assert.match(serverConsoleSource, /id="runtime-environment-toggle"/);
-assert.match(serverConsoleSource, /id="coupang-write-api-toggle"/);
-assert.match(serverConsoleSource, /id="logen-write-api-toggle"/);
+assert.match(serverConsolePageSource, /id="runtime-environment-toggle"/);
+assert.match(serverConsolePageSource, /id="coupang-write-api-toggle"/);
+assert.match(serverConsolePageSource, /id="logen-write-api-toggle"/);
 assert.doesNotMatch(serverConsoleSource, /env\.QUICKHACK_ENV\s*=/);
 assert.doesNotMatch(serverConsoleSource, /env\.DATABASE_URL\s*=/);
 assert.doesNotMatch(serverConsoleSource, /env\.QUICKHACK_QHKEY_ROOT\s*=/);

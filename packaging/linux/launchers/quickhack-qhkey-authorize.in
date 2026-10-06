@@ -1,2 +1,3 @@
 #!/bin/sh
+[ "$#" -eq 1 ] || { echo "Usage: quickhack-server-qhkey-authorize <transaction-id>" >&2; exit 2; }
 exec "@QUICKHACK_NODE_EXECUTABLE@" "@QUICKHACK_OPERATOR_ENTRY@" authorize-qhkey --runtime-config "@QUICKHACK_RUNTIME_CONFIG@" --transaction "$1"

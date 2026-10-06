@@ -4,7 +4,9 @@ const DEFAULT_WARNING_MS = 180_000;
 const STATUS_POLL_MS = 500;
 
 function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
+  return typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{1,63}$/u.test(error.code)
+    ? error.code
+    : "SAFE_STOP_FAILED";
 }
 
 function deferred() {
@@ -124,13 +126,15 @@ export function createQuickHackShutdownCoordinator(dependencies) {
     operation.errorMessage = input.errorMessage ?? null;
     publish();
     operation.completion.resolve(cloneState(operation));
+    operation.outcome.resolve(cloneState(operation));
   }
 
   async function monitorFinalization(finalizePromise) {
     let settled = false;
-    const trackedFinalize = Promise.resolve(finalizePromise).finally(() => {
-      settled = true;
-    });
+    const trackedFinalize = Promise.resolve(finalizePromise).then(
+      (value) => { settled = true; return { value, error: null }; },
+      (error) => { settled = true; return { value: null, error }; }
+    );
 
     while (!settled && operation && !operation.forced) {
       await sleep(STATUS_POLL_MS);
@@ -149,7 +153,9 @@ export function createQuickHackShutdownCoordinator(dependencies) {
       }
     }
 
-    return trackedFinalize;
+    const result = await trackedFinalize;
+    if (result.error) throw result.error;
+    return result.value;
   }
 
   async function runGracefulShutdown(current) {
@@ -192,7 +198,9 @@ export function createQuickHackShutdownCoordinator(dependencies) {
       current.phase = "TERMINATING";
       publish();
       await dependencies.terminateBackend(current.operationId);
+      if (current.forced) return;
       const verification = await dependencies.verifyStopped();
+      if (current.forced) return;
       if (!verification.stopped) {
         throw new Error(
           `QuickHack ports are still open (PID ${verification.remainingPids.join(
@@ -217,6 +225,7 @@ export function createQuickHackShutdownCoordinator(dependencies) {
           ? "WAITING_FOR_SAFE_STOP"
           : "GRACEFUL_STOP_BLOCKED";
       publish();
+      current.outcome.resolve(cloneState(current));
     }
   }
 
@@ -227,6 +236,7 @@ export function createQuickHackShutdownCoordinator(dependencies) {
 
     const startedAt = new Date();
     const completion = deferred();
+    const outcome = deferred();
     operation = {
       operationId: crypto.randomUUID(),
       reason,
@@ -248,6 +258,7 @@ export function createQuickHackShutdownCoordinator(dependencies) {
       errorMessage: null,
       warningTimer: null,
       completion,
+      outcome,
     };
     operation.warningTimer = setTimeout(markWarning, warningMs);
     operation.warningTimer.unref?.();
@@ -262,6 +273,9 @@ export function createQuickHackShutdownCoordinator(dependencies) {
       throw Object.assign(new Error("SHUTDOWN_NOT_ACTIVE"), {
         code: "SHUTDOWN_NOT_ACTIVE",
       });
+    }
+    if (operation.phase === "FORCING") {
+      throw Object.assign(new Error("SHUTDOWN_FORCE_IN_PROGRESS"), { code: "SHUTDOWN_FORCE_IN_PROGRESS", statusCode: 409 });
     }
     if (
       reason === "console-action" &&
@@ -280,8 +294,18 @@ export function createQuickHackShutdownCoordinator(dependencies) {
     operation.errorMessage = null;
     publish();
 
-    const forceResult = await dependencies.forceTerminate();
-    const verification = await dependencies.verifyStopped();
+    let forceResult;
+    let verification;
+    try {
+      forceResult = await dependencies.forceTerminate();
+      verification = await dependencies.verifyStopped();
+    } catch (error) {
+      operation.phase = "FAILED";
+      operation.forced = false;
+      operation.errorMessage = errorMessage(error);
+      publish();
+      throw error;
+    }
     const remainingPids = [
       ...new Set([
         ...(forceResult?.remainingPids ?? []),
@@ -314,11 +338,19 @@ export function createQuickHackShutdownCoordinator(dependencies) {
     return operation.completion.promise;
   }
 
+  function waitForOutcome(operationId) {
+    if (!operation || operation.operationId !== operationId) {
+      return Promise.reject(new Error("QuickHack shutdown operation not found."));
+    }
+    return operation.outcome.promise;
+  }
+
   return {
     begin,
     force,
     getState: () => cloneState(operation),
     isActive: () => Boolean(operation && !operation.completedAt),
     waitForCompletion,
+    waitForOutcome,
   };
 }

@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = @QUICKHACK_INSTALLED_IDENTITY@
+
+[Action]
+Description = Reconcile QuickHack @QUICKHACK_PACKAGE_FLAVOR@ server after upgrade
+When = PostTransaction
+Exec = /usr/bin/flock -w 180 @QUICKHACK_LIFECYCLE_LOCK@ @QUICKHACK_NODE_EXECUTABLE@ @QUICKHACK_UPGRADE_ENTRY@ @QUICKHACK_ARTIFACT_KIND@

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { normalizePublicHttpsOrigin } from "../quickhack_shared/security/transport-security-policy.mjs";
 import { readClientTrustBundleSync } from "./trust-bundle.mjs";
@@ -25,6 +26,15 @@ export function normalizeServerUrl(value) {
 
 export function resolveClientTrustBundle(root, now = Date.now(), configDirectory = "") {
   const directory = path.resolve(configDirectory || path.join(root, "config"));
+  return readClientTrustBundleSync(directory, { now });
+}
+
+export function resolvePackagedClientTrustBundle(configDirectory, now = Date.now()) {
+  if (typeof configDirectory !== "string" || !path.isAbsolute(configDirectory)) {
+    throw new TypeError("An absolute installed client configuration path is required.");
+  }
+  const directory = path.resolve(configDirectory);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   return readClientTrustBundleSync(directory, { now });
 }
 

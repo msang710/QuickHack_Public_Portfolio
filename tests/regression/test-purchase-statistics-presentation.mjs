@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import {
-  formatPurchaseAdjustmentAmount,
-  formatPurchaseAdjustmentPercent,
-  formatPurchaseAmount,
-  formatPurchaseAveragePrice,
-  formatPurchaseDuration,
-  formatPurchaseRate,
-  formatPurchaseStatisticsDate,
-  formatPurchaseStatisticsMonth,
-  purchasePricePolicyLabel,
-} from "../../quickhack_client/components/statistics/purchase-statistics-presentation.ts";
+import { usePurchaseStatisticsPresentation } from "../../quickhack_client/components/statistics/purchase-statistics-presentation.ts";
+import { koMessages } from "../../quickhack_client/i18n/catalogs/ko/index.ts";
+import { captureStatisticsPresentation } from "../support/statistics-presentation-harness.mjs";
+
+const {
+  formatAdjustmentAmount: formatPurchaseAdjustmentAmount,
+  formatAdjustmentPercent: formatPurchaseAdjustmentPercent,
+  formatAmount: formatPurchaseAmount,
+  formatAveragePrice: formatPurchaseAveragePrice,
+  formatDuration: formatPurchaseDuration,
+  formatRate: formatPurchaseRate,
+  formatDate: formatPurchaseStatisticsDate,
+  formatMonth: formatPurchaseStatisticsMonth,
+} = captureStatisticsPresentation(usePurchaseStatisticsPresentation);
 
 assert.deepEqual(
   formatPurchaseRate({ value: 0, numerator: 0, denominator: 5 }),
@@ -95,10 +98,10 @@ assert.deepEqual(
   }
 );
 
-assert.equal(purchasePricePolicyLabel("RATE"), "기준가 적용");
-assert.equal(purchasePricePolicyLabel("OVERRIDE"), "기준가 조정");
-assert.equal(purchasePricePolicyLabel("MANUAL"), "수동 입력");
-assert.equal(purchasePricePolicyLabel("UNKNOWN"), "과거 미기록");
+assert.deepEqual(
+  ["rate", "override", "manual", "unknown"].map((key) => koMessages.statistics.purchase.pricePolicy[key]),
+  ["기준가 적용", "기준가 조정", "수동 입력", "과거 미기록"]
+);
 assert.equal(formatPurchaseStatisticsMonth("2026-07"), "2026년 7월");
 assert.equal(formatPurchaseStatisticsMonth("unknown"), "unknown");
 assert.match(

@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ final class QuickHackApi {
     private String baseUrl;
     private String cookieHeader = "";
     private ManagedTrustBundle trustBundle;
+    private final ThreadLocal<HttpTiming.Snapshot> lastTiming = new ThreadLocal<>();
 
     QuickHackApi(String baseUrl) {
         this(baseUrl, null);
@@ -69,6 +71,10 @@ final class QuickHackApi {
         cookieHeader = "";
     }
 
+    HttpTiming.Snapshot lastTiming() {
+        return lastTiming.get();
+    }
+
     ApiResponse login(String username, String password) throws IOException, JSONException {
         JSONObject body = new JSONObject();
         body.put("username", username);
@@ -82,6 +88,7 @@ final class QuickHackApi {
 
     ApiResponse packingCheck(List<String> scannedValues, String clientId, String deviceToken)
         throws IOException, JSONException {
+        lastTiming.remove();
         JSONObject body = new JSONObject();
         JSONArray values = new JSONArray();
         for (String value : scannedValues) values.put(value);
@@ -126,6 +133,7 @@ final class QuickHackApi {
     }
 
     private ApiResponse execute(HttpURLConnection connection, String requestBody) throws IOException {
+        HttpTiming timing = new HttpTiming(System.nanoTime());
         try {
             if (requestBody != null) {
                 BufferedWriter writer = new BufferedWriter(
@@ -135,12 +143,24 @@ final class QuickHackApi {
                 writer.close();
             }
             int code = connection.getResponseCode();
+            timing.headersAt(System.nanoTime());
             if (code >= 300 && code < 400) {
-                return new ApiResponse(code, "", false);
+                HttpTiming.Snapshot snapshot = timing.completeAt(System.nanoTime(), connection.getHeaderField("x-quickhack-trace-id"), false);
+                lastTiming.set(snapshot);
+                return new ApiResponse(code, "", false, snapshot);
             }
             storeCookies(connection.getHeaderFields());
             InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
-            return new ApiResponse(code, stream == null ? "" : readStream(stream), true);
+            String body = stream == null ? "" : readStream(stream);
+            HttpTiming.Snapshot snapshot = timing.completeAt(System.nanoTime(), connection.getHeaderField("x-quickhack-trace-id"), false);
+            lastTiming.set(snapshot);
+            return new ApiResponse(code, body, true, snapshot);
+        } catch (SocketTimeoutException error) {
+            lastTiming.set(timing.completeAt(System.nanoTime(), null, true));
+            throw error;
+        } catch (IOException error) {
+            lastTiming.set(timing.completeAt(System.nanoTime(), null, false));
+            throw error;
         } finally {
             connection.disconnect();
         }
@@ -180,11 +200,13 @@ final class QuickHackApi {
         final String body;
         final JSONObject json;
         final boolean directResponse;
+        final HttpTiming.Snapshot timing;
 
-        ApiResponse(int code, String body, boolean directResponse) {
+        ApiResponse(int code, String body, boolean directResponse, HttpTiming.Snapshot timing) {
             this.code = code;
             this.body = body == null ? "" : body;
             this.directResponse = directResponse;
+            this.timing = timing;
             JSONObject parsed = null;
             try {
                 if (!this.body.isEmpty()) parsed = new JSONObject(this.body);

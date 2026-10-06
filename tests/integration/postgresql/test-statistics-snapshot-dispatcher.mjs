@@ -356,15 +356,19 @@ try {
     ),
     "utf8"
   );
-  for (const text of [
-    "기본 기준보다",
-    "저장 통계가 아직 없어",
-    "저장 통계가 2일 이상 오래되어",
-    "저장 통계를 안전하게 확인할 수 없어",
-    "실시간 대체 계산",
+  const koreanCatalog = readFileSync(
+    path.join(process.cwd(), "quickhack_client/i18n/catalogs/ko/statistics.ts"),
+    "utf8"
+  );
+  for (const [key, text] of [
+    ["method.delayed", "기본 기준보다"],
+    ["fallback.notFound", "저장 통계가 아직 없어"],
+    ["fallback.tooOld", "저장 통계가 2일 이상 오래되어"],
+    ["fallback.invalid", "저장 통계를 안전하게 확인할 수 없어"],
+    ["method.liveFallback", "실시간 대체 계산"],
   ]) {
     assert.ok(
-      calculationScopeSource.includes(text),
+      calculationScopeSource.includes(`t("${key}"`) && koreanCatalog.includes(text),
       `The shared calculation scope must explain: ${text}`
     );
   }

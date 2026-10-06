@@ -728,6 +728,9 @@ public final class MainActivity extends AppCompatActivity {
             try {
                 QuickHackApi.ApiResponse response =
                     api.packingCheck(values, clientId, deviceToken);
+                if (BuildConfig.DEBUG && response.timing != null) {
+                    android.util.Log.i("QuickHackFieldValidation", response.timing.toLogLine());
+                }
                 if (!response.isHttpOk() || !response.isQuickHackOk()) {
                     if (
                         response.code == 401 ||
@@ -766,6 +769,10 @@ public final class MainActivity extends AppCompatActivity {
                     }
                 });
             } catch (Exception error) {
+                HttpTiming.Snapshot timing = api.lastTiming();
+                if (BuildConfig.DEBUG && timing != null) {
+                    android.util.Log.i("QuickHackFieldValidation", timing.toLogLine());
+                }
                 mainHandler.post(() -> {
                     busy = false;
                     if (deviceToken == null || deviceToken.isEmpty()) {

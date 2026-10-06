@@ -116,10 +116,7 @@ try {
       request(unsupportedSearchPath, tokens.get("LEADER"))
     );
     assert.equal(unsupportedSearch.status, 400);
-    assert.match(
-      (await unsupportedSearch.json()).message,
-      /통계 검색은 지원하지 않습니다/
-    );
+    assert.equal((await unsupportedSearch.json()).code, "STATISTICS_SEARCH_UNSUPPORTED");
   }
 
   const empty = await purchasesApi.GET(

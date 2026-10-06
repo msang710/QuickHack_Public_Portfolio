@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   resolveClientCaCertificateFile,
   resolveClientServerUrl,
   resolveClientTrustBundle,
+  resolvePackagedClientTrustBundle,
 } from "../../tools/client-runtime-config.mjs";
 import { writeClientTrustBundleSync } from "../../tools/trust-bundle.mjs";
 
@@ -32,10 +33,24 @@ try {
     (error) => error?.code === "PACKAGE_ARTIFACT_INVALID"
   );
 
+  const installedConfig = path.join(root, "user-config", "quickhack", "demonstration-client");
+  assert.throws(
+    () => resolvePackagedClientTrustBundle(installedConfig),
+    (error) => error?.code === "TRUST_BUNDLE_INCOMPLETE" && error.message.includes(path.join(installedConfig, "trust-bundle.json")),
+    "An empty installed configuration must still require the server trust bundle."
+  );
+  assert.equal(lstatSync(installedConfig).isDirectory(), true);
+
   const sourceCa = readFileSync(
     "quickhack_android/app/src/test/resources/managed-ca-one.pem",
     "utf8"
   );
+  writeClientTrustBundleSync(installedConfig, {
+    origin: "https://quickhack.example:3443",
+    currentCaPem: sourceCa,
+    generatedAt: new Date().toISOString(),
+  });
+  assert.equal(resolvePackagedClientTrustBundle(installedConfig).origin, "https://quickhack.example:3443");
   writeClientTrustBundleSync(configDirectory, {
     origin: "https://quickhack.example:3443",
     currentCaPem: sourceCa,

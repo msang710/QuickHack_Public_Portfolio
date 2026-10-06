@@ -25,7 +25,7 @@ export function createLinuxPostgresqlServiceController(options = {}) {
     start() { return serviceProcess.operate("START", "POSTGRESQL"); },
     stop() { return serviceProcess.operate("STOP", "POSTGRESQL"); },
     restart() { return serviceProcess.operate("RESTART", "POSTGRESQL"); },
-    status() { return serviceProcess.status("POSTGRESQL"); },
+    status(options) { return serviceProcess.status("POSTGRESQL", options); },
   });
   return controller;
 }

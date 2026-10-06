@@ -1,8 +1,9 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPackageInventory, assertPackageContentPolicy } from "../common/package-inventory.mjs";
 import { collectServerRuntimeClosure } from "../common/server-runtime-closure.mjs";
+import { stageRuntimeNodeDependencies } from "../common/stage-runtime-node-dependencies.mjs";
 import {
   QUICKHACK_PACKAGE_MANIFEST_FILENAME,
   canonicalPackageManifestJson,
@@ -11,6 +12,7 @@ import {
 import { assertNoRuntimePackageSources, assertRuntimePackageRole } from "../runtime-package-source-boundary.mjs";
 import { createServerServiceCredentialManifest, renderSystemdCredentialDirectives } from "../../tools/platform/linux/server-service-credential-manifest.mjs";
 import { linuxArtifactConfig, LINUX_PACKAGE_TARGETS } from "./linux-artifact-config.mjs";
+import { stageLinuxDesktop } from "./stage-desktop.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDirectory, "..", "..");
@@ -69,7 +71,7 @@ if (config.role === "client") {
   }
   const apiRoot = path.join(webRoot, ".next", "server", "app", "api");
   if (existsSync(apiRoot)) {
-    const allowedLocalRoutes = new Set(["adb", "client", "runtime"]);
+    const allowedLocalRoutes = new Set(["adb", "client", "desktop", "runtime"]);
     for (const entry of readdirSync(apiRoot, { withFileTypes: true })) {
       if (entry.isDirectory() && !allowedLocalRoutes.has(entry.name)) rmSync(path.join(apiRoot, entry.name), { recursive: true, force: true });
     }
@@ -86,10 +88,14 @@ const runtimeSeeds = config.role === "server"
   ? [
       "tools/quickhack-operator.mjs",
       "tools/quickhack-operator-core.mjs",
+      "tools/quickhack-https-gateway.mjs",
       "tools/operator-direct-one-shot.mjs",
       "tools/deploy-postgresql-migrations.mjs",
       "tools/audit-postgresql-schema.mjs",
       "tools/provision-initial-leader.mjs",
+      "tools/qhkey-publish-helper.mjs",
+      "tools/platform/linux/initial-tls-setup.mjs",
+      "tools/platform/linux/upgrade-reconcile.mjs",
       "tools/postgresql-backup.mjs",
       "tools/postgresql-restore.mjs",
     ]
@@ -102,7 +108,9 @@ const runtimeClosure = collectServerRuntimeClosure({
 for (const relativePath of runtimeClosure) copyFile(relativePath);
 
 if (config.role === "server") {
+  stageRuntimeNodeDependencies({ sourceRoot: root, destinationRoot: applicationRoot, packages: ["pg", "prisma"] });
   copyDirectory(path.join(root, "prisma"), path.join(applicationRoot, "prisma"));
+  copyFile("prisma.config.ts");
   if (existsSync(path.join(root, "templates"))) copyDirectory(path.join(root, "templates"), path.join(applicationRoot, "templates"));
   if (config.includesMockRuntime) {
     copyDirectory(path.join(root, "mock_server"), path.join(applicationRoot, "mock_server"));
@@ -146,6 +154,10 @@ if (config.role === "server") {
   const units = config.services;
   const replacements = {
     QUICKHACK_PACKAGE_FLAVOR: config.packageFlavor,
+    QUICKHACK_INSTALLED_IDENTITY: config.installedIdentity,
+    QUICKHACK_ARTIFACT_KIND: config.artifactKind,
+    QUICKHACK_UPGRADE_ENTRY: `${config.applicationRoot}/tools/platform/linux/upgrade-reconcile.mjs`,
+    QUICKHACK_LIFECYCLE_LOCK: `/run/quickhack-${config.flavorSlug}-lifecycle.lock`,
     QUICKHACK_APPLICATION_USER: config.users.application,
     QUICKHACK_APPLICATION_GROUP: config.users.application,
     QUICKHACK_POSTGRESQL_USER: config.users.postgresql,
@@ -155,6 +167,7 @@ if (config.role === "server") {
     QUICKHACK_CONSOLE_ENTRY: `${config.applicationRoot}/${config.entrypoint}`,
     QUICKHACK_OPERATOR_ENTRY: `${config.applicationRoot}/tools/quickhack-operator.mjs`,
     QUICKHACK_MIGRATION_ENTRY: `${config.applicationRoot}/tools/deploy-postgresql-migrations.mjs`,
+    QUICKHACK_TLS_SETUP_ENTRY: `${config.applicationRoot}/tools/platform/linux/initial-tls-setup.mjs`,
     QUICKHACK_RUNTIME_CONFIG: config.runtimeConfig,
     QUICKHACK_PACKAGE_MANIFEST: `${config.applicationRoot}/${QUICKHACK_PACKAGE_MANIFEST_FILENAME}`,
     QUICKHACK_POSTGRESQL_UNIT: units.postgresql,
@@ -162,8 +175,9 @@ if (config.role === "server") {
     QUICKHACK_APPLICATION_UNIT: units.console,
     QUICKHACK_POSTGRES_EXECUTABLE: "/usr/bin/postgres",
     QUICKHACK_PGDATA: `${config.dataRoot}/postgresql/18/data`,
+    QUICKHACK_POSTGRESQL_ROOT: `${config.dataRoot}/postgresql`,
+    QUICKHACK_POSTGRESQL_VERSION_DIR: `${config.dataRoot}/postgresql/18`,
     QUICKHACK_POSTGRESQL_CONFIG: `${config.dataRoot}/postgresql/18/data/postgresql.conf`,
-    QUICKHACK_POSTGRESQL_LOG_DIR: `${config.dataRoot}/postgresql/18/logs`,
     QUICKHACK_CONFIG_DIR: config.configRoot,
     QUICKHACK_DATA_DIR: config.dataRoot,
     QUICKHACK_STATE_DIR: `${config.dataRoot}/state`,
@@ -173,22 +187,37 @@ if (config.role === "server") {
     QUICKHACK_MIGRATOR_CREDENTIAL_DIRECTIVES: migratorCredentials,
     QUICKHACK_OPERATOR_CREDENTIAL_DIRECTIVES: operatorCredentials,
   };
-  for (const [key, template] of Object.entries({ postgresql: "quickhack-postgresql.service.in", console: "quickhack-console.service.in", migrate: "quickhack-migrate.service.in", operator: "quickhack-operator@.service.in" })) {
+  for (const [key, template] of Object.entries({ postgresql: "quickhack-postgresql.service.in", console: "quickhack-console.service.in", migrate: "quickhack-migrate.service.in", initialLeader: "quickhack-initial-leader.service.in", initialTls: "quickhack-initial-tls.service.in", operator: "quickhack-operator@.service.in" })) {
     renderTemplate(`packaging/linux/systemd/${template}`, path.join(outputRoot, "usr/lib/systemd/system", units[key]), replacements);
   }
+  renderTemplate("packaging/linux/arch/quickhack-upgrade-reconcile.hook.in", path.join(outputRoot, "usr/share/libalpm/hooks", `${config.installedIdentity}-upgrade-reconcile.hook`), replacements);
   renderTemplate("packaging/linux/sysusers/quickhack-server.conf.in", path.join(outputRoot, "usr/lib/sysusers.d", `${config.installedIdentity}.conf`), replacements);
   renderTemplate("packaging/linux/tmpfiles/quickhack-server.conf.in", path.join(outputRoot, "usr/lib/tmpfiles.d", `${config.installedIdentity}.conf`), replacements);
-  for (const action of ["setup", "purge"]) {
+  for (const action of ["setup", "repair", "purge"]) {
     renderTemplate(
-      `packaging/linux/launchers/quickhack-server-${action}.in`,
+      `packaging/linux/launchers/quickhack-server-${action === "repair" ? "setup" : action}.in`,
       path.join(outputRoot, "usr/bin", `${config.launcherName}-${action}`),
       {
         QUICKHACK_NODE_EXECUTABLE: "/usr/bin/node",
         QUICKHACK_PACKAGE_LIFECYCLE_ENTRY: `${config.applicationRoot}/tools/platform/linux/package-lifecycle.mjs`,
         QUICKHACK_ARTIFACT_KIND: config.artifactKind,
+        QUICKHACK_ACTION: action,
+        QUICKHACK_LIFECYCLE_LOCK: `/run/quickhack-${config.flavorSlug}-lifecycle.lock`,
       }
     );
   }
+  const initialLoginLauncher = path.join(outputRoot, "usr/bin", `${config.launcherName}-initial-login`);
+  writeFileSync(initialLoginLauncher, `#!/bin/sh\nexec /usr/bin/node "${config.applicationRoot}/tools/platform/linux/package-lifecycle.mjs" initial-login --artifact "${config.artifactKind}"\n`, { mode: 0o755 });
+  const authorizeLauncher = path.join(outputRoot, "usr/bin", `${config.launcherName}-qhkey-authorize`);
+  renderTemplate("packaging/linux/launchers/quickhack-qhkey-authorize.in", authorizeLauncher, {
+    QUICKHACK_NODE_EXECUTABLE: "/usr/bin/node",
+    QUICKHACK_OPERATOR_ENTRY: `${config.applicationRoot}/tools/quickhack-operator.mjs`,
+    QUICKHACK_RUNTIME_CONFIG: config.runtimeConfig,
+  });
+  chmodSync(authorizeLauncher, 0o755);
+  const publishHelper = path.join(outputRoot, "usr/lib/quickhack/quickhack-qhkey-publish-helper");
+  mkdirSync(path.dirname(publishHelper), { recursive: true });
+  writeFileSync(publishHelper, `#!/bin/sh\nexec /usr/bin/node "${config.applicationRoot}/tools/qhkey-publish-helper.mjs" --runtime-config "${config.runtimeConfig}" "$@"\n`, { mode: 0o755 });
   mkdirSync(path.join(applicationRoot, "packaging"), { recursive: true });
   writeFileSync(path.join(applicationRoot, "packaging", "server-runtime.template.json"), `${JSON.stringify(runtimeConfig, null, 2)}\n`, "utf8");
 }
@@ -201,6 +230,8 @@ renderTemplate(`packaging/linux/launchers/${launcherTemplate}`, path.join(output
   QUICKHACK_RUNTIME_CONFIG: config.runtimeConfig,
   QUICKHACK_PACKAGE_MANIFEST: `${config.applicationRoot}/${QUICKHACK_PACKAGE_MANIFEST_FILENAME}`,
 });
+
+stageLinuxDesktop({ root, outputRoot, applicationRoot, config, version: releaseVersion });
 
 assertNoRuntimePackageSources(applicationRoot);
 assertRuntimePackageRole(target, applicationRoot);

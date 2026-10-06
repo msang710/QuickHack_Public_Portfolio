@@ -7,14 +7,12 @@ import { createWindowsServerConsoleRuntime } from "../../tools/platform/windows/
 const linux = createLinuxServerConsoleRuntime({ environment: {}, interactive: false });
 const windows = createWindowsServerConsoleRuntime({ environment: { SystemRoot: "C:\\Windows" } });
 for (const runtime of [linux, windows]) {
-  for (const method of ["childEnvironment", "execFileText", "timeStatus", "portPids", "terminateOwnedProcess", "processMetadata", "openUrl", "openPath", "secureDirectory", "initializeTls"]) {
+  for (const method of ["childEnvironment", "execFileText", "portPids", "terminateOwnedProcess", "openUrl", "secureDirectory", "initializeTls"]) {
     assert.equal(typeof runtime[method], "function", `${runtime.descriptor.platform}.${method}`);
   }
 }
 assert.equal(linux.descriptor.state, "READY");
-assert.equal(linux.requiresExternalDatabaseOperations, true);
 assert.equal(linux.openUrl("http://127.0.0.1:2999"), false);
-assert.equal(windows.requiresExternalDatabaseOperations, false);
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const commonConsole = readFileSync(path.join(root, "tools/server-console.mjs"), "utf8");

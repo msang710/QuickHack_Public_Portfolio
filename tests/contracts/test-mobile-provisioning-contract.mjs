@@ -8,6 +8,7 @@ const baseline = read(
 );
 const bridge = read("quickhack_client/api/adb/mobile-provision.ts");
 const delivery = read("quickhack_client/adb/mobile-provisioning.ts");
+const nativeAdapters = read("quickhack_desktop/main/native-adapters.ts");
 const clientTrust = read("quickhack_client/security/mobile-trust-bundle.ts");
 const adb = read("quickhack_client/adb/adb.ts");
 const adbTargetPolicy = read("quickhack_shared/adb/adb-target-policy.ts");
@@ -71,7 +72,9 @@ assert.equal(
 );
 assert.doesNotMatch(service, /activation_code_hash|randomActivationCode/);
 
-assert.match(bridge, /deliverMobileProvisioningBootstrap/);
+assert.match(bridge, /requestNativeBroker\("adb\.provision"/);
+assert.match(nativeAdapters, /"adb\.provision": async/);
+assert.match(nativeAdapters, /deliverMobileProvisioningBootstrap/);
 assert.match(bridge, /cancelProvisioning/);
 assert.match(bridge, /loadMobileManagedTrustBundle/);
 assert.ok(

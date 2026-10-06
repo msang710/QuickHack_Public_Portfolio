@@ -3,7 +3,7 @@ import { OPERATOR_PACKAGE_TARGETS, assertOperatorPlatform } from "../contracts.m
 import { createLinuxOperatorProcessExecution } from "./process-execution.mjs";
 import { createLinuxRemovableVolumeProvider } from "../../../quickhack_server/platform/linux/removable-volume-provider.mjs";
 import { createLinuxServerConsoleRuntime } from "./server-console-runtime.mjs";
-import { createSystemdOneShotProcess } from "./systemd-one-shot-process.mjs";
+import { createSystemdOneShotProcess, oneShotUnitsForPackageServices } from "./systemd-one-shot-process.mjs";
 import { createSystemdServiceProcess } from "./systemd-service-process.mjs";
 import { readPackageRuntimeIdentitySync } from "../../../quickhack_shared/core/package-runtime-identity.mjs";
 import { linuxArtifactConfig } from "../../../packaging/linux/linux-artifact-config.mjs";
@@ -56,16 +56,18 @@ export function createLinuxOperatorPlatform(platform = "linux") {
     role: "operator",
   });
   const serverConsoleRuntime = createLinuxServerConsoleRuntime();
-  const oneShotProcess = Object.freeze({
-    descriptor: descriptor("one-shot-process", platform, "PR-09"),
-    create() {
-      return createSystemdOneShotProcess();
-    },
-  });
   const packageIdentity = readPackageRuntimeIdentitySync();
   const serviceConfig = packageIdentity?.runtimeRole === "SERVER"
     ? linuxArtifactConfig(packageIdentity.packageTarget).services
     : null;
+  const oneShotProcess = Object.freeze({
+    descriptor: descriptor("one-shot-process", platform, "PR-09"),
+    create() {
+      return createSystemdOneShotProcess({
+        ...(serviceConfig ? { units: oneShotUnitsForPackageServices(serviceConfig) } : {}),
+      });
+    },
+  });
   const nativeServiceLifecycle = createSystemdServiceProcess({
     ...(serviceConfig ? { units: { POSTGRESQL: serviceConfig.postgresql, APPLICATION: serviceConfig.console } } : {}),
   });

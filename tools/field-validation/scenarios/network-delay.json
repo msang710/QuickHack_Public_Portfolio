@@ -1,0 +1,7 @@
+{
+  "runId": "run-local-001",
+  "profiles": {
+    "client": { "delayMs": 40, "jitterMs": 5, "lossPercent": 0 },
+    "external": { "delayMs": 120, "jitterMs": 20, "lossPercent": 1 }
+  }
+}

@@ -18,6 +18,7 @@ const defaultOrderIntervalMs = 30000;
 const defaultReturnExchangeIntervalMs = 180000;
 const defaultResetOrderCount = 40;
 const defaultResetReturnExchangeCount = 10;
+const loadCatalogPrefix = "quickhack-load-v1:";
 const defaultFailurePolicy = {
   enabled: true,
   target: "all",
@@ -976,6 +977,14 @@ function assertSyntheticCatalogComplete(state) {
 async function ensureProductsSeeded(db) {
   const state = await syntheticCatalogState(db);
 
+  if (state.version.startsWith(loadCatalogPrefix) && process.env.QUICKHACK_LOAD_TEST_MODE === "1") {
+    const expected = Number(state.version.slice(loadCatalogPrefix.length).split(":").at(-1));
+    if (!Number.isSafeInteger(expected) || expected <= 0 || state.itemCount !== expected) {
+      throw new Error("Load fixture catalog count does not match its manifest.");
+    }
+    return state.itemCount;
+  }
+
   if (state.version === SYNTHETIC_CATALOG_VERSION) {
     assertSyntheticCatalogComplete(state);
     return state.itemCount;
@@ -1513,11 +1522,21 @@ async function ordersheetPage(db, input) {
   const status = pageRequest?.status || input.status || "INSTRUCT";
   const limit = positiveInteger(pageRequest?.limit ?? input.limit, defaultPageSize, maxPageSize);
   const offset = nonNegativeInteger(pageRequest?.offset, 0);
+  const loadWindow = process.env.QUICKHACK_LOAD_TEST_MODE === "1" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(input.createdAtFrom || "") &&
+    /^\d{4}-\d{2}-\d{2}$/.test(input.createdAtTo || "")
+      ? {
+        from: new Date(`${input.createdAtFrom}T00:00:00+09:00`).toISOString(),
+        to: new Date(Date.parse(`${input.createdAtTo}T00:00:00+09:00`) + 86_400_000).toISOString(),
+      }
+      : null;
+  const windowClause = loadWindow ? " AND ordered_at >= ? AND ordered_at < ?" : "";
+  const windowArgs = loadWindow ? [loadWindow.from, loadWindow.to] : [];
   const maxId =
     pageRequest?.maxId ??
     Number((await db
-      .prepare("SELECT COALESCE(MAX(id), 0) AS value FROM mock_orders WHERE status = ?")
-      .get(status)).value);
+      .prepare(`SELECT COALESCE(MAX(id), 0) AS value FROM mock_orders WHERE status = ?${windowClause}`)
+      .get(status, ...windowArgs)).value);
 
   if (
     pageRequest &&
@@ -1532,11 +1551,11 @@ async function ordersheetPage(db, input) {
   const orders = await db
     .prepare(`
       SELECT * FROM mock_orders
-      WHERE status = ? AND id <= ?
+      WHERE status = ? AND id <= ?${windowClause}
       ORDER BY id ASC
       LIMIT ? OFFSET ?
     `)
-    .all(status, maxId, limit, offset);
+    .all(status, maxId, ...windowArgs, limit, offset);
   const itemQuery = db.prepare(`
     SELECT
       items.*,
@@ -1554,8 +1573,8 @@ async function ordersheetPage(db, input) {
     ORDER BY items.id ASC
   `);
   const total = Number((await db
-    .prepare("SELECT COUNT(*) AS value FROM mock_orders WHERE status = ? AND id <= ?")
-    .get(status, maxId)).value);
+    .prepare(`SELECT COUNT(*) AS value FROM mock_orders WHERE status = ? AND id <= ?${windowClause}`)
+    .get(status, maxId, ...windowArgs)).value);
   const nextOffset = offset + orders.length;
   const nextToken =
     nextOffset < total
@@ -3095,6 +3114,7 @@ async function handleRequest(request, response, db, generatorConfig, failurePoli
     sendJson(response, 200, {
       ok: true,
       name: "QuickHack Coupang mock server",
+      instanceId: process.env.QUICKHACK_CONSOLE_INSTANCE_ID || "",
       database: "postgresql",
       openApiCredential: await publicCredentialStatus(db),
       generators: generatorConfig,
@@ -3331,6 +3351,8 @@ async function handleRequest(request, response, db, generatorConfig, failurePoli
 
     sendMockJson(response, 200, await ordersheetPage(db, {
       status: url.searchParams.get("status") || "INSTRUCT",
+      createdAtFrom: url.searchParams.get("createdAtFrom"),
+      createdAtTo: url.searchParams.get("createdAtTo"),
       nextToken: url.searchParams.get("nextToken"),
       limit:
         url.searchParams.get("maxPerPage") ||

@@ -19,7 +19,7 @@ export const QUICKHACK_OPERATOR_COMMANDS = Object.freeze([
 
 const COMMAND_SET = new Set(QUICKHACK_OPERATOR_COMMANDS);
 const MUTATING_COMMANDS = new Set(
-  QUICKHACK_OPERATOR_COMMANDS.filter((item) => !["STATUS", "OPEN_CONSOLE", "RUN_ONE_SHOT"].includes(item))
+  QUICKHACK_OPERATOR_COMMANDS.filter((item) => !["STATUS", "OPEN_CONSOLE", "RUN_ONE_SHOT", "AUTHORIZE_QHKEY"].includes(item))
 );
 
 function assertCommand(value) {
@@ -134,6 +134,25 @@ export function callLocalServerConsole(dataDirectory, pathname, options = {}) {
   });
 }
 
+export async function waitForConsoleShutdown(operationId, request, options = {}) {
+  const deadline = Date.now() + (options.timeoutMs ?? 30_000);
+  for (;;) {
+    const readiness = await request("/api/readiness", { method: "GET", timeoutMs: 5_000 });
+    const state = readiness.shutdown;
+    if (!state || state.operationId !== operationId) {
+      throw Object.assign(new Error("The server console shutdown operation changed."), { code: "SHUTDOWN_OPERATION_CHANGED" });
+    }
+    if (state.completedAt) {
+      if (!["STOPPED", "FORCED"].includes(state.phase)) {
+        throw Object.assign(new Error("The server did not stop."), { code: "SHUTDOWN_FAILED" });
+      }
+      return { state: "COMPLETED", shutdown: state };
+    }
+    if (Date.now() >= deadline) return { state: "IN_PROGRESS", shutdown: state };
+    await (options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(500);
+  }
+}
+
 export function createQuickHackOperator(dependencies) {
   for (const name of ["runtimeConfig", "postgresqlService", "oneShot", "directOneShot", "applicationService", "authorizeQhkey"]) {
     if (!dependencies?.[name]) throw new TypeError(`QuickHack operator dependency is missing: ${name}.`);
@@ -141,12 +160,21 @@ export function createQuickHackOperator(dependencies) {
 
   async function execute(input) {
     const command = assertCommand(input.command);
+    // The desktop user invokes the authorization broker before privilege
+    // escalation and cannot read the server's root-owned runtime config.
+    // The broker and replacement transaction perform their own authorization
+    // and transaction locking.
+    if (command === "AUTHORIZE_QHKEY") {
+      return Object.freeze({ command, state: "COMPLETED", result: sanitized(await dependencies.authorizeQhkey(input.transactionId)) });
+    }
     const runtimeConfig = dependencies.runtimeConfig(input);
     const dataDirectory = path.resolve(runtimeConfig.dataDirectory);
-    const stateDirectory = path.join(dataDirectory, "state", "operator");
-    const release = MUTATING_COMMANDS.has(command) ? acquireLock(stateDirectory, command) : () => undefined;
+    const lockDirectory = dependencies.operatorLockDirectory?.(dataDirectory)
+      ?? path.join(path.dirname(dataDirectory), "security", `${path.basename(dataDirectory)}-operator`);
+    const release = MUTATING_COMMANDS.has(command) ? acquireLock(lockDirectory, command) : () => undefined;
     const partialResult = [];
     let preparedOneShot;
+    let operationState = "COMPLETED";
     try {
       let result;
       if (command === "STATUS") result = await callLocalServerConsole(dataDirectory, "/api/status", { method: "GET", timeoutMs: 5000 });
@@ -156,19 +184,28 @@ export function createQuickHackOperator(dependencies) {
         result = { url, opened: dependencies.openConsole?.(url) !== false };
       }
       else if (command === "START") result = await callLocalServerConsole(dataDirectory, "/api/application/start");
-      else if (command === "STOP") result = await callLocalServerConsole(dataDirectory, "/api/application/stop");
+      else if (command === "STOP") {
+        const request = dependencies.consoleRequest ?? ((pathname, options) => callLocalServerConsole(dataDirectory, pathname, options));
+        const accepted = await request("/api/application/stop");
+        const operationId = String(accepted.shutdown?.operationId ?? "");
+        if (!/^[a-f0-9-]{36}$/u.test(operationId)) throw Object.assign(new Error("The server console did not return a shutdown operation."), { code: "SHUTDOWN_OPERATION_MISSING" });
+        const observed = await waitForConsoleShutdown(operationId, request, { timeoutMs: dependencies.stopWaitMs });
+        operationState = observed.state;
+        result = observed.shutdown;
+      }
       else if (command === "BACKUP") result = await callLocalServerConsole(dataDirectory, "/api/operator/backup", { timeoutMs: 60 * 60_000 });
       else if (command === "INSTALL") {
         partialResult.push({ step: "POSTGRESQL", result: await dependencies.postgresqlService.install(input) });
         partialResult.push({ step: "MIGRATE", result: await dependencies.oneShot.execute("MIGRATE", input) });
+        if (dependencies.applicationCredentials) partialResult.push({ step: "APPLICATION_CREDENTIALS", result: await dependencies.applicationCredentials.ensure(input) });
         partialResult.push({ step: "PROVISION_INITIAL_LEADER", result: await dependencies.oneShot.execute("PROVISION_INITIAL_LEADER", input) });
-        partialResult.push({ step: "APPLICATION", result: await dependencies.applicationService.operate("START", "APPLICATION") });
         result = { steps: partialResult };
       }
       else if (command === "REPAIR") {
         partialResult.push({ step: "POSTGRESQL", result: await dependencies.postgresqlService.repair(input) });
         partialResult.push({ step: "MIGRATE", result: await dependencies.oneShot.execute("MIGRATE", input) });
-        partialResult.push({ step: "APPLICATION", result: await dependencies.applicationService.operate("RESTART", "APPLICATION") });
+        if (dependencies.applicationCredentials) partialResult.push({ step: "APPLICATION_CREDENTIALS", result: await dependencies.applicationCredentials.ensure(input) });
+        partialResult.push({ step: "PROVISION_INITIAL_LEADER", result: await dependencies.oneShot.execute("PROVISION_INITIAL_LEADER", input) });
         result = { steps: partialResult };
       }
       else if (["MIGRATE", "RESTORE", "PROVISION_INITIAL_LEADER"].includes(command)) {
@@ -188,9 +225,8 @@ export function createQuickHackOperator(dependencies) {
           preparedOneShot = undefined;
         }
       }
-      else if (command === "AUTHORIZE_QHKEY") result = await dependencies.authorizeQhkey(input.transactionId);
       else if (command === "RUN_ONE_SHOT") result = await dependencies.directOneShot.execute(input.operation, input);
-      return Object.freeze({ command, state: "COMPLETED", result: sanitized(result) });
+      return Object.freeze({ command, state: operationState, result: sanitized(result) });
     } catch (error) {
       if (preparedOneShot && typeof dependencies.cleanupPreparedOneShot === "function") {
         try {

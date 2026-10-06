@@ -9,6 +9,7 @@ import {
   clientRuntimePortForArtifact,
   normalizeServerUrl,
   resolveClientTrustBundle,
+  resolvePackagedClientTrustBundle,
 } from "./client-runtime-config.mjs";
 import { probeCentralServer } from "./client-runtime-probe.mjs";
 import {
@@ -388,8 +389,9 @@ async function main() {
       return;
     }
     if (command === "restart") await stopOwnedRuntime();
-    const packageConfigDir = packageIdentity ? runtimeDirectories.configDir : "";
-    const trustBundle = resolveClientTrustBundle(root, Date.now(), packageConfigDir);
+    const trustBundle = packageIdentity
+      ? resolvePackagedClientTrustBundle(runtimeDirectories.configDir)
+      : resolveClientTrustBundle(root);
     const serverUrl = trustBundle.origin;
     const caCertificateFile = trustBundle.paths.combinedCa;
     await startRuntime(serverUrl, caCertificateFile);

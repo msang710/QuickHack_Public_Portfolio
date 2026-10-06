@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
-const [addressView, inTransitView, deliveryDetail, orderView, invoiceView] =
+const [addressView, inTransitView, deliveryDetail, orderView, invoiceView, shipmentKo] =
   await Promise.all([
     read("quickhack_client/components/shipment/shipment-address-change-list-view.tsx"),
     read("quickhack_client/components/shipment/shipment-in-transit-list-view.tsx"),
     read("quickhack_client/components/shipment/shipment-delivery-search-detail-sheet.tsx"),
     read("quickhack_client/components/shipment/shipment-order-list-view.tsx"),
     read("quickhack_client/components/invoice/invoice-manual-issue-view.tsx"),
+    read("quickhack_client/i18n/catalogs/ko/shipment.ts"),
   ]);
 
 assert.match(addressView, /useOwnedRequest\(\)/);
@@ -28,7 +29,8 @@ for (const source of [inTransitView, deliveryDetail]) {
 }
 
 assert.match(orderView, /nextCursor/);
-assert.match(orderView, /다음 대상 불러오기/);
+assert.match(orderView, /t\("actions\.loadMore"\)/);
+assert.match(shipmentKo, /loadMore: "다음 대상 불러오기"/);
 assert.match(invoiceView, /scope:\s*"OPEN"/);
 assert.match(invoiceView, /scope:\s*"HISTORY"/);
 assert.match(invoiceView, /loadMoreCandidates/);

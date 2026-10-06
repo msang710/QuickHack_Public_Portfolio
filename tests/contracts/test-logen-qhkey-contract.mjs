@@ -22,6 +22,7 @@ const registrationService = read(
 const securityStatus = read("quickhack_server/api/admin/security-status.ts");
 const serverConsole = read("tools/server-console-operational.mjs");
 const stagingPackage = read("packaging/create-staging-package.mjs");
+const runtimeClosure = read("packaging/common/server-runtime-closure.mjs");
 
 for (const legacyName of [
   "LOGEN_SECRET_KEY",
@@ -89,6 +90,7 @@ assert.match(serverConsole, /\/api\/qhkey\/logen\/rotate/);
 assert.match(serverConsole, /id="logen-key-form"/);
 assert.match(serverConsole, /importQhkeyMasterKey/);
 assert.doesNotMatch(serverConsole, /mock_server|mock-issue|issueMock/iu);
-assert.match(stagingPackage, /server-console-qhkey\.mjs/);
+assert.match(stagingPackage, /collectServerRuntimeClosure/);
+assert.match(runtimeClosure, /tools\/server-console-qhkey-operational\.mjs/);
 
 console.log("Logen QHKey integration contract checks passed.");

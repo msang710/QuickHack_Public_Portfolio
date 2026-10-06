@@ -2,10 +2,8 @@ import fs from "node:fs";
 const preserveKoreanSnapshot = (value) => value;
 import path from "node:path";
 import {
-  createEncryptedQhkey,
   decryptQhkey,
   readQhkeyMetadata,
-  writeQhkeyFile,
 } from "../quickhack_server/security/qhkey-format.mjs";
 import {
   readQhkeyMasterKeyFile,
@@ -19,7 +17,6 @@ import { composeServerPlatform } from "../quickhack_server/platform/compose-serv
 import { composeOperatorPlatform } from "./platform/compose-operator-platform.mjs";
 import { createQhkeyReplacementService } from "../quickhack_server/security/qhkey-replacement-transaction.mjs";
 
-const MAX_CREDENTIAL_LENGTH = 4096;
 const serverPlatform = composeServerPlatform();
 const operatorPlatform = composeOperatorPlatform();
 const replacementServices = new Map();
@@ -82,17 +79,6 @@ function publicDrive(volume) {
     hasQhkey: volume.providers.length > 0,
   });
 }
-
-export async function discoverWindowsDrives() {
-  return (await operatorPlatform.removableVolume.list()).map(publicDrive);
-}
-
-export async function detectSingleQhkeyRoot() {
-  const drives = (await discoverWindowsDrives()).filter((drive) => drive.hasQhkey);
-  return drives.length === 1 ? drives[0].root : "";
-}
-
-export const detectSingleCoupangQhkeyRoot = detectSingleQhkeyRoot;
 
 function safeMetadata(filePath) {
   try {
@@ -174,18 +160,6 @@ export async function getQhkeyConsoleStatus(dataDir, production = false) {
   };
 }
 
-export async function getCoupangQhkeyConsoleStatus(dataDir) {
-  const status = await getQhkeyConsoleStatus(dataDir);
-  return { ...status, ...status.coupang };
-}
-
-function requiredCredential(value, label) {
-  const text = String(value || "").trim();
-  if (!text) throw new Error(`${label}을(를) 입력하세요.`);
-  if (text.length > MAX_CREDENTIAL_LENGTH) throw new Error(`${label} 값이 너무 깁니다.`);
-  return text;
-}
-
 export function validateQhkeyProviderFilesWithMaster(root, masterKeyFile) {
   const files = providerFiles(root);
   const masterKey = readQhkeyMasterKeyFile(masterKeyFile);
@@ -202,54 +176,6 @@ export function validateQhkeyProviderFilesWithMaster(root, masterKeyFile) {
     masterKey.fill(0);
   }
   return metadata;
-}
-
-// Test/development compatibility writer. Production console routes use the
-// replacement transaction below and never call this direct writer.
-export function writeCoupangQhkey(input, target, credential) {
-  const masterKey = readQhkeyMasterKeyFile(target.masterKeyFile);
-  try {
-    const qhkey = createEncryptedQhkey({
-      masterKey,
-      credentialKind: "COUPANG_OPEN_API",
-      environment: String(input.environment || "mock").trim().toLowerCase(),
-      keyAlias: String(input.keyAlias || "").trim() || `coupang-${Date.now()}`,
-      credential: {
-        vendorId: requiredCredential(credential.vendorId, "업체코드 (vendorId)"),
-        accessKey: requiredCredential(credential.accessKey, "Access Key"),
-        secretKey: requiredCredential(credential.secretKey, "Secret Key"),
-      },
-      issuedAt: credential.issuedAt,
-      expiresAt: credential.expiresAt,
-    });
-    writeQhkeyFile(target.filePath, qhkey.buffer, target.fileExists);
-    return { root: target.root, filePath: target.filePath, ...qhkey.metadata };
-  } finally {
-    masterKey.fill(0);
-  }
-}
-
-export function writeLogenQhkey(input, target, credential) {
-  const masterKey = readQhkeyMasterKeyFile(target.masterKeyFile);
-  try {
-    const qhkey = createEncryptedQhkey({
-      masterKey,
-      credentialKind: "LOGEN_OPEN_API",
-      environment: String(input.environment || "live").trim().toLowerCase(),
-      keyAlias: String(input.keyAlias || "").trim() || `logen-${Date.now()}`,
-      credential: {
-        userId: requiredCredential(credential.userId, "연동업체코드 (userId)"),
-        customerCode: requiredCredential(credential.customerCode, "거래처코드 (customerCode)"),
-        secretKey: requiredCredential(credential.secretKey, "Secret Key"),
-      },
-      issuedAt: credential.issuedAt,
-      expiresAt: credential.expiresAt,
-    });
-    writeQhkeyFile(target.filePath, qhkey.buffer, target.fileExists);
-    return { root: target.root, filePath: target.filePath, ...qhkey.metadata };
-  } finally {
-    masterKey.fill(0);
-  }
 }
 
 export async function prepareProviderReplacement(input, provider, credential, dateRange) {
@@ -338,5 +264,3 @@ export async function importQhkeyMasterKey(input) {
     })),
   };
 }
-
-export const importCoupangQhkeyMasterKey = importQhkeyMasterKey;

@@ -5,8 +5,11 @@ import {
 } from "@/quickhack_shared/http/request-body-policy.mjs";
 import { AUTH_COOKIE_NAME } from "@/quickhack_shared/auth/auth-constants";
 import { protectedWorkflowFamily, verifyWorkflowAdmission, WORKFLOW_ADMISSION_COOKIE } from "@/quickhack_shared/desktop/client-compatibility";
+import { readBoundedRequestText, RequestBodyTooLargeError } from "@/quickhack_shared/http/bounded-request-body";
+import { proxyToServer } from "@/quickhack_shared/core/server-proxy";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const LOCAL_CLIENT_API_ROUTES = new Set(["/api/runtime", "/api/desktop/native"]);
 
 function requestOrigin(request: NextRequest) {
   const forwardedProto = request.headers.get("x-forwarded-proto");
@@ -31,7 +34,7 @@ function isAllowedOrigin(request: NextRequest, origin: string) {
 function requestHasBody(request: NextRequest) {
   const contentLength = request.headers.get("content-length");
   if (contentLength !== null) {
-    return Number(contentLength) > 0;
+    return Number(contentLength) > 0 || request.body !== null;
   }
   return request.body !== null;
 }
@@ -73,11 +76,42 @@ function admissionFailure(request: NextRequest) {
   }
 }
 
+function isLocalClientApi(pathname: string) {
+  return LOCAL_CLIENT_API_ROUTES.has(pathname) || pathname.startsWith("/api/adb/") || pathname.startsWith("/api/client/");
+}
+
+async function forwardClientApi(request: NextRequest) {
+  let body: string | undefined;
+  if (UNSAFE_METHODS.has(request.method.toUpperCase()) && request.body !== null) {
+    try {
+      body = await readBoundedRequestText(request);
+    } catch (error) {
+      return withSecurityHeaders(NextResponse.json({
+        ok: false,
+        code: error instanceof RequestBodyTooLargeError ? "REQUEST_BODY_TOO_LARGE" : "REQUEST_BODY_INVALID",
+      }, { status: error instanceof RequestBodyTooLargeError ? 413 : 400 }));
+    }
+  }
+  return withSecurityHeaders(await proxyToServer(request, request.nextUrl.pathname, {
+    method: request.method,
+    body,
+    contentType: request.headers.get("content-type"),
+  }));
+}
+
+function continueOrForward(request: NextRequest) {
+  return process.env.QUICKHACK_RUNTIME_ROLE === "client" &&
+    request.nextUrl.pathname.startsWith("/api/") &&
+    !isLocalClientApi(request.nextUrl.pathname)
+    ? forwardClientApi(request)
+    : withSecurityHeaders(NextResponse.next());
+}
+
 export function proxy(request: NextRequest) {
   const isApiRequest = request.nextUrl.pathname.startsWith("/api/");
 
   if (!isApiRequest || !UNSAFE_METHODS.has(request.method.toUpperCase())) {
-    return withSecurityHeaders(NextResponse.next());
+    return continueOrForward(request);
   }
 
   const admission = admissionFailure(request);
@@ -111,7 +145,7 @@ export function proxy(request: NextRequest) {
   const origin = request.headers.get("origin");
 
   if (!origin || isAllowedOrigin(request, origin)) {
-    return withSecurityHeaders(NextResponse.next());
+    return continueOrForward(request);
   }
 
   return withSecurityHeaders(

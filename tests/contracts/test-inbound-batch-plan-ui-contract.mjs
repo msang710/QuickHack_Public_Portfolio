@@ -16,6 +16,7 @@ const route = read("quickhack_server/api/inbound/batches.ts");
 const view = read(
   "quickhack_client/components/inbound/inbound-batch-plan-view.tsx"
 );
+const koreanCatalog = read("quickhack_client/i18n/catalogs/ko/inbound.ts");
 
 assert.match(
   sharedContract,
@@ -89,9 +90,14 @@ assert.doesNotMatch(
 );
 assert.match(view, /const INBOUND_BATCH_FORM_ID = "inbound\.batch-plan"/);
 assert.match(view, /useUnsavedForm\(\{/);
-assert.match(view, /label: "현재 연결"/);
-assert.match(view, /label: "매입처 반품"/);
-assert.match(view, /label: "정상 입고 대상"/);
-assert.match(view, /label: "차이"/);
+for (const [key, label] of [
+  ["linked", "현재 연결"],
+  ["supplierReturn", "매입처 반품"],
+  ["normalTarget", "정상 입고 대상"],
+  ["difference", "차이"],
+]) {
+  assert.match(view, new RegExp(`label: t\\("columns\\.${key}"\\)`));
+  assert.match(koreanCatalog, new RegExp(`${key}: "${label}"`));
+}
 
 console.log("Inbound batch plan UI contracts verified.");

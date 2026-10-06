@@ -19,30 +19,33 @@ _install_staged_root() {
   local target="$1"
   local source_root="${_stage_root}/${target}/pkgroot"
   [[ -d "${source_root}" ]] || { error "Missing staged package root: ${source_root}"; return 1; }
-  cp -a "${source_root}/." "${pkgdir}/"
+  cp -a --no-preserve=ownership "${source_root}/." "${pkgdir}/"
   find "${pkgdir}/usr/bin" -maxdepth 1 -type f -name 'quickhack-*' -exec chmod 0755 {} + 2>/dev/null || true
+  if [[ -d "${pkgdir}/usr/lib/quickhack" ]]; then
+    find "${pkgdir}/usr/lib/quickhack" -path '*/desktop/chrome-sandbox' -exec chmod 4755 {} +
+  fi
 }
 
 package_quickhack-demonstration-server() {
-  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'postgresql>=18' 'postgresql<19' 'systemd' 'openssl' 'polkit' 'sudo')
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'postgresql>=18' 'postgresql<19' 'systemd' 'openssl' 'polkit' 'sudo' 'xdg-utils' 'util-linux')
   conflicts=('quickhack-operational-server')
   install=quickhack-server.install
   _install_staged_root demo-server
 }
 
 package_quickhack-demonstration-client() {
-  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'android-tools' 'cups')
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'android-tools' 'cups' 'gtk3' 'nss' 'alsa-lib' 'libxss' 'libxkbcommon' 'mesa' 'libdrm' 'xdg-utils')
   _install_staged_root demo-client
 }
 
 package_quickhack-operational-server() {
-  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'postgresql>=18' 'postgresql<19' 'systemd' 'openssl' 'polkit' 'sudo')
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'postgresql>=18' 'postgresql<19' 'systemd' 'openssl' 'polkit' 'sudo' 'xdg-utils' 'util-linux')
   conflicts=('quickhack-demonstration-server')
   install=quickhack-server.install
   _install_staged_root operational-server
 }
 
 package_quickhack-operational-client() {
-  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'android-tools' 'cups')
+  depends=('nodejs-lts-krypton>=24' 'nodejs-lts-krypton<25' 'android-tools' 'cups' 'gtk3' 'nss' 'alsa-lib' 'libxss' 'libxkbcommon' 'mesa' 'libdrm' 'xdg-utils')
   _install_staged_root operational-client
 }

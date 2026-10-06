@@ -166,7 +166,11 @@ assert.doesNotMatch(detailSource, /take:\s*20|slice\(0,\s*20\)/);
 assert.match(sheetSource, /requestDeviceHistoryPage\(/);
 assert.match(sheetSource, /onValueChange=\{handleTabChange\}/);
 assert.match(correctionSource, /requestInventoryCorrectionHistory\(/);
-assert.match(correctionSource, /이전 기록 더 불러오기/);
+assert.match(correctionSource, /t\("actions\.loadMoreHistory"\)/);
+assert.match(
+  readFileSync("quickhack_client/i18n/catalogs/ko/inventory.ts", "utf8"),
+  /loadMoreHistory:\s*"이전 기록 더 불러오기"/
+);
 
 console.log(
   "Device history keyset snapshot, query ownership, complete coverage, and read-only repeatable-read boundary verified."

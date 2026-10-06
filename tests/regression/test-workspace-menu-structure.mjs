@@ -19,6 +19,7 @@ const expectedManagementGroups = {
   ],
   "sales-channel": [
     "admin-channel-products",
+    "sales-channel-manual-order-match",
     "admin-channel-order-matching",
     "admin-order-matching-policy",
     "admin-sales-channel-sync-check",
@@ -117,13 +118,13 @@ assert.deepEqual(managementGroupsFor("VIEWER"), []);
 assert.deepEqual(managementGroupsFor("STAFF"), [
   {
     id: "sales-channel",
-    itemIds: ["admin-sales-channel-sync-check"],
+    itemIds: ["sales-channel-manual-order-match", "admin-sales-channel-sync-check"],
   },
 ]);
 assert.deepEqual(managementGroupsFor("MANAGER"), [
   {
     id: "sales-channel",
-    itemIds: ["admin-sales-channel-sync-check"],
+    itemIds: ["sales-channel-manual-order-match", "admin-sales-channel-sync-check"],
   },
 ]);
 assert.deepEqual(managementGroupsFor("LEADER"), [
@@ -143,8 +144,8 @@ assert.deepEqual(managementGroupsFor("LEADER"), [
 
 for (const [role, expectedGroupId, expectedMenuId] of [
   ["VIEWER", undefined, undefined],
-  ["STAFF", "sales-channel", "admin-sales-channel-sync-check"],
-  ["MANAGER", "sales-channel", "admin-sales-channel-sync-check"],
+  ["STAFF", "sales-channel", "sales-channel-manual-order-match"],
+  ["MANAGER", "sales-channel", "sales-channel-manual-order-match"],
   ["LEADER", "system-admin", "admin-users"],
 ]) {
   const targetGroup = findShortcutMenuGroup(

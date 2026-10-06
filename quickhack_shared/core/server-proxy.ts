@@ -148,11 +148,12 @@ function copySetCookie(
   const setCookie = source.headers.get("set-cookie");
 
   if (setCookie) {
+    const hostHeader = request.headers.get("host");
     const trustedLoopbackHop = isTrustedLoopbackCookieHop({
       runtimeRole: getRuntimeRole(),
       remoteOrigin: requireRemoteServerUrl(),
-      localOrigin: request.nextUrl.origin,
-      hostHeader: request.headers.get("host"),
+      localOrigin: hostHeader ? `${request.nextUrl.protocol}//${hostHeader}` : request.nextUrl.origin,
+      hostHeader,
     });
     const clientRuntimeCookie = trustedLoopbackHop
       ? setCookie.replace(/;\s*Secure\b/gi, "")

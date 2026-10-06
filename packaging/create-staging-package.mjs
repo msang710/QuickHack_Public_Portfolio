@@ -336,7 +336,7 @@ function pruneClientStandalone(targetRoot) {
   }
   const apiRoot = path.join(targetRoot, ".next", "server", "app", "api");
   if (existsSync(apiRoot)) {
-    const allowedLocalRoutes = new Set(["adb", "client", "runtime"]);
+    const allowedLocalRoutes = new Set(["adb", "client", "desktop", "runtime"]);
     for (const entry of readdirSync(apiRoot, { withFileTypes: true })) {
       if (entry.isDirectory() && !allowedLocalRoutes.has(entry.name)) {
         rmSync(path.join(apiRoot, entry.name), { recursive: true, force: true });
@@ -789,10 +789,6 @@ copyFile(
 copyFile(
   path.join(rootDir, "tools", "initialize-https.ps1"),
   path.join(outputDir, "tools", "initialize-https.ps1")
-);
-copyFile(
-  path.join(rootDir, "tools", "server-console-qhkey.mjs"),
-  path.join(outputDir, "tools", "server-console-qhkey.mjs")
 );
 if (isDemonstrationPackage) {
   copyFile(

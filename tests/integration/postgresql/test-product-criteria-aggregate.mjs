@@ -241,6 +241,58 @@ try {
     );
   assert.equal(independentRelations.relationRevision, 1);
 
+  const seeded = await criteriaService.getProductCriteriaPayload(prisma, true);
+  const seededColors = seeded.rawOptions.filter(
+    (option) => option.category === "DEVICE_COLOR"
+  );
+  assert.equal(seededColors.length, 83, "The 82 exported colors must join the existing custom color.");
+  assert.equal(seededColors.find((option) => option.optionKey === "핑크 골드")?.isActive, false);
+  assert.equal(
+    seeded.rawOptions.find((option) => option.optionKey === "Galaxy S26")?.isActive,
+    false,
+    "Exported inactive models must remain inactive."
+  );
+  const s23 = seeded.rawOptions.find((option) => option.optionKey === "SM-S911N");
+  const graphite = seededColors.find((option) => option.optionKey === "그라파이트");
+  assert(s23 && graphite);
+  const s23Graphite = seeded.rawLinks.find(
+    (link) =>
+      link.relationType === "MODEL_COLOR" &&
+      link.parentOptionId === s23.optionId &&
+      link.childOptionId === graphite.optionId
+  );
+  assert(s23Graphite, "The exported model-color relation must use new database IDs.");
+  assert.equal(
+    seeded.rawLinks.filter((link) => link.relationType === "MODEL_COLOR").length,
+    226,
+    "The 225 exported relations must join the existing custom relation."
+  );
+
+  await prisma.product_criteria_options.update({
+    where: { option_id: graphite.optionId },
+    data: { label: "관리자 수정 그라파이트", is_active: 0 },
+  });
+  await prisma.product_criteria_option_links.update({
+    where: { link_id: s23Graphite.linkId },
+    data: { is_active: 0 },
+  });
+  const reseeded = await criteriaService.getProductCriteriaPayload(prisma, true);
+  assert.equal(
+    reseeded.rawOptions.find((option) => option.optionId === graphite.optionId)?.label,
+    "관리자 수정 그라파이트",
+    "Default seeding must preserve operator edits."
+  );
+  assert.equal(
+    reseeded.rawLinks.find((link) => link.linkId === s23Graphite.linkId)?.isActive,
+    false,
+    "Default seeding must not reactivate an operator-disabled link."
+  );
+  assert.equal(
+    reseeded.rawLinks.filter((link) => link.relationType === "MODEL_COLOR").length,
+    226,
+    "Repeated default seeding must not duplicate relations."
+  );
+
   console.log("Product criteria aggregate tests passed.");
 } finally {
   if (prisma) await prisma.$disconnect();

@@ -8,6 +8,18 @@ assert.equal(operationalConsoleIntegration.flavor, "OPERATIONAL");
 assert.deepEqual(operationalConsoleIntegration.childIds, []);
 assert.equal(demonstrationConsoleIntegration.flavor, "DEMONSTRATION");
 assert.deepEqual(demonstrationConsoleIntegration.childIds, ["coupang-simulator", "logen-simulator"]);
+const managedMocks = new Map(demonstrationConsoleIntegration.childIds.map((id, index) => [id, { pid: index + 100 }]));
+assert.equal((await demonstrationConsoleIntegration.status({ managed: managedMocks, probeHealth: async () => true })).ready, true);
+assert.equal((await demonstrationConsoleIntegration.status({ managed: managedMocks, probeHealth: async (port) => port !== 3200 })).ready, false);
+assert.equal((await demonstrationConsoleIntegration.status({ managed: new Map(), probeHealth: async () => true })).ready, false);
+const originalFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async () => Response.json({ ok: true, database: "postgresql", instanceId: "another-process" });
+  assert.equal(await demonstrationConsoleIntegration.probeChild("coupang-simulator", "expected-process"), false);
+  assert.equal(await demonstrationConsoleIntegration.probeChild("coupang-simulator", "another-process"), true);
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const operational = readFileSync(path.join(root, "tools/server-console-operational.mjs"), "utf8");
@@ -42,7 +54,8 @@ assert.doesNotMatch(operational, /mock_server|mock-issue|coupang-mock|logen-mock
 assert.doesNotMatch(demonstration, /rotateCoupang|rotateLogen|live credential|external credential/iu);
 assert.doesNotMatch(core, /mock_server|issueMock|rotateCoupang|rotateLogen/iu);
 assert.match(core, /PACKAGE_FLAVOR_MISMATCH/);
-assert.match(core, /requiresExternalDatabaseOperations|protected work|operator launcher/iu);
+assert.match(core, /X-QuickHack-Supervisor-Token/u);
+assert.match(core, /\/api\/internal\/supervisor\/readiness/u);
 assert.equal(
   operationalClosure.some((filename) => /(?:^|\/)(?:mock_server|mock-runtime-launcher)|server-console-(?:demonstration|qhkey-demonstration)/u.test(filename)),
   false,

@@ -37,6 +37,9 @@ const writeView = read(
 const performanceLabels = read(
   "quickhack_shared/observability/response-performance.ts"
 );
+const developerKo = read("quickhack_client/i18n/catalogs/ko/developer.ts");
+const navigationKo = read("quickhack_client/i18n/catalogs/ko/navigation.ts");
+const adminKo = read("quickhack_client/i18n/catalogs/ko/admin.ts");
 const userFacingSources = [
   menu,
   workspace,
@@ -56,7 +59,8 @@ const userFacingSources = [
 
 assert(
   menu.includes('id: "admin-sales-channel-sync-check"') &&
-    menu.includes('label: "판매 채널 동기화 점검"') &&
+    menu.includes('label: "items.admin-sales-channel-sync-check.label"') &&
+    navigationKo.includes('"label": "판매 채널 동기화 점검"') &&
     menu.includes('minRole: "STAFF"'),
   "The STAFF sync-check menu contract is missing."
 );
@@ -111,21 +115,27 @@ for (const contract of [
   "expectedChannelQuantity",
   "channelQuantity",
   "difference",
-  "이 작업은 쿠팡 재고수량을",
-  "수정하지 않습니다.",
+  't("recheck.explanation")',
+  't("repair.action")',
   'action: "repairInventory"',
   "observedDesiredVersion",
   "observedMismatchSince",
   "observedExpectedChannelQuantity",
   "observedChannelQuantity",
+  't("quantity.repairExpected")',
+  "DialogFrame",
+]) {
+  assert(unifiedUi.includes(contract), `The unified view is missing ${contract}.`);
+}
+for (const contract of [
+  "이 작업은 쿠팡 재고수량을 수정하지 않습니다.",
   "쿠팡 재고수량 복구가 완료되었습니다.",
   "쿠팡 반영은 성공했지만 처리 중 기준 재고가 변경되어 새 불일치가 남았습니다.",
   "쿠팡 반영은 성공했지만 이후 재고 점검이 실패했습니다.",
   "쿠팡 재고수량 복구",
-  "기대수량",
-  "DialogFrame",
+  "복구 기대수량",
 ]) {
-  assert(unifiedUi.includes(contract), `The unified view is missing ${contract}.`);
+  assert(adminKo.includes(contract), `The Korean catalog is missing ${contract}.`);
 }
 
 assert(
@@ -147,7 +157,8 @@ assert(
     "const actionDisabled = working || reviewOperationInProgress"
   ) &&
     writeView.includes('item.activeReviewOperation === "LOCAL_FINALIZE"') &&
-    writeView.includes("판매 채널 상태를 재점검하고 있습니다.") &&
+    writeView.includes('t("detail.channelProgress")') &&
+    adminKo.includes("판매 채널 상태를 재점검하고 있습니다.") &&
     writeView.includes("disabled={actionDisabled}"),
   "Persisted write-review ownership is not reflected in the shared detail UI."
 );
@@ -175,15 +186,12 @@ assert(
   "A user-facing legacy menu name remains."
 );
 assert(
-  performanceLabels.includes(
-    '"sales-channel.sync-check.read": "판매 채널 동기화 점검 조회"'
-  ) &&
-    performanceLabels.includes(
-      '"sales-channel.sync-check.recheck-inventory": "판매 채널 재고 다시 점검"'
-    ) &&
-    performanceLabels.includes(
-      '"sales-channel.sync-check.repair-inventory": "판매 채널 재고수량 복구"'
-    ),
+  performanceLabels.includes('"sales-channel.sync-check.read"') &&
+    performanceLabels.includes('"sales-channel.sync-check.recheck-inventory"') &&
+    performanceLabels.includes('"sales-channel.sync-check.repair-inventory"') &&
+    developerKo.includes('sales_channel_sync_check_read: "판매 채널 동기화 점검 조회"') &&
+    developerKo.includes('sales_channel_sync_check_recheck_inventory: "판매 채널 재고 다시 점검"') &&
+    developerKo.includes('sales_channel_sync_check_repair_inventory: "판매 채널 재고수량 복구"'),
   "Sync-check operations do not have user-facing performance labels."
 );
 

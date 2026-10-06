@@ -11,6 +11,7 @@ import {
   setOperationTraceUserId,
   traceOperationSpan,
 } from "@/quickhack_server/observability/operation-trace";
+import { readFieldValidationCorrelation } from "@/quickhack_shared/observability/field-validation-correlation";
 
 export const runtime = "nodejs";
 
@@ -69,6 +70,11 @@ export async function POST(request: NextRequest) {
     );
   }
   setOperationTraceUserId(user.userId);
+  const validation = readFieldValidationCorrelation(request.headers);
+  if (validation) {
+    setOperationTraceField("validation.run_id", validation.runId);
+    setOperationTraceField("validation.scenario_id", validation.scenarioId);
+  }
 
   const body = parseJsonObject(bodyText);
 

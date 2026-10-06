@@ -1,0 +1,16 @@
+[Unit]
+Description=QuickHack initial TLS setup
+Requires=@QUICKHACK_POSTGRESQL_UNIT@
+After=@QUICKHACK_POSTGRESQL_UNIT@
+
+[Service]
+Type=oneshot
+User=@QUICKHACK_APPLICATION_USER@
+Group=@QUICKHACK_APPLICATION_GROUP@
+WorkingDirectory=@QUICKHACK_INSTALL_ROOT@
+ExecStart=@QUICKHACK_NODE_EXECUTABLE@ @QUICKHACK_TLS_SETUP_ENTRY@ --runtime-config @QUICKHACK_RUNTIME_CONFIG@
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=@QUICKHACK_DATA_DIR@ @QUICKHACK_STATE_DIR@ @QUICKHACK_CACHE_DIR@

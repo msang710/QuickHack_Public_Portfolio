@@ -46,9 +46,15 @@ assert.doesNotMatch(renderSystemdCredentialDirectives(operational), /migrator|op
 const root = path.resolve(import.meta.dirname, "..", "..");
 const migrateUnit = readFileSync(path.join(root, "packaging/linux/systemd/quickhack-migrate.service.in"), "utf8");
 const operatorUnit = readFileSync(path.join(root, "packaging/linux/systemd/quickhack-operator@.service.in"), "utf8");
+const initialLeaderUnit = readFileSync(path.join(root, "packaging/linux/systemd/quickhack-initial-leader.service.in"), "utf8");
+const leaderSource = readFileSync(path.join(root, "tools/provision-initial-leader.mjs"), "utf8");
 assert.match(migrateUnit, /Type=oneshot/);
 assert.match(migrateUnit, /@QUICKHACK_MIGRATOR_CREDENTIAL_DIRECTIVES@/);
-assert.match(operatorUnit, /run-one-shot --operation=%i/);
+assert.match(operatorUnit, /run-one-shot --operation %i/);
+assert.match(initialLeaderUnit, /run-one-shot --operation provision-initial-leader/);
+assert.match(initialLeaderUnit, /@QUICKHACK_MIGRATOR_CREDENTIAL_DIRECTIVES@/);
+assert.doesNotMatch(initialLeaderUnit, /@QUICKHACK_OPERATOR_CREDENTIAL_DIRECTIVES@/);
+assert.match(leaderSource, /role: "migrator"/);
 assert.doesNotMatch(`${migrateUnit}\n${operatorUnit}`, /Environment=.*(?:PASSWORD|SECRET|CREDENTIAL)/i);
 
 console.log("Flavor-specific long-lived and one-shot systemd credential manifests verified.");

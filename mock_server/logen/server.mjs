@@ -118,6 +118,7 @@ async function handleRequest(request, response, db, config, failurePolicy) {
     sendJson(response, 200, {
       ok: true,
       service: "quickhack-logen-mock",
+      instanceId: process.env.QUICKHACK_CONSOLE_INSTANCE_ID || "",
       implementedApis: logenCapabilities().implementedApiCount,
       publicApis: logenCapabilities().publicApiCount,
       databaseProvider: "postgresql",

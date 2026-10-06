@@ -36,6 +36,11 @@ import {
   databaseNow,
   requiredApiDateTime,
 } from "@/quickhack_server/core/database/time-boundary";
+import {
+  INITIAL_COLOR_MODELS,
+  INITIAL_COLOR_OPTIONS,
+  INITIAL_MODEL_COLOR_LINKS,
+} from "@/quickhack_server/catalog/default-color-criteria";
 
 type ProductCriteriaClient = PrismaClient | Prisma.TransactionClient;
 
@@ -91,6 +96,7 @@ type DefaultOption = {
   label: string;
   parentKey?: string;
   sortOrder: number;
+  isActive?: boolean;
 };
 
 type UpsertProductCriteriaInput = Record<string, unknown>;
@@ -102,7 +108,6 @@ const MODEL_STORAGE_RELATION_TYPE = "MODEL_STORAGE";
 // QuickHack object: 개발용 이스터에그 기종처럼 운영 드롭다운에서 숨길 제품명을 정의합니다.
 const HIDDEN_PRODUCT_NAMES = new Set(["★ 만든놈폰"]);
 const STORAGE_OPTIONS = ["32GB", "64GB", "128GB", "256GB", "512GB", "1TB", "2TB"];
-const COLOR_OPTIONS: string[] = [];
 const SALE_GRADE_OPTIONS = ["A", "A-", "B+", "B"];
 const WARRANTY_GROUP_OPTIONS = [
   { optionKey: "2Y", label: "2년 보증" },
@@ -215,15 +220,32 @@ function boolValue(input: UpsertProductCriteriaInput, key: string) {
 
 function defaultOptions() {
   const options: DefaultOption[] = [];
+  const knownModelCodes = new Set(Object.keys(MODEL_MAP));
+  const colorModelsByCode = new Map<string, (typeof INITIAL_COLOR_MODELS)[number]>(
+    INITIAL_COLOR_MODELS.map((model) => [model.optionKey, model])
+  );
 
   Object.entries(MODEL_MAP).forEach(([modelCode, product], index) => {
+    const colorModel = colorModelsByCode.get(modelCode);
     options.push({
       category: "PRODUCT_MODEL",
       optionKey: modelCode,
-      label: product,
+      label: colorModel?.label ?? product,
       sortOrder: (index + 1) * 10,
+      isActive: colorModel?.isActive,
     });
   });
+
+  INITIAL_COLOR_MODELS.filter((model) => !knownModelCodes.has(model.optionKey))
+    .forEach((model, index) => {
+      options.push({
+        category: "PRODUCT_MODEL",
+        optionKey: model.optionKey,
+        label: model.label,
+        sortOrder: (knownModelCodes.size + index + 1) * 10,
+        isActive: model.isActive,
+      });
+    });
 
   Array.from(new Set(Object.values(CSC_MAP))).forEach((carrier, index) => {
     options.push({
@@ -243,12 +265,13 @@ function defaultOptions() {
     });
   });
 
-  COLOR_OPTIONS.forEach((color, index) => {
+  INITIAL_COLOR_OPTIONS.forEach((color, index) => {
     options.push({
       category: "DEVICE_COLOR",
-      optionKey: color,
-      label: color,
+      optionKey: color.optionKey,
+      label: color.label,
       sortOrder: (index + 1) * 10,
+      isActive: color.isActive,
     });
   });
 
@@ -515,7 +538,7 @@ export async function ensureDefaultProductCriteriaOptions(
         label: option.label,
         parent_key: parentKey,
         sort_order: option.sortOrder,
-        is_active: 1,
+        is_active: option.isActive === false ? 0 : 1,
         created_at: timestamp,
         updated_at: timestamp,
       },
@@ -638,10 +661,13 @@ export async function ensureDefaultProductCriteriaOptionLinks(
     },
   });
   const modelRowsByLabel = new Map<string, ProductCriteriaRow[]>();
+  const modelRowsByKey = new Map<string, ProductCriteriaRow>();
   const storageRowsByLabel = new Map<string, ProductCriteriaRow[]>();
+  const colorRowsByKey = new Map<string, ProductCriteriaRow>();
 
   for (const row of rows) {
     if (row.category === "PRODUCT_MODEL") {
+      modelRowsByKey.set(row.option_key, row);
       const label = row.label.trim();
 
       if (!label) {
@@ -663,6 +689,10 @@ export async function ensureDefaultProductCriteriaOptionLinks(
         row,
       ]);
     }
+
+    if (row.category === "DEVICE_COLOR") {
+      colorRowsByKey.set(row.option_key, row);
+    }
   }
 
   const existingLinks = await client.product_criteria_option_links.findMany({
@@ -682,6 +712,11 @@ export async function ensureDefaultProductCriteriaOptionLinks(
       (link) =>
         `${link.relation_type}\u0000${link.parent_option_id}\u0000${link.child_option_id}`
     )
+  );
+  const configuredColorModelIds = new Set(
+    existingLinks
+      .filter((link) => link.relation_type === MODEL_COLOR_RELATION_TYPE)
+      .map((link) => link.parent_option_id)
   );
   const timestamp = databaseNow();
 
@@ -722,6 +757,39 @@ export async function ensureDefaultProductCriteriaOptionLinks(
         existingKeys.add(key);
       }
     }
+  }
+
+  for (const link of INITIAL_MODEL_COLOR_LINKS) {
+    const modelRow = modelRowsByKey.get(link.modelKey);
+    const colorRow = colorRowsByKey.get(link.colorKey);
+
+    if (!modelRow || !colorRow) {
+      throw new Error(`Default model-color criteria missing: ${link.modelKey} / ${link.colorKey}`);
+    }
+
+    // An existing relation set belongs to the operator, including disabled links.
+    if (configuredColorModelIds.has(modelRow.option_id)) {
+      continue;
+    }
+
+    const key = `${MODEL_COLOR_RELATION_TYPE}\u0000${modelRow.option_id}\u0000${colorRow.option_id}`;
+
+    if (existingKeys.has(key)) {
+      continue;
+    }
+
+    await client.product_criteria_option_links.create({
+      data: {
+        relation_type: MODEL_COLOR_RELATION_TYPE,
+        parent_option_id: modelRow.option_id,
+        child_option_id: colorRow.option_id,
+        sort_order: link.sortOrder,
+        is_active: link.isActive ? 1 : 0,
+        created_at: timestamp,
+        updated_at: timestamp,
+      },
+    });
+    existingKeys.add(key);
   }
 }
 
@@ -1648,4 +1716,3 @@ export async function saveProductCriteriaRelations(
     return toDto(updatedModel);
   });
 }
-

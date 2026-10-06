@@ -1,4 +1,5 @@
 import { OFFICIAL_LIVE_API_HOSTS } from "./external-api-destination-policy.ts";
+import { resolveFieldValidationMockTarget } from "./field-validation-mock-target.ts";
 import type {
   ServerRuntimeConfig,
   ServerRuntimeConfigLocation,
@@ -171,12 +172,12 @@ export class RuntimeConfigService {
         coupang: {
           mode: externalApiMode,
           apiHost: OFFICIAL_LIVE_API_HOSTS.COUPANG,
-          mockServerUrl: DEFAULT_COUPANG_MOCK_SERVER_URL,
+          mockServerUrl: resolveFieldValidationMockTarget({ sourceRoot, environment: serverConfig.environment, packageFlavor: serverConfig.packageFlavor, provider: "COUPANG", defaultUrl: DEFAULT_COUPANG_MOCK_SERVER_URL }, env),
         },
         logen: {
           mode: externalApiMode,
           apiHost: OFFICIAL_LIVE_API_HOSTS.LOGEN,
-          mockServerUrl: DEFAULT_LOGEN_MOCK_SERVER_URL,
+          mockServerUrl: resolveFieldValidationMockTarget({ sourceRoot, environment: serverConfig.environment, packageFlavor: serverConfig.packageFlavor, provider: "LOGEN", defaultUrl: DEFAULT_LOGEN_MOCK_SERVER_URL }, env),
         },
       },
       paths,
