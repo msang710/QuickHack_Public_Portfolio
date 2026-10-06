@@ -238,7 +238,7 @@ export const navigationKo = {
   "personalSettings": "개인 설정",
   "shortcutGuide": "단축키 안내",
   "workspace": {
-    "dashboard": { "match": "일치", "shortage": "부족 {count, number}", "excess": "초과 {count, number}", "batch": "{date} · {batch, number}차", "batchSummary": "예정 {expected, number}대 · 현재 연결 {linked, number}대 · 오늘 검수 {inspected, number}대", "normalInbound": "정상 입고 대상", "supplierReturn": "매입처 반품", "arrivalDifference": "도착 차이", "appearanceComplete": "외관검수 완료", "functionComplete": "기능검수 완료", "purchasePending": "매입 대기", "loadFailed": "대쉬보드 통계를 불러오지 못했습니다.", "expectedToday": "오늘 예정", "currentlyLinked": "현재 연결", "loading": "오늘 차수별 검수 현황을 불러오는 중입니다.", "title": "오늘 차수별 검수 현황", "basis": "{date} 기준 · 차수 예정 대수 대비 진행률", "empty": "오늘 등록된 입고 차수가 없습니다." },
+    "dashboard": { "match": "일치", "shortage": "부족 {count, number}", "excess": "초과 {count, number}", "batch": "{date} · {batch, number}차", "batchSummary": "예정 {expected, number}대 · 현재 연결 {linked, number}대 · 오늘 검수 {inspected, number}대", "normalInbound": "정상 입고 대상", "supplierReturn": "매입처 반품", "arrivalDifference": "도착 차이", "appearanceComplete": "외관검수 완료", "functionComplete": "기능검수 완료", "purchasePending": "매입 대기", "loadFailed": "대시보드 통계를 불러오지 못했습니다.", "expectedToday": "오늘 예정", "currentlyLinked": "현재 연결", "loading": "오늘 차수별 검수 현황을 불러오는 중입니다.", "title": "오늘 차수별 검수 현황", "basis": "{date} 기준 · 차수 예정 대수 대비 진행률", "empty": "오늘 등록된 입고 차수가 없습니다." },
     "pending": "화면 구성 대기",
     "roles": { "viewer": "조회전용", "staff": "사원급", "manager": "중간관리자급", "leader": "리더급" },
     "forms": { "account": "계정 정보", "preferences": "단축키·알림 설정" },

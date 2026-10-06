@@ -109,7 +109,7 @@ export function createSystemdServiceProcess(options = {}) {
     APPLICATION: strictUnitName(options.units?.APPLICATION ?? "quickhack-console.service"),
   });
 
-  async function status(serviceKindValue) {
+  async function status(serviceKindValue, options = {}) {
     const serviceKind = assertServiceKind(serviceKindValue);
     const unit = units[serviceKind];
     const result = await run([
@@ -117,7 +117,7 @@ export function createSystemdServiceProcess(options = {}) {
       unit,
       "--no-pager",
       `--property=${SHOW_PROPERTIES.join(",")}`,
-    ]);
+    ], { timeoutMs: options.timeoutMs });
     const values = parseShow(result.stdout);
     const state = normalizedState(values);
     return serviceLifecycleSnapshot({
@@ -142,7 +142,9 @@ export function createSystemdServiceProcess(options = {}) {
       fail("SERVICE_OPERATION_UNAVAILABLE", "Package installation owns this service operation.");
     }
     if (operation !== "STATUS") {
-      await run([operation.toLowerCase(), units[serviceKind], "--no-block"]);
+      const args = [operation.toLowerCase(), units[serviceKind]];
+      if (!(operation === "RESTART" && serviceKind === "POSTGRESQL")) args.push("--no-block");
+      await run(args);
     }
     return serviceOperationResult({
       operation,

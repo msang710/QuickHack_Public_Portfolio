@@ -274,7 +274,7 @@ try {
       getInboundReconciliation(prisma, {
         batchDate: "2026-02-30",
       }),
-    /실제로 존재하는 날짜/,
+    (error) => error?.code === "INBOUND_RECONCILIATION_INPUT_INVALID",
     "존재하지 않는 날짜가 허용되었습니다."
   );
 

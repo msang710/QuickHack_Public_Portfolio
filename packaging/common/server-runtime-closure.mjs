@@ -3,12 +3,12 @@ import path from "node:path";
 
 export const SERVER_RUNTIME_EXPLICIT_SEEDS = Object.freeze([
   "tools/server-console-core.mjs",
-  "tools/server-console-qhkey.mjs",
   "tools/server-console-qhkey-common.mjs",
   "tools/server-console-qhkey-demonstration.mjs",
   "tools/server-console-qhkey-operational.mjs",
   "tools/quickhack-operator.mjs",
   "tools/quickhack-operator-core.mjs",
+  "tools/quickhack-https-gateway.mjs",
   "tools/operator-direct-one-shot.mjs",
   "tools/deploy-postgresql-migrations.mjs",
   "tools/provision-initial-leader.mjs",

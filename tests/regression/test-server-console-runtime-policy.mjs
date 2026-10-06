@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { parseServerConsoleArguments } from "../../tools/server-console-core.mjs";
+import { assertConsoleConfigDirectory, parseServerConsoleArguments } from "../../tools/server-console-core.mjs";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
@@ -29,6 +30,13 @@ for (const route of [
 
 assert.match(core, /packageFlavor: flavor/);
 assert.match(core, /CREDENTIALS_DIRECTORY: credentialDirectory/);
+assert.match(core, /QUICKHACK_ARTIFACT_KIND: args\.packageManifestPath \? `\$\{flavor\}_SERVER` : undefined/u);
+assert.match(core, /QUICKHACK_PACKAGE_MANIFEST: args\.packageManifestPath \|\| undefined/u);
+assert.ok(core.indexOf("QUICKHACK_ARTIFACT_KIND: args.packageManifestPath") < core.indexOf('spawnOwned("backend"'));
+assert.match(core, /stdio: \["ignore", "pipe", "pipe"\]/u);
+assert.match(core, /captureChildOutput\(child, id, "stdout", process\.stdout\)/u);
+assert.doesNotMatch(core, /source\.pipe\(target|child\.stdout\.pipe\(process\.stdout|child\.stderr\.pipe\(process\.stderr/u);
+assert.match(core, /requestUrl\.pathname === "\/api\/logs"/u);
 assert.match(core, /X-QuickHack-Supervisor-Token/);
 assert.doesNotMatch(core, /mock_server|issueMockCoupang|rotateCoupangQhkey|rotateLogenQhkey/iu);
 assert.doesNotMatch(operational, /mock_server|mock-issue|issueMock/iu);
@@ -56,6 +64,23 @@ assert.deepEqual(
     systemService: true,
   }
 );
+if (process.platform === "linux") {
+  const fixture = mkdtempSync(path.join(os.tmpdir(), "quickhack-console-config-"));
+  try {
+    const configDirectory = path.join(fixture, "config");
+    mkdirSync(configDirectory, { mode: 0o550 });
+    const configPath = path.join(configDirectory, "server-runtime.json");
+    assert.equal(assertConsoleConfigDirectory(configPath), configDirectory);
+    assert.equal(lstatSync(configDirectory).mode & 0o777, 0o550, "Console startup must not chmod the installed config directory.");
+    chmodSync(configDirectory, 0o777);
+    assert.throws(() => assertConsoleConfigDirectory(configPath), (error) => error?.code === "RUNTIME_DIRECTORY_INVALID");
+    const linkedDirectory = path.join(fixture, "linked");
+    symlinkSync(configDirectory, linkedDirectory);
+    assert.throws(() => assertConsoleConfigDirectory(path.join(linkedDirectory, "server-runtime.json")), (error) => error?.code === "RUNTIME_DIRECTORY_INVALID");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+}
 for (const invalidArguments of [
   ["--runtime-config", "--no-open"],
   ["--package-manifest"],

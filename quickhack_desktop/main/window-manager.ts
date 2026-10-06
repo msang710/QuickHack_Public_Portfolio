@@ -6,6 +6,7 @@ export type DesktopWindowKind = "main" | "output" | "adb";
 export type WindowManagerOptions = Readonly<{
   origin: string;
   preloadPath: string;
+  iconPath?: string;
 }>;
 
 const WINDOW_PATHS: Record<DesktopWindowKind, string> = {
@@ -30,6 +31,7 @@ export function createWindowManager(options: WindowManagerOptions) {
       return existing;
     }
     const window = new BrowserWindow({
+      ...(options.iconPath ? { icon: options.iconPath } : {}),
       width: kind === "main" ? 1440 : 1080,
       height: kind === "main" ? 900 : 760,
       minWidth: 720,

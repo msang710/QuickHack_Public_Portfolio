@@ -130,6 +130,11 @@ try {
   assert.equal((await replacement.replacementStatus(prepared.transactionId)).state, "AUTHORIZATION_REQUIRED");
 
   await assert.rejects(
+    () => publishQhkeyReplacement(prepared.transactionId, { platform: "linux", getUid: () => 0 }),
+    /trusted QHKEY data directory/u
+  );
+
+  await assert.rejects(
     () => publishQhkeyReplacement(prepared.transactionId, {
       platform: "linux",
       getUid: () => 1000,

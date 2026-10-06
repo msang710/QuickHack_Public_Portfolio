@@ -55,6 +55,17 @@ assert.ok(!postgresqlSemanticTestScripts.includes("test:carrier-invoice-issue-fl
 assert.ok(!postgresqlSemanticTestScripts.includes("test:carrier-invoice-issue-recovery"));
 assert.equal(scripts["test:carrier-invoice-issue-ownership-migration"], undefined);
 
+for (const scriptName of [
+  "test:server-console-runtime-settings",
+  "test:server-console-child-output",
+  "test:cafe24-probe",
+  "test:deliveryapi-client",
+  "test:deliveryapi-webhook",
+  "test:field-validation",
+]) {
+  assert.equal(countPaths("verify:postgresql", scriptName), 1, `${scriptName} must run once in the source gate`);
+}
+
 const crossPlatformContractScripts = Object.freeze([
   "test:dependency-security-policy",
   "test:sales-channel-write-failure-scenario-registry",
@@ -106,6 +117,8 @@ const finalIntegrationWorkflow = fs.readFileSync(
   path.join(projectRoot, ".github/workflows/pull-request-checks.yml"),
   "utf8"
 );
+assert.match(finalIntegrationWorkflow, /npm run test:linux-alpm-hook/u);
+assert.match(finalIntegrationWorkflow, /npm run test:linux-package-readiness/u);
 assert.equal(
   [...finalIntegrationWorkflow.matchAll(/npm run verify:postgresql/g)].length,
   1,

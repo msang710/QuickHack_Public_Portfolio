@@ -28,15 +28,22 @@ function credentialPath(identity, environment) {
   return path.join(credentialDirectory, identity.id);
 }
 
-function validateStat(stat, identity, platform) {
+function validateStat(stat, identity, platform, uid) {
+  const mode = Number(stat.mode) & 0o777;
+  // systemd may expose a root-owned 0440 credential through a service ACL.
+  // The read itself still has to succeed for this service process.
+  const linuxPermissionsInvalid = platform === "linux" && (
+    !Number.isInteger(stat.mode) ||
+    !Number.isInteger(stat.uid) ||
+    (mode & 0o037) !== 0 ||
+    (stat.uid !== 0 && stat.uid !== uid)
+  );
   if (
     !stat.isFile() ||
     stat.isSymbolicLink() ||
     stat.size <= 0 ||
     stat.size > identity.maxBytes ||
-    (platform === "linux" &&
-      Number.isInteger(stat.mode) &&
-      (stat.mode & 0o077) !== 0)
+    linuxPermissionsInvalid
   ) {
     fail(
       "SERVER_SECRET_PROVISIONED_INVALID",
@@ -67,12 +74,13 @@ export function createLinuxServiceCredentialReader(options = {}) {
   const readFileSync = options.readFileSync ?? fs.readFileSync;
   const lstatSync = options.lstatSync ?? fs.lstatSync;
   const platform = options.platform ?? "linux";
+  const getuid = options.getuid ?? process.geteuid?.bind(process);
 
   async function read(identityValue) {
     const identity = assertServerSecretIdentity(identityValue);
     const filePath = credentialPath(identity, environment);
     try {
-      validateStat(await lstat(filePath), identity, platform);
+      validateStat(await lstat(filePath), identity, platform, getuid?.());
       return validatePayload(await readFile(filePath), identity);
     } catch (error) {
       if (error instanceof LinuxServiceCredentialError) throw error;
@@ -93,7 +101,7 @@ export function createLinuxServiceCredentialReader(options = {}) {
     const identity = assertServerSecretIdentity(identityValue);
     const filePath = credentialPath(identity, environment);
     try {
-      validateStat(lstatSync(filePath), identity, platform);
+      validateStat(lstatSync(filePath), identity, platform, getuid?.());
       return validatePayload(readFileSync(filePath), identity);
     } catch (error) {
       if (error instanceof LinuxServiceCredentialError) throw error;

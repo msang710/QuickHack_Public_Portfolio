@@ -1945,6 +1945,8 @@ async function actualConsumedUsage(
   periodTo: Exclude<DateTimeInput, null | undefined>,
   lookbackDays: number
 ) {
+  const fromTime = databaseDateTime(periodFrom);
+  const toTime = databaseDateTime(periodTo);
   const movements = await client.supply_stock_movements.findMany({
     where: {
       supply_id: supplyId,
@@ -1953,8 +1955,8 @@ async function actualConsumedUsage(
         source_type: PACKING_COMPLETED_SOURCE_TYPE,
       },
       created_at: {
-        gte: periodFrom,
-        lte: periodTo,
+        gte: fromTime,
+        lte: toTime,
       },
     },
     select: {
@@ -1988,6 +1990,8 @@ async function measuredSupplyUsage(
   periodFrom: Exclude<DateTimeInput, null | undefined>,
   periodTo: Exclude<DateTimeInput, null | undefined>
 ) {
+  const fromTime = databaseDateTime(periodFrom);
+  const toTime = databaseDateTime(periodTo);
   const usageByDate = periodUsageMap(periodFrom, periodTo);
   const [manualMovements, consumptionEvents] = await Promise.all([
     client.supply_stock_movements.findMany({
@@ -2001,8 +2005,8 @@ async function measuredSupplyUsage(
           is: null,
         },
         created_at: {
-          gte: periodFrom,
-          lte: periodTo,
+          gte: fromTime,
+          lte: toTime,
         },
       },
       select: {
@@ -2017,16 +2021,16 @@ async function measuredSupplyUsage(
           {
             effective_period_from: null,
             consumed_at: {
-              gte: periodFrom,
-              lte: periodTo,
+              gte: fromTime,
+              lte: toTime,
             },
           },
           {
             effective_period_from: {
-              lte: periodTo,
+              lte: toTime,
             },
             effective_period_to: {
-              gte: periodFrom,
+              gte: fromTime,
             },
           },
         ],

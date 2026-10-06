@@ -5,11 +5,41 @@ post_install() {
   echo 'QuickHack files are installed. Run the artifact-specific setup command to authenticate and initialize the server.'
 }
 
+pre_upgrade() {
+  for flavor in demonstration operational; do
+    if [ ! -f "/usr/lib/quickhack/${flavor}-server/quickhack-package.json" ]; then
+      continue
+    fi
+    unit="quickhack-${flavor}-console.service"
+    lock="/run/quickhack-${flavor}-lifecycle.lock"
+    exec 9> "$lock" || return 1
+    flock -x -w 180 9 || return 1
+    if ! systemctl is-active --quiet "$unit"; then
+      flock -u 9
+      exec 9>&-
+      continue
+    fi
+    marker_dir="/var/lib/quickhack/upgrade-state"
+    install -d -m 0755 -o root -g root "$marker_dir" || return 1
+    marker="${marker_dir}/${flavor}-upgrade.pending"
+    umask 077
+    printf '%s\n' "$1" > "$marker" || return 1
+    if ! systemctl stop "$unit"; then
+      rm -f "$marker"
+      echo "QuickHack upgrade could not stop $unit; run the flavor-specific repair command." >&2
+      return 1
+    fi
+    echo "QuickHack ${flavor} console stopped for package upgrade."
+    flock -u 9
+    exec 9>&-
+  done
+}
+
 post_upgrade() {
   systemd-sysusers
   systemd-tmpfiles --create
   systemctl daemon-reload
-  echo 'QuickHack mutable state was preserved. Run repair if the console reports an incomplete upgrade.'
+  echo 'QuickHack upgrade files are installed; the post-transaction hook will repair an active server after the transaction succeeds.'
 }
 
 pre_remove() {

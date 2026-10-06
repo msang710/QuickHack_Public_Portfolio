@@ -174,10 +174,20 @@ try {
     path.join(root, "quickhack_client/components/app-shell/device-workspace-menu.ts"),
     "utf8"
   );
+  const shipmentCatalog = readFileSync(
+    path.join(root, "quickhack_client/i18n/catalogs/ko/shipment.ts"),
+    "utf8"
+  );
+  const navigationCatalog = readFileSync(
+    path.join(root, "quickhack_client/i18n/catalogs/ko/navigation.ts"),
+    "utf8"
+  );
   assert.match(apiSource, /SENSITIVE_ACTIONS\.carrierIntegrationSettings/);
   assert.match(apiSource, /canAccessRole\(user\.role, "LEADER"\)/);
   assert.doesNotMatch(apiSource, /liveWriteEnabled|livePreprintRegistrationEnabled/);
-  assert.match(uiSource, /택배사 발송 설정/);
+  assert.match(uiSource, /useTranslations\("shipment\.carrierDispatch"\)/);
+  assert.match(uiSource, /t\("title"\)/);
+  assert.match(shipmentCatalog, /title: "택배사 발송 설정"/);
   assert.match(uiSource, /expectedRevision: revision/);
   assert.match(uiSource, /verifySensitiveOtpCode/);
   assert.doesNotMatch(uiSource, /liveWriteEnabled|livePreprintRegistrationEnabled/);
@@ -186,7 +196,9 @@ try {
     /carrier-integration-settings|택배사 발송 설정/
   );
   assert.match(menuSource, /id: "invoice-carrier-dispatch-settings"/);
-  assert.match(menuSource, /label: "택배사 발송 설정"/);
+  assert.match(menuSource, /label: "items\.invoice-carrier-dispatch-settings\.label"/);
+  assert.match(navigationCatalog, /"invoice-carrier-dispatch-settings": \{/);
+  assert.match(navigationCatalog, /"label": "택배사 발송 설정"/);
 
   console.log("Logen integration settings checks passed.");
 } finally {

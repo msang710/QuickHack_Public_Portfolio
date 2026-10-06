@@ -86,6 +86,77 @@ response = proxy(
 );
 assert.equal(response.status, 200, "The exact client runtime origin was rejected.");
 
+const previousRole = process.env.QUICKHACK_RUNTIME_ROLE;
+const previousServerUrl = process.env.QUICKHACK_SERVER_URL;
+const previousFetch = globalThis.fetch;
+let forwarded = [];
+let successfulLogin = false;
+try {
+  process.env.QUICKHACK_RUNTIME_ROLE = "client";
+  process.env.QUICKHACK_SERVER_URL = "https://quickhack.example:3443";
+  globalThis.fetch = async (url, options) => {
+    forwarded.push({ url: String(url), method: options.method, body: options.body });
+    return new Response(JSON.stringify(successfulLogin ? { ok: true } : { ok: false, code: "LOGIN_INVALID_CREDENTIALS" }), {
+      status: successfulLogin ? 200 : 401,
+      headers: {
+        "content-type": "application/json",
+        ...(successfulLogin ? { "set-cookie": "quickhack_session=token; Path=/; HttpOnly; Secure; SameSite=Lax" } : {}),
+      },
+    });
+  };
+
+  response = await proxy(mutationRequest({
+    url: "http://127.0.0.1:3001/api/auth/login",
+    forwarded: false,
+    origin: "http://127.0.0.1:3001",
+    contentType: "application/json",
+    body: '{"username":"admin","password":"invalid"}',
+  }));
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).code, "LOGIN_INVALID_CREDENTIALS");
+  assert.deepEqual(forwarded, [{
+    url: "https://quickhack.example:3443/api/auth/login",
+    method: "POST",
+    body: '{"username":"admin","password":"invalid"}',
+  }]);
+
+  response = await proxy(new NextRequest("http://127.0.0.1:3001/api/statistics/dashboard"));
+  assert.equal(response.status, 401, "A server API outside auth was not forwarded.");
+  assert.equal(forwarded[1].url, "https://quickhack.example:3443/api/statistics/dashboard");
+
+  successfulLogin = true;
+  response = await proxy(mutationRequest({
+    url: "http://127.0.0.1:3001/api/auth/login",
+    forwarded: false,
+    origin: "http://127.0.0.1:3001",
+    contentType: "application/json",
+  }));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("set-cookie") ?? "", /quickhack_session=token/u);
+  assert.doesNotMatch(response.headers.get("set-cookie") ?? "", /; Secure/u);
+
+  response = proxy(new NextRequest("http://127.0.0.1:3001/api/runtime"));
+  assert.equal(response.status, 200, "The client runtime endpoint must stay local.");
+  response = proxy(new NextRequest("http://127.0.0.1:3001/api/desktop/native"));
+  assert.equal(response.status, 200, "The native broker endpoint must stay local.");
+  assert.equal(forwarded.length, 3);
+
+  response = proxy(mutationRequest({
+    url: "http://127.0.0.1:3001/api/auth/login",
+    forwarded: false,
+    origin: "https://attacker.example",
+    contentType: "application/json",
+  }));
+  assert.equal(response.status, 403);
+  assert.equal(forwarded.length, 3, "A rejected cross-origin request reached the server.");
+} finally {
+  if (previousRole === undefined) delete process.env.QUICKHACK_RUNTIME_ROLE;
+  else process.env.QUICKHACK_RUNTIME_ROLE = previousRole;
+  if (previousServerUrl === undefined) delete process.env.QUICKHACK_SERVER_URL;
+  else process.env.QUICKHACK_SERVER_URL = previousServerUrl;
+  globalThis.fetch = previousFetch;
+}
+
 const exactBody = "x".repeat(QUICKHACK_AUTH_REQUEST_BODY_LIMIT_BYTES);
 const exactRequest = new Request("http://127.0.0.1/api/auth/login", {
   method: "POST",

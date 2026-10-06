@@ -4,10 +4,13 @@ import { LINUX_PACKAGE_TARGETS, linuxArtifactConfig } from "../../packaging/linu
 
 const pkgbuild = readFileSync(new URL("../../packaging/linux/arch/PKGBUILD", import.meta.url), "utf8");
 const installHook = readFileSync(new URL("../../packaging/linux/arch/quickhack-server.install", import.meta.url), "utf8");
+const upgradeHook = readFileSync(new URL("../../packaging/linux/arch/quickhack-upgrade-reconcile.hook.in", import.meta.url), "utf8");
 const consoleUnit = readFileSync(new URL("../../packaging/linux/systemd/quickhack-console.service.in", import.meta.url), "utf8");
 const postgresUnit = readFileSync(new URL("../../packaging/linux/systemd/quickhack-postgresql.service.in", import.meta.url), "utf8");
 const buildScript = readFileSync(new URL("../../packaging/linux/build-arch-package.mjs", import.meta.url), "utf8");
 const stagingScript = readFileSync(new URL("../../packaging/linux/create-staging-package.mjs", import.meta.url), "utf8");
+const setupLauncher = readFileSync(new URL("../../packaging/linux/launchers/quickhack-server-setup.in", import.meta.url), "utf8");
+const qhkeyAuthorizeLauncher = readFileSync(new URL("../../packaging/linux/launchers/quickhack-qhkey-authorize.in", import.meta.url), "utf8");
 
 assert.deepEqual(LINUX_PACKAGE_TARGETS, ["demo-server", "demo-client", "operational-server", "operational-client"]);
 const configs = LINUX_PACKAGE_TARGETS.map(linuxArtifactConfig);
@@ -16,6 +19,7 @@ assert.equal(new Set(configs.map((item) => item.applicationRoot)).size, 4);
 for (const config of configs) assert.ok(pkgbuild.includes(config.installedIdentity));
 
 assert.match(pkgbuild, /arch=\('x86_64'\)/);
+assert.match(pkgbuild, /cp -a --no-preserve=ownership/);
 assert.match(pkgbuild, /nodejs-lts-krypton>=24/);
 assert.match(pkgbuild, /nodejs-lts-krypton<25/);
 assert.match(pkgbuild, /postgresql>=18/);
@@ -30,6 +34,24 @@ assert.match(installHook, /systemd-sysusers/);
 assert.match(installHook, /systemd-tmpfiles --create/);
 assert.match(installHook, /systemctl daemon-reload/);
 assert.doesNotMatch(installHook, /systemctl (?:start|enable)|quickhack-operator/u);
+assert.match(installHook, /pre_upgrade\(\)/u);
+assert.match(installHook, /upgrade\.pending/u);
+assert.match(installHook, /\/var\/lib\/quickhack\/upgrade-state/u);
+assert.match(installHook, /flock -x -w 180 9/u);
+assert.ok(installHook.indexOf("flock -x -w 180 9") < installHook.indexOf("systemctl is-active"));
+assert.doesNotMatch(installHook, /systemd-run|upgrade-reconcile\.mjs/u);
+assert.match(installHook, /systemctl stop "\$unit"/u);
+assert.match(upgradeHook, /Operation = Upgrade/u);
+assert.match(upgradeHook, /Type = Package/u);
+assert.match(upgradeHook, /Target = @QUICKHACK_INSTALLED_IDENTITY@/u);
+assert.match(upgradeHook, /When = PostTransaction/u);
+assert.doesNotMatch(upgradeHook, /NetworkAccess/u);
+assert.match(upgradeHook, /Exec = \/usr\/bin\/flock -w 180 @QUICKHACK_LIFECYCLE_LOCK@ @QUICKHACK_NODE_EXECUTABLE@ @QUICKHACK_UPGRADE_ENTRY@ @QUICKHACK_ARTIFACT_KIND@/u);
+assert.match(pkgbuild, /'util-linux'/u);
+assert.match(setupLauncher, /pkexec \/usr\/bin\/flock -w 180 "@QUICKHACK_LIFECYCLE_LOCK@"/u);
+assert.match(setupLauncher, /sudo \/usr\/bin\/flock -w 180 "@QUICKHACK_LIFECYCLE_LOCK@"/u);
+assert.match(setupLauncher, /--artifact "@QUICKHACK_ARTIFACT_KIND@" "\$@"/u);
+assert.equal(installHook, readFileSync(new URL("../../packaging/linux/arch/quickhack-server.install.in", import.meta.url), "utf8"));
 assert.match(consoleUnit, /ExecStart=.*QUICKHACK_CONSOLE_ENTRY/);
 assert.match(consoleUnit, /--package-manifest @QUICKHACK_PACKAGE_MANIFEST@/);
 assert.match(consoleUnit, /User=@QUICKHACK_APPLICATION_USER@/);
@@ -41,5 +63,20 @@ assert.match(buildScript, /packageReleaseVariant\("linux", outputTarget, version
 assert.match(buildScript, /`--version=\$\{version\}`/);
 assert.match(buildScript, /rmSync\(output, \{ recursive: true, force: true \}\)/);
 assert.match(stagingScript, /version: releaseVersion/);
+assert.match(stagingScript, /stageRuntimeNodeDependencies/);
+assert.match(stagingScript, /"tools\/quickhack-https-gateway\.mjs"/u);
+assert.match(stagingScript, /"tools\/qhkey-publish-helper\.mjs"/u);
+assert.match(stagingScript, /quickhack-qhkey-authorize\.in/u);
+assert.match(stagingScript, /quickhack-qhkey-publish-helper/u);
+assert.match(stagingScript, /chmodSync\(authorizeLauncher, 0o755\)/u);
+assert.match(qhkeyAuthorizeLauncher, /"\$#" -eq 1/u);
+assert.match(qhkeyAuthorizeLauncher, /authorize-qhkey --runtime-config/u);
+assert.match(qhkeyAuthorizeLauncher, /--transaction "\$1"/u);
+assert.match(buildScript, /Staged HTTPS gateway is missing/u);
+assert.match(stagingScript, /quickhack-upgrade-reconcile\.hook\.in/u);
+const tmpfiles = readFileSync(new URL("../../packaging/linux/tmpfiles/quickhack-server.conf.in", import.meta.url), "utf8");
+assert.match(tmpfiles, /a\+ @QUICKHACK_DATA_DIR@ .*@QUICKHACK_POSTGRESQL_USER@:--x/);
+assert.doesNotMatch(tmpfiles, /^d @QUICKHACK_POSTGRESQL_(?:ROOT|VERSION_DIR)@/mu);
+assert.doesNotMatch(tmpfiles, /^d @QUICKHACK_PGDATA@/mu);
 
 console.log("Arch four-way split package metadata and systemd ownership verified.");

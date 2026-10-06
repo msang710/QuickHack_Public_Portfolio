@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { DESKTOP_IPC, type QuickHackDesktopApi } from "./shared/desktop-contract";
 
+let closeRequestListenerCount = 0;
+
 const api: QuickHackDesktopApi = Object.freeze({
   environment: () => ipcRenderer.invoke(DESKTOP_IPC.environment),
   openOutputWindow: () => ipcRenderer.invoke(DESKTOP_IPC.openOutputWindow),
@@ -9,7 +11,16 @@ const api: QuickHackDesktopApi = Object.freeze({
   onCloseRequested(callback) {
     const listener = () => callback();
     ipcRenderer.on(DESKTOP_IPC.closeRequested, listener);
-    return () => ipcRenderer.removeListener(DESKTOP_IPC.closeRequested, listener);
+    closeRequestListenerCount += 1;
+    if (closeRequestListenerCount === 1) ipcRenderer.send(DESKTOP_IPC.closeGuardState, true);
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      ipcRenderer.removeListener(DESKTOP_IPC.closeRequested, listener);
+      closeRequestListenerCount -= 1;
+      if (closeRequestListenerCount === 0) ipcRenderer.send(DESKTOP_IPC.closeGuardState, false);
+    };
   },
   confirmClose: () => ipcRenderer.invoke(DESKTOP_IPC.confirmClose),
   showNotification: (input) => ipcRenderer.invoke(DESKTOP_IPC.showNotification, input),

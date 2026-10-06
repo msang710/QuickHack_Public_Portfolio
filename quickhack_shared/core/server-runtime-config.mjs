@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import {
   assertPackageFlavor,
@@ -21,6 +22,7 @@ const CONFIG_KEYS = new Set([
   "manualOrderMatchReadEnabled",
   "manualOrderMatchMutationEnabled",
   "dataDirectory",
+  "publicHost",
   "backupRetentionCount",
   "database",
 ]);
@@ -312,6 +314,11 @@ export function validateServerRuntimeConfig(value) {
     );
   }
 
+  const publicHost = String(value.publicHost ?? "").trim().toLowerCase();
+  if (publicHost && net.isIP(publicHost) !== 4 && (!/^[a-z0-9.-]{1,253}$/u.test(publicHost) || publicHost.includes("..") || publicHost.startsWith(".") || publicHost.endsWith("."))) {
+    fail("SERVER_RUNTIME_CONFIG_INVALID", "The publicHost must be an IPv4 address or DNS name.");
+  }
+
   const backupRetentionCount = Number(value.backupRetentionCount);
   if (!Number.isSafeInteger(backupRetentionCount) || backupRetentionCount <= 0) {
     fail(
@@ -331,6 +338,7 @@ export function validateServerRuntimeConfig(value) {
     manualOrderMatchMutationEnabled:
       value.manualOrderMatchMutationEnabled ?? false,
     dataDirectory: path.normalize(path.resolve(dataDirectoryText)),
+    ...(publicHost ? { publicHost } : {}),
     backupRetentionCount,
     database: validateDatabaseConfig(value.database, packageFlavor),
   };

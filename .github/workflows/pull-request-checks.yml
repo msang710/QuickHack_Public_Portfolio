@@ -166,7 +166,7 @@ jobs:
     steps:
       - name: Install Arch build toolchain
         run: |
-          pacman -Syu --noconfirm base-devel git nodejs-lts-krypton npm postgresql android-tools cups sudo
+          pacman -Syu --noconfirm base-devel git nodejs-lts-krypton npm postgresql android-tools cups sudo desktop-file-utils xorg-server-xvfb gtk3 nss alsa-lib libxss mesa
           npm install --global npm@12.0.2
           npm --version | grep -Fx 12.0.2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -188,8 +188,15 @@ jobs:
         env:
           QUICKHACK_RELEASE_VERSION: ${{ inputs.version }}
         run: |
+          sudo -u builder node node_modules/electron/install.js
+          sudo -u builder npm run test:linux-arch-package
+          npm run test:linux-alpm-hook
+          sudo -u builder npm run test:linux-package-lifecycle
+          sudo -u builder npm run test:linux-package-readiness
+          sudo -u builder npm run test:linux-desktop-package
           sudo -u builder env NODE_ENV="$NODE_ENV" \
             npm run release:linux:demo-server -- --version="$QUICKHACK_RELEASE_VERSION"
+          sudo -u builder npm run test:linux-desktop-window
           for target in demo-server demo-client operational-server operational-client; do
             sudo -u builder node tools/verify-package-release-artifact.mjs \
               --artifact-dir="release/distribution/linux/$target" \

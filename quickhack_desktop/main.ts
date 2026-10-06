@@ -1,7 +1,10 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, Notification, session, systemPreferences, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, session, systemPreferences, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
+import os from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
 import { DESKTOP_IPC } from "./shared/desktop-contract";
 import { createClientRuntimeHost } from "./main/client-runtime-host";
+import { describeDesktopStartupFailure, type DesktopStartupStage } from "./main/startup-failure";
 import { createNativeBroker } from "./main/native-broker";
 import { createWindowManager, isAllowedDesktopUrl } from "./main/window-manager";
 import { createNativeAdapterHandlers } from "./main/native-adapters";
@@ -11,9 +14,20 @@ import { desktopKo } from "../quickhack_client/i18n/catalogs/ko/desktop";
 const appRoot = path.resolve(process.env.QUICKHACK_APP_ROOT || app.getAppPath());
 const origin = process.env.QUICKHACK_CLIENT_ORIGIN || "http://127.0.0.1:3001";
 const preloadPath = path.join(__dirname, "preload.cjs");
+if (process.platform === "linux" && /^(DEMONSTRATION|OPERATIONAL)_CLIENT$/.test(process.env.QUICKHACK_ARTIFACT_KIND ?? "")) {
+  const identity = `quickhack-${process.env.QUICKHACK_ARTIFACT_KIND === "OPERATIONAL_CLIENT" ? "operational" : "demonstration"}-client`;
+  app.setDesktopName(`${identity}.desktop`);
+  app.setPath("userData", path.join(app.getPath("appData"), identity));
+}
+// Linux Unix-domain sockets have a short path limit. XDG config paths can
+// exceed it even for an ordinary username and packaged application name.
+const brokerDirectory = process.platform === "linux"
+  ? mkdtempSync(path.join(os.tmpdir(), "qh-native-"))
+  : path.join(app.getPath("userData"), "runtime");
+if (process.platform === "linux") app.on("will-quit", () => rmSync(brokerDirectory, { recursive: true, force: true }));
 const broker = createNativeBroker({
   platform: process.platform,
-  runtimeDirectory: path.join(app.getPath("userData"), "runtime"),
+  runtimeDirectory: brokerDirectory,
   handlers: createNativeAdapterHandlers({
     platform: process.platform,
     appRoot,
@@ -33,7 +47,7 @@ const runtime = createClientRuntimeHost({
     QUICKHACK_UPDATE_CHANNEL: process.env.QUICKHACK_UPDATE_CHANNEL ?? "development",
   },
 });
-const windows = createWindowManager({ origin, preloadPath });
+const windows = createWindowManager({ origin, preloadPath, iconPath: path.join(__dirname, "icon.png") });
 const updates = createDesktopUpdateCoordinator({
   currentVersion: app.getVersion(),
   adapter: unavailablePackageUpdateAdapter,
@@ -41,21 +55,22 @@ const updates = createDesktopUpdateCoordinator({
 });
 let quitting = false;
 let mainCloseApproved = false;
-let mainClosePending = false;
+let mainCloseGuardActive = false;
 
 function requestGuardedMainClose() {
   const mainWindow = windows.get("main");
-  if (!mainWindow || mainWindow.isDestroyed() || mainClosePending) return;
-  mainClosePending = true;
+  if (!mainWindow || mainWindow.isDestroyed() || !mainCloseGuardActive) return;
   mainWindow.webContents.send(DESKTOP_IPC.closeRequested);
 }
 
 function attachMainCloseGuard(window: BrowserWindow) {
   window.on("close", (event) => {
-    if (mainCloseApproved) return;
+    if (mainCloseApproved || !mainCloseGuardActive) return;
     event.preventDefault();
     requestGuardedMainClose();
   });
+  window.webContents.on("did-navigate", () => { mainCloseGuardActive = false; });
+  window.webContents.on("render-process-gone", () => { mainCloseGuardActive = false; });
 }
 
 function assertTrustedSender(event: IpcMainInvokeEvent) {
@@ -90,10 +105,14 @@ function registerIpc() {
     assertTrustedSender(event);
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
+  ipcMain.on(DESKTOP_IPC.closeGuardState, (event, active: unknown) => {
+    try { assertTrustedSender(event); }
+    catch { return; }
+    mainCloseGuardActive = active === true;
+  });
   ipcMain.handle(DESKTOP_IPC.confirmClose, (event) => {
     assertTrustedSender(event);
     mainCloseApproved = true;
-    mainClosePending = false;
     windows.get("main")?.close();
   });
   ipcMain.handle(DESKTOP_IPC.showNotification, (event, value: unknown) => {
@@ -121,7 +140,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on("second-instance", () => windows.create("main"));
   app.on("before-quit", (event) => {
-    if (!mainCloseApproved && windows.get("main")) {
+    if (!mainCloseApproved && mainCloseGuardActive && windows.get("main")) {
       event.preventDefault();
       requestGuardedMainClose();
       return;
@@ -138,16 +157,19 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     registerIpc();
+    let startupStage: DesktopStartupStage = "NATIVE_BROKER";
     try {
       await broker.start();
+      startupStage = "CLIENT_RUNTIME";
       await runtime.start();
+      startupStage = "MAIN_WINDOW";
       attachMainCloseGuard(windows.create("main"));
     } catch (error) {
       console.error("DESKTOP_START_FAILED", error);
-      await import("electron").then(({ dialog }) => dialog.showErrorBox(
+      dialog.showErrorBox(
         desktopKo.updateStatus.nativeStartFailureTitle,
-        desktopKo.updateStatus.nativeStartFailureBody,
-      ));
+        describeDesktopStartupFailure(error, startupStage),
+      );
       app.quit();
     }
   });

@@ -198,7 +198,7 @@ try {
       reconciliationService.normalizeInboundReconciliationDetailScope(
         "UNKNOWN"
       ),
-    /scope는/
+    (error) => error?.code === "INBOUND_RECONCILIATION_INPUT_INVALID"
   );
 
   const unauthorized = await reconciliationApi.GET(

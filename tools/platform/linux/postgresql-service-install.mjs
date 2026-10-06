@@ -7,6 +7,7 @@ import pg from "pg";
 import { readServerRuntimeConfigSync } from "../../../quickhack_shared/core/server-runtime-config.mjs";
 import { POSTGRESQL_MAJOR_VERSION, POSTGRESQL_TOOL_CAPABILITIES, assertPostgresqlToolVersions } from "../../../quickhack_shared/platform/native-runtime-contract.mjs";
 import { createLinuxPostgresqlServiceController } from "../../../quickhack_server/platform/linux/postgresql-service-controller.mjs";
+import { serverSecretIdentity } from "../../../quickhack_server/platform/server-secret-identity.mjs";
 import { createPostgresqlServiceCore } from "../../postgresql-service-core.mjs";
 import { createLinuxPostgresqlCredentialTransaction } from "./postgresql-credential-transaction.mjs";
 import { createSystemdCredentialProvisioner, systemdCredentialCiphertextPath } from "./systemd-credential-provisioner.mjs";
@@ -61,6 +62,25 @@ async function pathExists(filePath) {
   try { await fs.lstat(filePath); return true; } catch (error) { if (error?.code === "ENOENT") return false; throw error; }
 }
 
+export async function ensurePostgresqlClusterParent(dataDirectory, identity) {
+  const postgresRoot = path.join(dataDirectory, "postgresql");
+  const versionRoot = path.join(postgresRoot, POSTGRESQL_MAJOR);
+  for (const directory of [postgresRoot, versionRoot]) {
+    await fs.mkdir(directory, { mode: 0o700 }).catch((error) => {
+      if (error?.code !== "EEXIST") throw error;
+    });
+    const stat = await fs.lstat(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      const error = new Error("The PostgreSQL directory is invalid.");
+      error.code = "POSTGRESQL_DIRECTORY_INVALID";
+      throw error;
+    }
+    await fs.chown(directory, identity.uid, identity.gid);
+    await fs.chmod(directory, 0o700);
+  }
+  return versionRoot;
+}
+
 function assertLoopbackPortAvailable(port) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -96,6 +116,22 @@ async function assertRegularExecutable(filePath) {
   }
 }
 
+export function initdbSecretPipeCommand(executable, args) {
+  if (!path.posix.isAbsolute(executable) || !Array.isArray(args)) {
+    throw new TypeError("The PostgreSQL initialization command is invalid.");
+  }
+  // Node's extra stdio pipe is a socket and initdb cannot reopen it as a pwfile.
+  // The shell pipeline gives initdb a real anonymous pipe at /dev/stdin.
+  return [
+    "/usr/bin/sh",
+    "-c",
+    '/usr/bin/cat <&3 | exec "$@" --pwfile=/dev/stdin',
+    "quickhack-initdb",
+    executable,
+    ...args,
+  ];
+}
+
 async function runAsServiceUserWithSecretFd(runtime, identity, executable, args, secret) {
   const runuser = "/usr/bin/runuser";
   await assertRegularExecutable(runuser);
@@ -103,7 +139,7 @@ async function runAsServiceUserWithSecretFd(runtime, identity, executable, args,
     let settled = false;
     const child = spawn(
       runuser,
-      ["--user", identity.userName, "--", executable, ...args],
+      ["--user", identity.userName, "--", ...initdbSecretPipeCommand(executable, args)],
       {
         shell: false,
         windowsHide: true,
@@ -151,6 +187,87 @@ async function runAsServiceUserWithSecretFd(runtime, identity, executable, args,
     });
     child.stdio[3].write(secret);
     child.stdio[3].end("\n");
+  });
+}
+
+export async function waitForStoppedService(controller) {
+  const initial = await controller.status();
+  if (initial.state === "MISSING") throw new Error("The PostgreSQL service unit is missing.");
+  if (initial.state !== "INACTIVE") await controller.stop();
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    if ((await controller.status()).state === "INACTIVE") return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const error = new Error("PostgreSQL did not stop for offline credential recovery.");
+  error.code = "POSTGRESQL_OFFLINE_RECOVERY_STOP_TIMEOUT";
+  throw error;
+}
+
+export async function waitForRunningPostgresql(controller, runtime, port, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const status = await controller.status();
+    if (status.state === "ACTIVE") {
+      const ready = await runtime.execFileText("/usr/bin/pg_isready", ["--host", "127.0.0.1", "--port", String(port), "--timeout", "2"], { timeoutMs: 3_000 });
+      if (ready.ok) return;
+    }
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  } while (true);
+  const error = new Error("PostgreSQL did not accept loopback connections after service restart.");
+  error.code = "POSTGRESQL_START_SERVICE_WAIT_RUNNING_FAILED";
+  throw error;
+}
+
+export function renderManagedPostgresqlConfig(port) {
+  return [`# QuickHack managed PostgreSQL ${POSTGRESQL_MAJOR} boundary.`, "listen_addresses = '127.0.0.1'", "unix_socket_directories = ''", `port = ${port}`, "password_encryption = 'scram-sha-256'", "ssl = off", "logging_collector = on", "log_connections = on", "log_disconnections = on", ""].join("\n");
+}
+
+export function postgresOfflineResetArguments(clusterDirectory) {
+  if (!path.posix.isAbsolute(clusterDirectory)) throw new TypeError("The PostgreSQL data directory must be absolute.");
+  return ["--single", "-D", clusterDirectory, "postgres"];
+}
+
+async function resetOperatorPasswordOffline(runtime, identity, postgresExecutable, clusterDirectory, secret) {
+  await assertRegularExecutable("/usr/bin/runuser");
+  await assertRegularExecutable(postgresExecutable);
+  const password = passwordText(secret);
+  await new Promise((resolve, reject) => {
+    const child = spawn("/usr/bin/runuser", [
+      "--user", identity.userName, "--", postgresExecutable,
+      ...postgresOfflineResetArguments(clusterDirectory),
+    ], {
+      shell: false,
+      stdio: ["pipe", "ignore", "pipe"],
+      env: runtime.childEnvironment({ executableDirectories: ["/usr/bin", path.dirname(postgresExecutable)] }),
+    });
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, 120_000);
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+      if (stderr.length > 256 * 1024) child.kill("SIGKILL");
+    });
+    child.stdin.once("error", (error) => finish(error));
+    child.once("error", (error) => finish(error));
+    child.once("close", (code) => {
+      if (code === 0 && stderr.length <= 256 * 1024 && !/\b(?:ERROR|FATAL|PANIC):/u.test(stderr)) finish();
+      else {
+        const error = new Error("PostgreSQL offline credential recovery failed.");
+        error.code = "POSTGRESQL_OFFLINE_RECOVERY_FAILED";
+        finish(error);
+      }
+    });
+    child.stdin.end(`ALTER ROLE quickhack_operator WITH PASSWORD '${password}';\n`);
   });
 }
 
@@ -252,16 +369,34 @@ export async function installLinuxPostgresqlService(input, options = {}) {
         versions[tool] = `${result.stdout}\n${result.stderr}`.trim();
       }
       assertPostgresqlToolVersions(versions, { capability: "service" });
+      await assertRegularExecutable("/usr/bin/pg_isready");
     },
     async assertPortAvailable() {
       const status = await controller.status();
       if (status.state === "ACTIVE") throw new Error("A fresh PostgreSQL port is already owned by the configured service.");
       await assertLoopbackPortAvailable(runtimeConfig.database.port);
     },
-    async prepareCredentials() { return credentialTransaction.prepare(runtimeConfig); },
+    async prepareCredentials({ observed }) {
+      const operatorIdentity = serverSecretIdentity({
+        kind: "POSTGRESQL_CREDENTIAL",
+        runtimeConfig,
+        postgresqlRole: "operator",
+      });
+      const recoverOperator = !observed.fresh && !(await pathExists(systemdCredentialCiphertextPath(operatorIdentity)));
+      if (recoverOperator) await waitForStoppedService(controller);
+      const token = await credentialTransaction.prepare(runtimeConfig);
+      if (!recoverOperator) return token;
+      try {
+        await resetOperatorPasswordOffline(runtime, identity, executables.postgres, clusterDirectory, token.passwords.get("operator"));
+        return token;
+      } catch (error) {
+        await credentialTransaction.rollback(token);
+        await credentialTransaction.dispose(token);
+        throw error;
+      }
+    },
     async initializeCluster({ credentialToken }) {
-      await fs.mkdir(clusterParent, { recursive: true, mode: 0o700 });
-      await fs.chown(clusterParent, identity.uid, identity.gid);
+      await ensurePostgresqlClusterParent(input.dataDir, identity);
       const staging = path.join(clusterParent, `.data.initializing.${process.pid}.${randomUUID()}`);
       try {
         await fs.mkdir(staging, { mode: 0o700 });
@@ -272,7 +407,7 @@ export async function installLinuxPostgresqlService(input, options = {}) {
           runtime,
           identity,
           executables.initdb,
-          ["--pgdata", staging, "--username", "quickhack_operator", "--pwfile=/proc/self/fd/3", "--auth-host", "scram-sha-256", "--auth-local", "scram-sha-256", "--encoding", "UTF8", "--locale", "C"],
+          ["--pgdata", staging, "--username", "quickhack_operator", "--auth-host", "scram-sha-256", "--auth-local", "scram-sha-256", "--encoding", "UTF8", "--locale", "C"],
           operatorSecret
         );
         await fs.rename(staging, clusterDirectory);
@@ -282,7 +417,7 @@ export async function installLinuxPostgresqlService(input, options = {}) {
     },
     async configureCluster() {
       const managedName = "quickhack-managed.conf";
-      await writeAtomic(path.join(clusterDirectory, managedName), [`# QuickHack managed PostgreSQL ${POSTGRESQL_MAJOR} boundary.`, "listen_addresses = '127.0.0.1'", `port = ${runtimeConfig.database.port}`, "password_encryption = 'scram-sha-256'", "ssl = off", "logging_collector = on", "log_connections = on", "log_disconnections = on", ""].join("\n"), identity);
+      await writeAtomic(path.join(clusterDirectory, managedName), renderManagedPostgresqlConfig(runtimeConfig.database.port), identity);
       const mainPath = path.join(clusterDirectory, "postgresql.conf");
       const current = await fs.readFile(mainPath, "utf8");
       const cleaned = current.split(/\r?\n/u).filter((line) => !/^\s*include(?:_if_exists)?\s*=\s*['"]quickhack-managed\.conf['"]/iu.test(line)).join("\n").replace(/\s*$/u, "");
@@ -296,7 +431,10 @@ export async function installLinuxPostgresqlService(input, options = {}) {
         throw error;
       }
     },
-    async startService() { await controller.restart(); },
+    async startService() {
+      await controller.restart();
+      await waitForRunningPostgresql(controller, runtime, runtimeConfig.database.port);
+    },
     async provisionCatalog({ manifest, credentialToken }) { await provisionCatalog({ runtimeConfig, manifest, passwords: credentialToken.passwords }); },
     async commitCredentials({ credentialToken }) { return credentialTransaction.commit(credentialToken); },
     async activateCredentials({ committedToken }) { return credentialTransaction.activate(committedToken); },

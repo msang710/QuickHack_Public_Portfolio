@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import {
-  formatSalesAmount,
-  formatSalesAveragePrice,
-  formatSalesGrossProfit,
-  formatSalesLeadTime,
-  formatSalesRate,
-  formatSalesStatisticsMonth,
-} from "../../quickhack_client/components/statistics/sales-statistics-presentation.ts";
+import { useSalesStatisticsPresentation } from "../../quickhack_client/components/statistics/sales-statistics-presentation.ts";
+import { captureStatisticsPresentation } from "../support/statistics-presentation-harness.mjs";
+
+const {
+  formatAmount: formatSalesAmount,
+  formatAveragePrice: formatSalesAveragePrice,
+  formatGrossProfit: formatSalesGrossProfit,
+  formatLeadTime: formatSalesLeadTime,
+  formatRate: formatSalesRate,
+  formatMonth: formatSalesStatisticsMonth,
+} = captureStatisticsPresentation(useSalesStatisticsPresentation);
 
 assert.deepEqual(
   formatSalesRate({ value: 0, numerator: 0, denominator: 4 }),
@@ -86,7 +89,7 @@ assert.deepEqual(
     buckets: [],
   }),
   {
-    value: "35.3일",
+    value: "35.25일",
     detail: "표본 2 / 4건 · 50% · 이상 1건 제외",
   }
 );

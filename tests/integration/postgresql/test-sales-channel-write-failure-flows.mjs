@@ -3131,7 +3131,7 @@ async function createInventoryAllocationFixture(ledgerApi, suffix = "") {
         updated_at: timestamp,
       },
     }));
-  const pgNo = `PG-WRITE-FLOW-1${suffix}`;
+  const pgNo = suffix === "-MANUAL" ? "PF0000000002" : "PF0000000001";
   const externalOrderId = `ORDER-LOCAL-1${suffix}`;
   const externalShipmentId = `SHIP-LOCAL-1${suffix}`;
 

@@ -9,12 +9,16 @@ const view = fs.readFileSync(
   ),
   "utf8"
 );
+const koreanCatalog = fs.readFileSync(
+  path.join(process.cwd(), "quickhack_client/i18n/catalogs/ko/supplies.ts"),
+  "utf8"
+);
 
 for (const contract of [
   "isForecastOutdated",
   "latestRecommendedQuantity",
-  "예측 갱신 필요",
-  "최신 권장",
+  't("reorder.forecastOutdated")',
+  't("reorder.latestRecommended"',
 ]) {
   assert(view.includes(contract), `The reorder UI is missing ${contract}.`);
 }
@@ -37,12 +41,15 @@ for (const contract of [
   "openReorders",
   "reorderHistory",
   "reorderHistoryPage",
-  "완료 이력 더 보기",
+  't("reorder.historyMore")',
 ]) {
   assert.ok(
     view.includes(contract),
     `The reorder UI is missing the open/history pagination contract: ${contract}.`
   );
+}
+for (const label of ["예측 갱신 필요", "최신 권장", "완료 이력 더 보기"]) {
+  assert.ok(koreanCatalog.includes(label), `Missing Korean reorder label: ${label}`);
 }
 
 console.log("Supply reorder forecast freshness UI contract verified.");

@@ -486,12 +486,18 @@ try {
     ),
     "utf8"
   );
+  const koreanCatalog = await readFile(
+    path.join(projectRoot, "quickhack_client/i18n/catalogs/ko/sales-channel.ts"),
+    "utf8"
+  );
   assert(apiSource.includes('canAccessRole(user.role, "MANAGER")'));
   assert(apiSource.includes("export async function GET"));
   assert(!apiSource.includes("export async function POST"));
   assert(clientSource.includes("executeCoupangOrderRematch"));
-  assert(viewSource.includes("재매칭 대상 확인"));
-  assert(viewSource.includes("배정 해제 후 재매칭"));
+  assert(viewSource.includes('t("toolbar.preview")'));
+  assert(viewSource.includes('t("rematch.confirm")'));
+  assert(koreanCatalog.includes('preview: "재매칭 대상 확인"'));
+  assert(koreanCatalog.includes('confirm: "배정 해제 후 재매칭"'));
   assert(viewSource.includes("rematchPreview.hasMore"));
 
   console.log("Order rematch preview eligibility, privacy, and UI contract verified.");

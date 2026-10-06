@@ -72,15 +72,22 @@ try {
   assert.match(resultText, /^temporaryPassword=[A-Za-z0-9_-]{32}$/m);
   assert.equal(await userCount(normalScope.databaseUrl), 1);
 
-  const repeated = await provisionInitialLeader({
-    resultPath: path.join(directory, "repeated.result"),
+  const retryWithSameResult = await provisionInitialLeader({
+    resultPath: createdPath,
     allowCreate: true,
     connectionString: normalScope.databaseUrl,
   });
-  assert.equal(repeated.status, "ALREADY_INITIALIZED");
+  assert.equal(retryWithSameResult.status, "ALREADY_INITIALIZED");
+  assert.equal(readFileSync(createdPath, "utf8"), resultText);
+
+  await assert.rejects(() => provisionInitialLeader({
+    resultPath: path.join(directory, "repeated.result"),
+    allowCreate: true,
+    connectionString: normalScope.databaseUrl,
+  }), (error) => error.code === "INITIAL_LEADER_HANDOFF_MISSING");
   assert.equal(await userCount(normalScope.databaseUrl), 1);
 
-  const concurrent = await Promise.all([
+  const concurrent = await Promise.allSettled([
     provisionInitialLeader({
       resultPath: path.join(directory, "concurrent-a.result"),
       allowCreate: true,
@@ -92,10 +99,8 @@ try {
       connectionString: concurrentScope.databaseUrl,
     }),
   ]);
-  assert.deepEqual(
-    concurrent.map((item) => item.status).sort(),
-    ["ALREADY_INITIALIZED", "CREATED"]
-  );
+  assert.equal(concurrent.filter((item) => item.status === "fulfilled" && item.value.status === "CREATED").length, 1);
+  assert.equal(concurrent.filter((item) => item.status === "rejected" && item.reason.code === "INITIAL_LEADER_HANDOFF_MISSING").length, 1);
   assert.equal(await userCount(concurrentScope.databaseUrl), 1);
 
   const firstHandoff = await provisionInitialLeaderHandoff({

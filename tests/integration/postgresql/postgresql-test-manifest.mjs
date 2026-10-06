@@ -27,6 +27,12 @@ test:server-job-log-completeness
 test:integration-schema-validation
 test:dependency-security-policy
 test:verification-graph
+test:server-console-runtime-settings
+test:server-console-child-output
+test:cafe24-probe
+test:deliveryapi-client
+test:deliveryapi-webhook
+test:field-validation
 test:test-source-layout-contract
 test:package-source-boundary
 test:mock-catalog-contract
@@ -58,6 +64,7 @@ test:account-security-ui-contract
 test:totp-key-provider
 test:totp-security-recovery
 test:server-console-totp-security-ui
+test:server-console-layout
 test:totp-state-atomicity
 test:sensitive-action-policy
 test:backup-key-provider
@@ -111,6 +118,7 @@ test:mobile-packing-integrity
 test:mobile-provisioning-contract
 test:mobile-serial-hmac-key-provider
 test:api-sandbox-draft-state
+test:default-color-criteria
 test:product-criteria-aggregate
 test:purchase-price-ownership
 test:coupang-channel-product-catalog

@@ -41,7 +41,7 @@ assert(
   writeTimeout.code === SERVER_PROXY_ERROR_CODE.timeout &&
     !writeTimeout.retryable &&
     writeTimeout.uncertain &&
-    writeTimeout.message.includes("자동으로 다시 보내지 않았습니다"),
+    !("message" in writeTimeout),
   "Write timeout uncertainty metadata is incorrect."
 );
 

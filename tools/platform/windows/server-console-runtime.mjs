@@ -6,7 +6,6 @@ import {
   resolveWindowsSystemExecutable,
   windowsSystemPaths,
 } from "../../../quickhack_shared/platform/windows/child-process-policy.mjs";
-import { runPowerShellScript } from "../../../quickhack_server/security/async-powershell.mjs";
 
 function execute(file, args, options = {}) {
   return new Promise((resolve) => {
@@ -27,7 +26,6 @@ export function createWindowsServerConsoleRuntime(options = {}) {
   const systemPaths = windowsSystemPaths(environment);
   const netstat = resolveWindowsSystemExecutable("netstat", environment);
   const taskkill = resolveWindowsSystemExecutable("taskkill", environment);
-  const w32tm = resolveWindowsSystemExecutable("w32tm", environment);
 
   function childEnvironment({ executableDirectories = [], overrides = {} } = {}) {
     return createChildProcessEnvironment({
@@ -42,19 +40,6 @@ export function createWindowsServerConsoleRuntime(options = {}) {
     return execute(file, args, {
       env: execOptions.env ?? childEnvironment(),
       ...execOptions,
-    });
-  }
-
-  async function timeStatus() {
-    const [sourceResult, statusResult] = await Promise.all([
-      execFileText(w32tm, ["/query", "/source"]),
-      execFileText(w32tm, ["/query", "/status"]),
-    ]);
-    return Object.freeze({
-      ok: sourceResult.ok && statusResult.ok,
-      source: sourceResult.ok ? sourceResult.stdout.trim().split(/\r?\n/u)[0] ?? "" : "",
-      rawStatus: statusResult.ok ? statusResult.stdout.trim() : "",
-      error: [sourceResult.error, sourceResult.stderr.trim(), statusResult.error, statusResult.stderr.trim()].filter(Boolean).join(" / "),
     });
   }
 
@@ -91,41 +76,8 @@ export function createWindowsServerConsoleRuntime(options = {}) {
     }
   }
 
-  async function processMetadata(pid) {
-    if (!Number.isSafeInteger(pid) || pid < 1) return null;
-    const output = await runPowerShellScript(
-      "$rawPid=[Console]::In.ReadLine(); $processId=0; " +
-        "if(-not [int]::TryParse($rawPid,[ref]$processId)-or $processId -le 0){throw 'Invalid process id.'}; " +
-        "$process=Get-CimInstance Win32_Process -Filter \"ProcessId = $processId\"; " +
-        "if($null -ne $process){[pscustomobject]@{ProcessId=[int]$process.ProcessId;ExecutablePath=[string]$process.ExecutablePath;CommandLine=[string]$process.CommandLine}|ConvertTo-Json -Compress}",
-      { inputLine: String(pid), timeoutMs: 5000, maxOutputBytes: 64 * 1024 }
-    );
-    return output ? JSON.parse(output) : null;
-  }
-
-  function sameExecutablePath(left, right) {
-    return path.win32.normalize(String(left ?? "")).toLowerCase() === path.win32.normalize(String(right ?? "")).toLowerCase();
-  }
-
-  function commandContainsPath(commandLine, expectedPath) {
-    return String(commandLine ?? "").replaceAll("/", "\\").toLowerCase().includes(
-      path.win32.normalize(String(expectedPath ?? "")).toLowerCase()
-    );
-  }
-
   function openUrl(url) {
     const child = spawn(systemPaths.commandShell, ["/c", "start", "", String(url)], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-      shell: false,
-      env: childEnvironment(),
-    });
-    child.unref();
-  }
-
-  function openPath(targetPath) {
-    const child = spawn(systemPaths.explorer, [path.resolve(targetPath)], {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
@@ -148,17 +100,11 @@ export function createWindowsServerConsoleRuntime(options = {}) {
   return Object.freeze({
     descriptor: Object.freeze({ id: "server-console-runtime", role: "operator", platform: "win32", state: "COMPATIBILITY", ownerStage: "PR-09" }),
     interactive: true,
-    requiresExternalDatabaseOperations: false,
     childEnvironment,
     execFileText,
-    timeStatus,
     portPids,
     terminateOwnedProcess,
-    processMetadata,
-    sameExecutablePath,
-    commandContainsPath,
     openUrl,
-    openPath,
     secureDirectory,
     initializeTls,
   });

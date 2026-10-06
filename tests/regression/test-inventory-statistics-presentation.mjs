@@ -1,22 +1,22 @@
 import assert from "node:assert/strict";
-import {
-  buildInventoryTransitionMatrix,
-  formatInventoryCurrency,
-  formatInventoryNumber,
-  formatInventoryPurchaseCost,
-  formatInventoryQuantity,
-  formatInventoryTurnover,
-  inventoryIntegrityMessage,
-  inventoryPeriodLabel,
-  inventoryStatusGroupLabel,
-} from "../../quickhack_client/components/statistics/inventory-statistics-presentation.ts";
+import { useInventoryStatisticsPresentation } from "../../quickhack_client/components/statistics/inventory-statistics-presentation.ts";
+import { captureStatisticsPresentation } from "../support/statistics-presentation-harness.mjs";
+
+const {
+  buildTransitionMatrix: buildInventoryTransitionMatrix,
+  formatNumber: formatInventoryNumber,
+  formatPurchaseCost: formatInventoryPurchaseCost,
+  formatQuantity: formatInventoryQuantity,
+  formatTurnover: formatInventoryTurnover,
+  integrityMessage: inventoryIntegrityMessage,
+  periodLabel: inventoryPeriodLabel,
+  statusLabel: inventoryStatusGroupLabel,
+} = captureStatisticsPresentation(useInventoryStatisticsPresentation);
 
 assert.equal(formatInventoryNumber(0), "0");
 assert.equal(formatInventoryNumber(null), "집계 불가");
 assert.equal(formatInventoryQuantity(0), "0대");
 assert.equal(formatInventoryQuantity(null), "집계 불가");
-assert.equal(formatInventoryCurrency(0), "₩0");
-assert.equal(formatInventoryCurrency(null), "집계 불가");
 
 assert.deepEqual(
   formatInventoryTurnover({

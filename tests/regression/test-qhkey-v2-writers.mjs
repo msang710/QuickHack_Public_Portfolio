@@ -5,8 +5,10 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import {
+  createEncryptedQhkey,
   decryptQhkey,
   readQhkeyMetadata,
+  writeQhkeyFile,
 } from "../../quickhack_server/security/qhkey-format.mjs";
 import {
   readQhkeyMasterKeyFile,
@@ -14,9 +16,7 @@ import {
 } from "../../quickhack_server/security/qhkey-master-key-provider.mjs";
 import {
   validateQhkeyProviderFilesWithMaster,
-  writeCoupangQhkey,
-  writeLogenQhkey,
-} from "../../tools/server-console-qhkey.mjs";
+} from "../../tools/server-console-qhkey-common.mjs";
 import { writeTestServerRuntimeConfig } from "../support/runtime-config-file.mjs";
 
 const temporaryDirectory = fs.mkdtempSync(
@@ -52,6 +52,26 @@ const logenCredential = {
   issuedAt: "2026-08-01T00:00:00.000Z",
   expiresAt: "2028-01-01T00:00:00.000Z",
 };
+
+function writeFixtureQhkey(input, target, credential, credentialKind) {
+  const masterKey = readQhkeyMasterKeyFile(target.masterKeyFile);
+  try {
+    const qhkey = createEncryptedQhkey({
+      masterKey,
+      credentialKind,
+      environment: input.environment,
+      keyAlias: input.keyAlias,
+      credential: credentialKind === "COUPANG_OPEN_API"
+        ? { vendorId: credential.vendorId, accessKey: credential.accessKey, secretKey: credential.secretKey }
+        : { userId: credential.userId, customerCode: credential.customerCode, secretKey: credential.secretKey },
+      issuedAt: credential.issuedAt,
+      expiresAt: credential.expiresAt,
+    });
+    writeQhkeyFile(target.filePath, qhkey.buffer, target.fileExists);
+  } finally {
+    masterKey.fill(0);
+  }
+}
 
 function runCli(args) {
   return new Promise((resolve, reject) => {
@@ -171,7 +191,7 @@ try {
   const consoleMasterKeyFile = path.join(consoleDirectory, "master.key");
   const consoleQhkeyFile = path.join(consoleDirectory, "coupang.qhkey");
   provisionTestMasterKey(consoleMasterKeyFile);
-  writeCoupangQhkey(
+  writeFixtureQhkey(
     { environment: "live", keyAlias: "console-writer-v2" },
     {
       root: consoleDirectory,
@@ -179,7 +199,8 @@ try {
       fileExists: false,
       masterKeyFile: consoleMasterKeyFile,
     },
-    credential
+    credential,
+    "COUPANG_OPEN_API"
   );
   assertCoupangV2(
     consoleQhkeyFile,
@@ -187,7 +208,7 @@ try {
     "console-writer-v2"
   );
   const logenQhkeyFile = path.join(consoleDirectory, "logen.qhkey");
-  writeLogenQhkey(
+  writeFixtureQhkey(
     { environment: "live", keyAlias: "logen-console-writer-v2" },
     {
       root: consoleDirectory,
@@ -195,7 +216,8 @@ try {
       fileExists: false,
       masterKeyFile: consoleMasterKeyFile,
     },
-    logenCredential
+    logenCredential,
+    "LOGEN_OPEN_API"
   );
   assertLogenV2(
     logenQhkeyFile,
@@ -209,7 +231,7 @@ try {
   const sharedCoupangFile = path.join(sharedKeyDirectory, "coupang.qhkey");
   const sharedLogenFile = path.join(sharedKeyDirectory, "logen.qhkey");
   provisionTestMasterKey(sharedMasterKeyFile);
-  writeCoupangQhkey(
+  writeFixtureQhkey(
     { environment: "live", keyAlias: "shared-coupang" },
     {
       root: sharedRoot,
@@ -217,9 +239,10 @@ try {
       fileExists: false,
       masterKeyFile: sharedMasterKeyFile,
     },
-    credential
+    credential,
+    "COUPANG_OPEN_API"
   );
-  writeLogenQhkey(
+  writeFixtureQhkey(
     { environment: "live", keyAlias: "shared-logen" },
     {
       root: sharedRoot,
@@ -227,7 +250,8 @@ try {
       fileExists: false,
       masterKeyFile: sharedMasterKeyFile,
     },
-    logenCredential
+    logenCredential,
+    "LOGEN_OPEN_API"
   );
   assert.deepEqual(
     validateQhkeyProviderFilesWithMaster(sharedRoot, sharedMasterKeyFile).map(
@@ -295,7 +319,7 @@ try {
   assert.equal(result.stdout.includes(credential.secretKey), false);
   assertCoupangV2(cliQhkeyFile, cliMasterKeyFile, "cli-writer-v2");
 
-  console.log("QHKey v2 CLI and server-console writer checks passed.");
+  console.log("QHKEY v2 CLI, fixture format, and provider validation verified.");
 } finally {
   await new Promise((resolve) => mockServer.close(resolve));
   if (originalCredentialsDirectory === undefined) {

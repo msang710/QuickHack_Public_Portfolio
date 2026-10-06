@@ -2,9 +2,10 @@
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
-  existsSync,
   fsyncSync,
+  lstatSync,
   openSync,
+  readFileSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -12,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { resolvePostgresqlConnectionStringSync } from "../quickhack_server/core/database/postgresql-credential.mjs";
-import { hashPassword } from "./password.mjs";
+import { hashPassword, verifyPassword } from "./password.mjs";
 import { composeOperatorPlatform } from "./platform/compose-operator-platform.mjs";
 
 const { Pool } = pg;
@@ -68,6 +69,25 @@ function removeCreatedResult(resultPath) {
   }
 }
 
+export function readInitialLeaderResult(resultPath) {
+  const stat = lstatSync(resultPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096 || (stat.mode & 0o077) !== 0 || stat.uid !== process.geteuid?.()) {
+    throw provisioningError("INITIAL_LEADER_RESULT_INVALID", "The initial leader result file is invalid.");
+  }
+  const lines = readFileSync(resultPath, "utf8").trimEnd().split("\n");
+  if (lines.shift() !== INITIAL_LEADER_RESULT_PROTOCOL) throw provisioningError("INITIAL_LEADER_RESULT_INVALID", "The initial leader result protocol is invalid.");
+  const fields = Object.fromEntries(lines.map((line) => {
+    const separator = line.indexOf("=");
+    if (separator < 1) throw provisioningError("INITIAL_LEADER_RESULT_INVALID", "The initial leader result format is invalid.");
+    return [line.slice(0, separator), line.slice(separator + 1)];
+  }));
+  if (!(["CREATED", "INTERACTION_REQUIRED", "ALREADY_INITIALIZED"].includes(fields.status))) throw provisioningError("INITIAL_LEADER_RESULT_INVALID", "The initial leader result state is invalid.");
+  if (fields.status === "CREATED" && (!/^[1-9][0-9]*$/u.test(fields.userId ?? "") || fields.username !== INITIAL_LEADER_USERNAME || !/^[A-Za-z0-9_-]{32}$/u.test(fields.temporaryPassword ?? ""))) {
+    throw provisioningError("INITIAL_LEADER_RESULT_INVALID", "The initial leader handoff is invalid.");
+  }
+  return Object.freeze(fields);
+}
+
 function provisioningConnectionString(explicitConnectionString) {
   if (explicitConnectionString) {
     if (process.env.NODE_ENV !== "test") {
@@ -76,7 +96,7 @@ function provisioningConnectionString(explicitConnectionString) {
     return explicitConnectionString;
   }
   return resolvePostgresqlConnectionStringSync({
-    role: "runtime",
+    role: "migrator",
     applicationName: "quickhack-initial-leader",
   });
 }
@@ -254,8 +274,11 @@ export async function provisionInitialLeader({
   connectionString = "",
 }) {
   const resolvedResultPath = path.resolve(resultPath);
-  if (existsSync(resolvedResultPath)) {
-    throw new Error("Initial leader result file already exists.");
+  let existingResult = null;
+  try {
+    existingResult = readInitialLeaderResult(resolvedResultPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
 
   const temporaryPassword = allowCreate
@@ -273,6 +296,7 @@ export async function provisionInitialLeader({
   });
   const client = await pool.connect();
   let resultFileCreated = false;
+  let commitAttempted = false;
 
   try {
     await client.query("SELECT pg_advisory_lock($1)", [
@@ -283,9 +307,24 @@ export async function provisionInitialLeader({
     const userCount = BigInt(countResult.rows[0]?.count ?? "0");
 
     if (userCount > 0n) {
+      const leaderResult = await client.query("SELECT user_id, username, password_hash, must_change_password FROM users WHERE role = 'LEADER' AND is_active = 1 ORDER BY user_id LIMIT 1");
+      const leader = leaderResult.rows[0];
+      if (!leader) throw provisioningError("INITIAL_LEADER_STATE_CONFLICT", "An active LEADER account is required.");
+      if (existingResult?.status === "CREATED") {
+        if (Number(existingResult.userId) !== Number(leader.user_id) || leader.username !== INITIAL_LEADER_USERNAME) throw provisioningError("INITIAL_LEADER_RESULT_CONFLICT", "Initial leader result does not match the account.");
+        const matches = await verifyPassword(existingResult.temporaryPassword, leader.password_hash);
+        if (!matches && Number(leader.must_change_password) === 1) throw provisioningError("INITIAL_LEADER_RESULT_CONFLICT", "Initial leader password does not match the pending account.");
+      } else if (leader.username === INITIAL_LEADER_USERNAME && Number(leader.must_change_password) === 1) {
+        throw provisioningError("INITIAL_LEADER_HANDOFF_MISSING", "Initial administrator password handoff is missing.");
+      }
       await client.query("COMMIT");
-      writeResultFile(resolvedResultPath, { status: "ALREADY_INITIALIZED" });
       return { status: "ALREADY_INITIALIZED" };
+    }
+
+    if (existingResult) {
+      // The database is authoritative after acquiring the provisioning lock.
+      removeCreatedResult(resolvedResultPath);
+      existingResult = null;
     }
 
     if (!allowCreate || !temporaryPassword || !passwordHash) {
@@ -315,11 +354,12 @@ export async function provisionInitialLeader({
       temporaryPassword,
     });
     resultFileCreated = true;
+    commitAttempted = true;
     await client.query("COMMIT");
     return { status: "CREATED", userId };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
-    if (resultFileCreated) removeCreatedResult(resolvedResultPath);
+    if (resultFileCreated && !commitAttempted) removeCreatedResult(resolvedResultPath);
     throw error;
   } finally {
     await client
@@ -367,9 +407,7 @@ if (isMainModule()) {
     console.log(`INITIAL_LEADER_PROVISIONING=${result.status}`);
     if (result.status === "INTERACTION_REQUIRED") process.exitCode = 2;
   } catch (error) {
-    console.error(
-      `Initial leader provisioning failed: ${error instanceof Error ? error.message : String(error)}`
-    );
+    console.error(`${error?.code || "INITIAL_LEADER_PROVISIONING_FAILED"}: Initial leader provisioning failed.`);
     process.exitCode = 1;
   }
 }

@@ -54,7 +54,7 @@ export function useStatisticsMetricPresentation() {
   };
   const formatMonth = (value: string) => {
     const match = /^(\d{4})-(\d{2})$/.exec(value);
-    return match ? t("month", { year: Number(match[1]), month: Number(match[2]) }) : value;
+    return match ? t("month", { year: match[1], month: String(Number(match[2])) }) : value;
   };
   return { formatAmount, formatCount, formatCurrency, formatDate, formatDuration, formatMonth, formatPercent, formatRate, formatUnavailableReason };
 }

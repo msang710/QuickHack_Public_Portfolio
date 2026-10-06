@@ -15,7 +15,8 @@ function enabled(value) {
 export const operationalConsoleIntegration = Object.freeze({
   flavor: "OPERATIONAL",
   childIds: Object.freeze([]),
-  async startChildren() { return []; },
+  childPorts: Object.freeze({}),
+  async probeChild() { return false; },
   async status() { return { ready: true, provider: "EXTERNAL" }; },
   renderHtml(t) {
     return `<section class="card"><h2>${t.operational}</h2><p class="muted">${t.operationalHelp}</p>

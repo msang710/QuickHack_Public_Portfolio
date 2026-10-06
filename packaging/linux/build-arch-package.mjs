@@ -14,6 +14,8 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDirectory, "..", "..");
 linuxArtifactConfig(target);
 const archDirectory = path.join(scriptDirectory, "arch");
+const desktopBuild = spawnSync(process.execPath, [path.join(root, "tools/build-electron.mjs")], { cwd: root, stdio: "inherit" });
+if (desktopBuild.status !== 0) throw new Error("Electron desktop build failed.");
 for (const stagingTarget of LINUX_PACKAGE_TARGETS) {
   const staging = spawnSync(process.execPath, [
     path.join(scriptDirectory, "create-staging-package.mjs"),
@@ -25,6 +27,37 @@ for (const stagingTarget of LINUX_PACKAGE_TARGETS) {
     shell: false,
   });
   if (staging.status !== 0) throw new Error(`Linux staging failed: ${stagingTarget}.`);
+}
+for (const stagingTarget of ["demo-server", "operational-server"]) {
+  const config = linuxArtifactConfig(stagingTarget);
+  const applicationRoot = path.join(root, ...config.packageRoot.split("/"), ...config.applicationRoot.split("/").filter(Boolean));
+  const gatewayEntry = path.join(applicationRoot, "tools/quickhack-https-gateway.mjs");
+  if (!existsSync(gatewayEntry)) throw new Error(`Staged HTTPS gateway is missing: ${stagingTarget}.`);
+  const serviceRoot = path.join(root, ...config.packageRoot.split("/"), "usr/lib/systemd/system");
+  const initialLeaderUnit = readFileSync(path.join(serviceRoot, config.services.initialLeader), "utf8");
+  const operatorUnit = readFileSync(path.join(serviceRoot, config.services.operator), "utf8");
+  if (!initialLeaderUnit.includes("LoadCredentialEncrypted=quickhack.postgresql.migrator:") ||
+      initialLeaderUnit.includes("LoadCredentialEncrypted=quickhack.postgresql.operator:") ||
+      !initialLeaderUnit.includes("run-one-shot --operation provision-initial-leader")) {
+    throw new Error(`Staged initial leader credential binding is invalid: ${stagingTarget}.`);
+  }
+  if (!operatorUnit.includes("LoadCredentialEncrypted=quickhack.postgresql.operator:") ||
+      operatorUnit.includes("LoadCredentialEncrypted=quickhack.postgresql.migrator:")) {
+    throw new Error(`Staged operator credential binding is invalid: ${stagingTarget}.`);
+  }
+  const prismaConfig = path.join(applicationRoot, "prisma.config.ts");
+  if (!existsSync(prismaConfig)) throw new Error(`Staged Prisma config is missing: ${stagingTarget}.`);
+  const validate = spawnSync(process.execPath, [path.join(applicationRoot, "node_modules/prisma/build/index.js"), "validate"], {
+    cwd: applicationRoot,
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      QUICKHACK_TEST_MIGRATOR_DATABASE_URL: "postgresql://schema-only-invalid:schema-only-invalid@127.0.0.1:5432/schema_only",
+    },
+    stdio: "inherit",
+    shell: false,
+  });
+  if (validate.status !== 0) throw new Error(`Staged Prisma CLI validation failed: ${stagingTarget}.`);
 }
 const result = spawnSync("/usr/bin/makepkg", ["--cleanbuild", "--clean", "--force", "--noconfirm"], {
   cwd: archDirectory,

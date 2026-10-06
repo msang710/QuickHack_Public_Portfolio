@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const consoleSource = fs.readFileSync("tools/server-console-core.mjs", "utf8");
+const consolePageSource = fs.readFileSync("tools/server-console-page.mjs", "utf8");
 const routeSource = fs.readFileSync(
   "app/api/internal/supervisor/totp-security/route.ts",
   "utf8"
@@ -60,14 +61,14 @@ assert.match(
   /"X-QuickHack-Supervisor-Token": actionToken/,
   "The server console omitted supervisor authentication."
 );
-assert.match(consoleSource, /id="otp-security-state"/);
-assert.match(consoleSource, /id="otp-security-confirm"/);
-assert.match(consoleSource, /id="otp-security-recover"/);
+assert.match(consolePageSource, /id="otp-security-state"/);
+assert.match(consolePageSource, /id="otp-security-confirm"/);
+assert.match(consolePageSource, /id="otp-security-recover"/);
 assert.match(consoleI18nSource, /키나 암호를 입력받지 않습니다/);
-assert.match(consoleSource, /actionMessages\[p\.messageCode\]/);
+assert.match(consolePageSource, /actionMessages\[payload\.messageCode\]/);
 assert.match(consoleSource, /confirmText: String\(payload\.confirmText/);
 assert.doesNotMatch(
-  consoleSource,
+  consolePageSource,
   /otp-security-(?:key|secret|ciphertext|payload)/,
   "The OTP console UI introduced a key or secret input."
 );

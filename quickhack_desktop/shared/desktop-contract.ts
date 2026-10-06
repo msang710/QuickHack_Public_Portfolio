@@ -4,6 +4,7 @@ export const DESKTOP_IPC = Object.freeze({
   openAdbWindow: "quickhack:desktop:open-adb-window",
   closeWindow: "quickhack:desktop:close-window",
   closeRequested: "quickhack:desktop:close-requested",
+  closeGuardState: "quickhack:desktop:close-guard-state",
   confirmClose: "quickhack:desktop:confirm-close",
   showNotification: "quickhack:desktop:show-notification",
   updateState: "quickhack:desktop:update-state",

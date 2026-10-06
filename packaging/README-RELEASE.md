@@ -25,8 +25,57 @@ On CachyOS/Arch, the release command stages all four package roots because the c
 
 ```bash
 npm run build
+node node_modules/electron/install.js
 npm run release:linux:operational-server -- --version=1.0.0
 ```
+
+Linux client packages include the locked Electron runtime, main/preload bundles,
+and separate Demo/Operational application menu entries and icons. Start the
+client from the application menu or run `quickhack-demonstration-client` (or
+`quickhack-operational-client`) without arguments. Explicit `start`, `status`,
+`stop`, and `restart` arguments retain the command-line runtime interface.
+The two clients have separate Electron profiles and local ports (3001/3002).
+The server console menu opens a terminal for first-time administrator setup,
+then opens the existing web console. Server provisioning and a valid client
+trust bundle are still required before using the client against a server.
+For separate Linux server and client PCs, provision the server-generated
+`client-config` directory with the client deployment, before its first launch.
+The server keeps the directory at
+`/var/lib/quickhack/<flavor>-server/security/tls/client-config`; install its
+contents as one unit at `$XDG_CONFIG_HOME/quickhack/<flavor>-client` on the
+client PC (or `~/.config/quickhack/<flavor>-client` when XDG_CONFIG_HOME is
+unset). The bundle contains the HTTPS server address and CA certificates;
+copy only `client-config`, never the neighboring server private keys. The
+desktop client reads this pre-provisioned configuration and does not perform
+interactive pairing.
+After setup, use `sudo quickhack-demonstration-server-initial-login` (or the
+operational equivalent) to display the temporary administrator password. The
+password is stored in a root-only result file and must be changed at first login.
+The console launcher runs repair when the service is active but health is degraded.
+On hosts with more than one non-loopback IPv4 address, set `publicHost` in
+`/etc/quickhack/<flavor>-server/server-runtime.json` to the DNS name or IPv4
+address that clients use, then rerun the server setup or repair command.
+Changing `publicHost` renews the server certificate under the existing CA and
+updates the trust bundle origin. Redistribute that bundle to paired clients.
+If a DHCP address changes while `publicHost` is unset, readiness reports a TLS
+host error. Set `publicHost` explicitly, run the server repair command, and
+redistribute the renewed trust bundle to paired clients.
+An Arch server upgrade stops an active console and records a pending marker.
+The pacman PostTransaction hook repairs it after a successful package transaction.
+The pre-upgrade scriptlet, hook, and setup and repair launchers use one
+flavor-specific lock to serialize lifecycle work. The pending marker survives
+reboot and blocks desktop auto-repair. If the transaction fails or the hook
+reports an error, complete the transaction, then run
+`sudo quickhack-<flavor>-server-repair --recover-upgrade` and check the console readiness endpoint
+before treating the upgrade as complete.
+
+Run `npm run test:linux-desktop-package` for package entry/runtime checks.
+After staging, `npm run test:linux-desktop-window` uses Xvfb and the actual
+packaged Electron main/preload with a temporary runtime stub. It checks window
+creation and renderer settings; Playwright adds `--no-sandbox` to its test
+process, so this is not evidence of the production OS sandbox or real pairing.
+Production launchers do not disable the sandbox. The Arch package installs
+Electron's sandbox helper root-owned with mode 4755.
 
 The Inno Setup source and old Windows commands remain rollback-only compatibility material. CI and public Windows release workflows do not invoke them and no `.exe` is an official Windows asset.
 

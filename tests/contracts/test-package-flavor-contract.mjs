@@ -31,6 +31,8 @@ const operational = validateServerRuntimeConfig({
   ...common,
   packageFlavor: "OPERATIONAL",
 });
+assert.equal(validateServerRuntimeConfig({ ...common, packageFlavor: "OPERATIONAL", publicHost: "10.0.0.5" }).publicHost, "10.0.0.5");
+assert.throws(() => validateServerRuntimeConfig({ ...common, packageFlavor: "OPERATIONAL", publicHost: "bad..host" }), (error) => error.code === "SERVER_RUNTIME_CONFIG_INVALID");
 const demonstration = validateServerRuntimeConfig({
   ...common,
   packageFlavor: "DEMONSTRATION",

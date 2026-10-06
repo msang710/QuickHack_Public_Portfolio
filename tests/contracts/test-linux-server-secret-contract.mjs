@@ -150,12 +150,14 @@ await assert.rejects(
 const insecureModeReader = createLinuxServiceCredentialReader({
   platform: "linux",
   environment: { CREDENTIALS_DIRECTORY: "/run/credentials/quickhack.service" },
+  getuid: () => 1001,
   async lstat() {
     return {
       isFile: () => true,
       isSymbolicLink: () => false,
       size: 32,
-      mode: 0o100440,
+      mode: 0o100460,
+      uid: 0,
     };
   },
   async readFile() {
@@ -166,5 +168,20 @@ await assert.rejects(
   () => insecureModeReader.read(serverSecretIdentity({ kind: "OTP_MASTER_KEY" })),
   (error) => error.code === "SERVER_SECRET_PROVISIONED_INVALID"
 );
+const systemdGroupReadable = createLinuxServiceCredentialReader({
+  platform: "linux",
+  environment: { CREDENTIALS_DIRECTORY: "/run/credentials/quickhack.service" },
+  getuid: () => 1001,
+  lstatSync: () => ({
+    isFile: () => true,
+    isSymbolicLink: () => false,
+    size: 32,
+    mode: 0o100440,
+    uid: 0,
+    gid: 0,
+  }),
+  readFileSync: () => Buffer.alloc(32, 1),
+});
+assert.equal(systemdGroupReadable.readSync(serverSecretIdentity({ kind: "OTP_MASTER_KEY" })).length, 32);
 
 console.log("Linux server package flavor, exact secret identities, and activation reader verified.");

@@ -208,6 +208,7 @@ const server = https.createServer(
         ok: !draining,
         service: "quickhack-https-gateway",
         draining,
+        instanceId: process.env.QUICKHACK_CONSOLE_INSTANCE_ID || "",
       });
       return;
     }

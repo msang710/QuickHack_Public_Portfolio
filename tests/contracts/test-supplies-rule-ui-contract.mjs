@@ -10,6 +10,12 @@ import {
   SUPPLY_CONSUMPTION_TRIGGER,
   normalizeSupplyConsumptionQuantity,
 } from "../../quickhack_shared/supplies/supplies.ts";
+import { suppliesKo } from "../../quickhack_client/i18n/catalogs/ko/supplies.ts";
+
+const filterText = (rule) => supplyConsumptionRuleFilterText(
+  rule,
+  (key) => suppliesKo.rule.filterField[key]
+);
 
 const managementViewSource = readFileSync(
   fileURLToPath(
@@ -78,7 +84,7 @@ assert.deepEqual(orderItemRule, {
   inventoryStatus: "",
 });
 assert.equal(
-  supplyConsumptionRuleFilterText(orderItemRule),
+  filterText(orderItemRule),
   "채널: COUPANG / 기종: Galaxy S24 / 보증: 2년 보증"
 );
 
@@ -94,10 +100,10 @@ assert.deepEqual(returnRule, {
   warranty: "",
   inventoryStatus: "",
 });
-assert.equal(supplyConsumptionRuleFilterText(returnRule), "");
+assert.equal(filterText(returnRule), "");
 
 assert.equal(
-  supplyConsumptionRuleFilterText({
+  filterText({
     ...completeRule,
     channel: "IGNORED",
   }),

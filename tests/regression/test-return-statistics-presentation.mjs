@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import {
-  formatReturnAmount,
-  formatReturnDelta,
-  formatReturnDuration,
-  formatReturnRate,
-  formatReturnStatisticsDate,
-  formatReturnStatisticsMonth,
-} from "../../quickhack_client/components/statistics/return-statistics-presentation.ts";
+import { useReturnStatisticsPresentation } from "../../quickhack_client/components/statistics/return-statistics-presentation.ts";
+import { captureStatisticsPresentation } from "../support/statistics-presentation-harness.mjs";
+
+const {
+  formatAmount: formatReturnAmount,
+  formatDelta: formatReturnDelta,
+  formatDuration: formatReturnDuration,
+  formatRate: formatReturnRate,
+  formatDate: formatReturnStatisticsDate,
+  formatMonth: formatReturnStatisticsMonth,
+} = captureStatisticsPresentation(useReturnStatisticsPresentation);
 
 assert.deepEqual(
   formatReturnRate({ value: 0, numerator: 0, denominator: 5 }),

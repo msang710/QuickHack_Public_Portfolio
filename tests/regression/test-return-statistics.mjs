@@ -917,13 +917,13 @@ assert.deepEqual(empty.overview, {
     value: null,
     numerator: 0,
     denominator: 0,
-    unavailableReason: "조회 조건에 해당하는 고객 반품 접수가 없습니다.",
+    unavailableReasonCode: "NO_RETURN_RECEIPTS",
   },
   withdrawalShare: {
     value: null,
     numerator: 0,
     denominator: 0,
-    unavailableReason: "조회 조건에 해당하는 고객 반품 접수가 없습니다.",
+    unavailableReasonCode: "NO_RETURN_RECEIPTS",
   },
 });
 assert.deepEqual(empty.cohortTrend, []);

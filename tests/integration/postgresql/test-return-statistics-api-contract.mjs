@@ -109,10 +109,7 @@ try {
       request(unsupportedSearchPath, tokens.get("LEADER"))
     );
     assert.equal(unsupportedSearch.status, 400);
-    assert.match(
-      (await unsupportedSearch.json()).message,
-      /통계 검색은 지원하지 않습니다/
-    );
+    assert.equal((await unsupportedSearch.json()).code, "STATISTICS_SEARCH_UNSUPPORTED");
   }
 
   const ok = await returnsApi.GET(
@@ -394,7 +391,7 @@ try {
   });
 
   const populated = await returnsApi.GET(
-    request("/api/statistics/returns", tokens.get("LEADER"))
+    request("/api/statistics/returns?fromDate=2026-06-01&toDate=2026-07-31", tokens.get("LEADER"))
   );
   assert.equal(populated.status, 200);
   const populatedBody = await populated.json();
@@ -418,12 +415,17 @@ try {
     1
   );
 
+  const defaultForSnapshot = await returnsApi.GET(
+    request("/api/statistics/returns", tokens.get("LEADER"))
+  );
+  assert.equal(defaultForSnapshot.status, 200);
+  const defaultForSnapshotBody = await defaultForSnapshot.json();
   const snapshotCalculation = {
-    ...populatedBody.data.calculation,
+    ...defaultForSnapshotBody.data.calculation,
   };
   delete snapshotCalculation.delivery;
   const snapshotData = {
-    ...populatedBody.data,
+    ...defaultForSnapshotBody.data,
     calculation: snapshotCalculation,
   };
   const snapshotContract = {
@@ -463,7 +465,7 @@ try {
     storedBody.data.calculation.delivery.status,
     "SNAPSHOT_CURRENT"
   );
-  assert.equal(storedBody.data.overview.receiptCount, 1);
+  assert.equal(storedBody.data.overview.receiptCount, defaultForSnapshotBody.data.overview.receiptCount);
 
   const indexRows = await prisma.$queryRawUnsafe(
     `SELECT indexname

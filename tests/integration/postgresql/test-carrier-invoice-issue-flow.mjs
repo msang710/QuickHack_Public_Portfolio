@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { issueOutputPreviewToken } from "@/quickhack_server/shipment/output-preview-token";
 import {
   createInventoryCatalogFixture,
   createSellableDeviceFixtures,
@@ -93,6 +94,29 @@ function registrationWorkerLease(label) {
     signal: controller.signal,
     assertLeaseActive: async () => undefined,
   };
+}
+
+const labelPreviewSessionId = "carrier-invoice-issue-flow-session";
+const labelPreviewSecret = "carrier-invoice-issue-flow-preview-secret-2026";
+
+async function startPreviewedLabelPrint(labelApi, issueBatchId) {
+  const view = await labelApi.getLogenLabelPrintView({ issueBatchId });
+  return labelApi.startLogenLabelPrint({
+    issueBatchId,
+    printerName: "TSC DA200 Test Queue",
+    userId: null,
+    sessionId: labelPreviewSessionId,
+    previewTokenSecret: labelPreviewSecret,
+    previewToken: issueOutputPreviewToken({
+      userId: 0,
+      sessionId: labelPreviewSessionId,
+      issueBatchId,
+      shipmentListPrintBatchId: view.shipmentListPrintBatchId,
+      revision: view.batchRevision,
+      payloadHash: view.previewPayloadHash,
+      expiresAt: Date.now() + 5 * 60_000,
+    }, labelPreviewSecret),
+  });
 }
 
 async function waitForRegistrationWork(input) {
@@ -822,16 +846,8 @@ async function assertCoupangInvoiceUploadFlow(
     "The registration work did not preserve the required label snapshots."
   );
 
-  const firstPrint = await labelApi.startLogenLabelPrint({
-    issueBatchId: issueBatch.issueBatchId,
-    printerName: "TSC DA200 Test Queue",
-    userId: null,
-  });
-  const duplicateStart = await labelApi.startLogenLabelPrint({
-    issueBatchId: issueBatch.issueBatchId,
-    printerName: "TSC DA200 Test Queue",
-    userId: null,
-  });
+  const firstPrint = await startPreviewedLabelPrint(labelApi, issueBatch.issueBatchId);
+  const duplicateStart = await startPreviewedLabelPrint(labelApi, issueBatch.issueBatchId);
   assert(
     firstPrint.requestKey === duplicateStart.requestKey,
     "Repeating an active label request created a duplicate physical print key."
@@ -917,10 +933,7 @@ async function assertCoupangInvoiceUploadFlow(
     "A late unknown result was allowed to overwrite a completed confirmation."
   );
 
-  const recovery = await labelApi.startLogenLabelPrint({
-    issueBatchId: issueBatch.issueBatchId,
-    printerName: "TSC DA200 Test Queue",
-  });
+  const recovery = await startPreviewedLabelPrint(labelApi, issueBatch.issueBatchId);
   assert(
     recovery.labels.length === 1 &&
       recovery.labels[0].issueItemId === failedIssueItemId,
@@ -982,10 +995,7 @@ async function assertCoupangInvoiceUploadFlow(
     "A manager not-printed decision did not return only the unknown label to recovery."
   );
 
-  const retriedRecovery = await labelApi.startLogenLabelPrint({
-    issueBatchId: issueBatch.issueBatchId,
-    printerName: "TSC DA200 Test Queue",
-  });
+  const retriedRecovery = await startPreviewedLabelPrint(labelApi, issueBatch.issueBatchId);
   const secondUnknown = await labelApi.failLogenLabelPrint({
     issueBatchId: issueBatch.issueBatchId,
     requestKey: retriedRecovery.requestKey,
@@ -1019,10 +1029,7 @@ async function assertCoupangInvoiceUploadFlow(
     expectedPrintAttemptCount: retriedRecovery.printAttemptCount,
   });
 
-  const finalRecovery = await labelApi.startLogenLabelPrint({
-    issueBatchId: issueBatch.issueBatchId,
-    printerName: "TSC DA200 Test Queue",
-  });
+  const finalRecovery = await startPreviewedLabelPrint(labelApi, issueBatch.issueBatchId);
   await labelApi.recordLogenLabelPrintSpooled({
     issueBatchId: issueBatch.issueBatchId,
     requestKey: finalRecovery.requestKey,

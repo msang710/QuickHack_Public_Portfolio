@@ -12,10 +12,12 @@ function delay(milliseconds) {
 
 function deferred() {
   let resolve;
-  const promise = new Promise((resolvePromise) => {
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function backendSnapshot(activeWorkers = []) {
@@ -50,6 +52,7 @@ function fixture(options = {}) {
     },
     quiesceBackend: async () => {
       calls.quiesce += 1;
+      if (options.quiesceError) throw options.quiesceError;
       return backendSnapshot(options.activeWorkers ?? []);
     },
     getBackendStatus: async () => {
@@ -65,6 +68,7 @@ function fixture(options = {}) {
     },
     forceTerminate: async () => {
       calls.force += 1;
+      if (options.forceError) throw options.forceError;
       return { remainingPids: [] };
     },
     verifyStopped: async () => ({
@@ -74,6 +78,28 @@ function fixture(options = {}) {
   });
 
   return { coordinator, calls, finalize };
+}
+
+{
+  const test = fixture({ warningMs: 1_000, quiesceError: new Error("backend unavailable") });
+  const started = test.coordinator.begin("runtime-restart");
+  const outcome = await test.coordinator.waitForOutcome(started.operationId);
+  assert(outcome.phase === "GRACEFUL_STOP_BLOCKED", "Blocked safe stop did not settle its request outcome.");
+  assert(test.coordinator.isActive(), "A blocked shutdown was reported as stopped.");
+  const forced = await test.coordinator.force("second-signal", { bypassWarning: true });
+  assert(forced.forced === true, "An explicit force could not finish the blocked shutdown.");
+  await test.coordinator.waitForCompletion(started.operationId);
+}
+
+{
+  const test = fixture({ warningMs: 1_000 });
+  const started = test.coordinator.begin("runtime-restart");
+  await delay(0);
+  test.finalize.reject(Object.assign(new Error("finalize failed"), { code: "FINALIZE_FAILED" }));
+  const outcome = await test.coordinator.waitForOutcome(started.operationId);
+  assert(outcome.phase === "GRACEFUL_STOP_BLOCKED", "A rejected finalize request did not settle the stop outcome.");
+  assert(outcome.errorMessage === "FINALIZE_FAILED", "The finalize error code was not retained.");
+  await test.coordinator.force("second-signal", { bypassWarning: true });
 }
 
 {
@@ -162,6 +188,33 @@ function fixture(options = {}) {
     "Console force reason was not preserved."
   );
   assert(completed.graceful === false, "Forced shutdown was marked graceful.");
+}
+
+{
+  const test = fixture({ warningMs: 20 });
+  const started = test.coordinator.begin("manual-stop");
+  await delay(40);
+  test.finalize.resolve(backendSnapshot());
+  const completed = await test.coordinator.waitForCompletion(started.operationId);
+  assert(completed.graceful === true, "A warning must not trigger automatic force.");
+  assert(test.calls.force === 0, "The warning timer invoked force termination.");
+}
+
+{
+  const test = fixture({ warningMs: 10, forceError: new Error("force failed") });
+  test.coordinator.begin("manual-stop");
+  await delay(20);
+  await assertRejects(test.coordinator.force("console-action"), "force failed");
+  const state = test.coordinator.getState();
+  assert(state.phase === "FAILED" && !state.forced, "Failed force was reported as successful.");
+  test.finalize.resolve(backendSnapshot());
+  await test.coordinator.waitForCompletion(state.operationId);
+}
+
+async function assertRejects(promise, message) {
+  try { await promise; }
+  catch (error) { assert(error.message === message, `Unexpected error: ${error.message}`); return; }
+  throw new Error(`Expected rejection: ${message}`);
 }
 
 console.log(

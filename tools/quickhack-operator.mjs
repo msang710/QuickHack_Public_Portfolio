@@ -12,7 +12,7 @@ import {
 import { createQuickHackOperator } from "./quickhack-operator-core.mjs";
 import { readPackageRuntimeIdentitySync } from "../quickhack_shared/core/package-runtime-identity.mjs";
 
-function parseArguments(argv) {
+export function parseArguments(argv) {
   if (argv.length === 0) throw new TypeError("A QuickHack operator command is required.");
   const input = {
     command: argv[0],
@@ -72,9 +72,17 @@ export function createDefaultQuickHackOperator(options = {}) {
       });
     },
   });
+  const applicationCredentials = process.platform === "linux" ? Object.freeze({
+    async ensure(input) {
+      const { ensureLinuxApplicationCredentials } = await import("./platform/linux/application-credential-bootstrap.mjs");
+      const runtimeConfig = readServerRuntimeConfigSync({ configPath: input.runtimeConfigPath, kind: "operational" }).config;
+      return ensureLinuxApplicationCredentials(runtimeConfig);
+    },
+  }) : null;
   return createQuickHackOperator({
     runtimeConfig: (input) => readServerRuntimeConfigSync({ configPath: input.runtimeConfigPath, kind: "operational" }).config,
     postgresqlService,
+    applicationCredentials,
     oneShot,
     directOneShot,
     applicationService: operatorPlatform.serviceLifecycle,
@@ -88,6 +96,7 @@ export function createDefaultQuickHackOperator(options = {}) {
 async function main() {
   const result = await createDefaultQuickHackOperator().execute(parseArguments(process.argv.slice(2)));
   process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (result.state === "IN_PROGRESS") process.exitCode = 2;
 }
 
 if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {

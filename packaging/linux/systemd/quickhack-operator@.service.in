@@ -7,7 +7,7 @@ After=@QUICKHACK_POSTGRESQL_UNIT@
 Type=oneshot
 User=root
 Group=root
-ExecStart=@QUICKHACK_NODE_EXECUTABLE@ @QUICKHACK_OPERATOR_ENTRY@ run-one-shot --operation=%i --runtime-config @QUICKHACK_RUNTIME_CONFIG@
+ExecStart=@QUICKHACK_NODE_EXECUTABLE@ @QUICKHACK_OPERATOR_ENTRY@ run-one-shot --operation %i --runtime-config @QUICKHACK_RUNTIME_CONFIG@
 @QUICKHACK_OPERATOR_CREDENTIAL_DIRECTIVES@
 NoNewPrivileges=yes
 PrivateTmp=yes

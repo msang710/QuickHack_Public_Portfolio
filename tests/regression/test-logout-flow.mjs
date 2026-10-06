@@ -36,7 +36,7 @@ await assert.rejects(
         }),
       "로그아웃하지 못했습니다."
     ),
-  /중앙 서버에 연결할 수 없습니다/
+  /로그아웃하지 못했습니다/
 );
 
 await assert.rejects(
@@ -51,7 +51,16 @@ await assert.rejects(
         }),
       "로그아웃하지 못했습니다."
     ),
-  /적용됐는지 확인할 수 없습니다/
+  /로그아웃하지 못했습니다/
+);
+
+await assert.rejects(
+  () =>
+    requestQuickHackLogout(
+      async () => response(503, { ok: false, message: "기존 서버 오류" }),
+      "로그아웃하지 못했습니다."
+    ),
+  /기존 서버 오류/
 );
 
 await assert.rejects(

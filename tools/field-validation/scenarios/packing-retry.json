@@ -1,0 +1,21 @@
+{
+  "runId": "run-local-001",
+  "seed": "contest-demo",
+  "scenarioId": "pack-retry",
+  "environment": "isolated",
+  "networkProfile": "baseline",
+  "baseUrl": "http://127.0.0.1:31337",
+  "timeoutMs": 3000,
+  "actions": [
+    { "id": "pack", "method": "POST", "path": "/api/mobile/packing-check", "expectedCode": "MATCH", "body": { "scannedValues": ["{{ORDER_ID}}", "{{PG_NO}}"] } },
+    { "id": "duplicate", "method": "POST", "path": "/api/mobile/packing-check", "expectedCode": "ALREADY_PACKED", "body": { "scannedValues": ["{{ORDER_ID}}", "{{PG_NO}}"] } }
+  ],
+  "snapshotPath": "/_field/snapshot",
+  "expectedState": {
+    "orderId": "{{ORDER_ID}}",
+    "pgNo": "{{PG_NO}}",
+    "inventoryStatus": "PACKED",
+    "transitions": 1,
+    "auditCount": 2
+  }
+}
