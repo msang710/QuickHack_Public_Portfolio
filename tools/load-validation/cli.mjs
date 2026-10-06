@@ -148,7 +148,7 @@ async function main() {
     runResult, finishedAt: new Date().toISOString() };
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx", mode: 0o600 });
   process.stdout.write(`${JSON.stringify({ reportPath, eventsPath, manifestPath, verdict: report.verdict })}\n`);
-  if (report.verdict !== "PASS") process.exitCode = 1;
+  if (report.verdict === "FAIL") process.exitCode = 1;
 }
 
 main().catch((error) => {

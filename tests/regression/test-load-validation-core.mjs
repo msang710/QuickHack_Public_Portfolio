@@ -42,7 +42,16 @@ test("report requires load coverage, trace evidence, duplicate rejection, and in
   ];
   assert.equal(summarizeLoadRun(profile, "tiny", events).verdict, "INCONCLUSIVE");
   assert.equal(summarizeLoadRun(profile, "tiny", events, { verdict: "PASS" }).verdict, "PASS");
+  events[2].durationMs = profile.criteria.readP95Ms + 1;
+  const targetMiss = summarizeLoadRun(profile, "tiny", events, { verdict: "PASS" });
+  assert.equal(targetMiss.verdict, "TARGET_MISSED");
+  assert.deepEqual(targetMiss.fatalReasons, []);
+  events[2].durationMs = 12;
   assert.equal(summarizeLoadRun(profile, "tiny", events, { verdict: "PASS", findings: { packedActiveCount: 0 } }, { nextPack: 1 }).verdict, "FAIL");
   events[4].duplicateRejected = false;
   assert.equal(summarizeLoadRun(profile, "tiny", events, { verdict: "PASS" }).verdict, "FAIL");
+  events[4].duplicateRejected = true;
+  events[2].outcome = "TIMEOUT";
+  events[3].outcome = "TIMEOUT";
+  assert.deepEqual(summarizeLoadRun(profile, "tiny", events, { verdict: "PASS" }).fatalReasons, ["NO_SUCCESSFUL_REQUESTS"]);
 });

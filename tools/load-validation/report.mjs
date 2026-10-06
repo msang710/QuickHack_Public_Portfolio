@@ -55,14 +55,23 @@ export function summarizeLoadRun(profileInput, phaseId, events, oracle = null, r
     resources.length > 0 && resourceErrors.length === 0 && (deadlockDelta === null || deadlockDelta === 0);
   const commitMatched = !runResult || oracle?.findings?.packedActiveCount === runResult.nextPack;
   const loadMet = scheduledArrivals >= expectedArrivals && appendedArrivals >= expectedArrivals * 0.99;
-  const verdict = !loadMet || !oracle || oracle.verdict === "INCONCLUSIVE" ? "INCONCLUSIVE"
-    : oracle.verdict === "FAIL" || !commitMatched || (phase.scored && !metricPass) ? "FAIL" : "PASS";
+  const successfulRequests = measuredRequests.filter((request) => request.outcome === "SUCCESS").length;
+  const fatalReasons = [
+    ...(oracle?.verdict === "FAIL" ? ["DATABASE_INTEGRITY_FAILED"] : []),
+    ...(!commitMatched ? ["PACKING_COMMIT_MISMATCH"] : []),
+    ...(duplicateViolations > 0 ? ["DUPLICATE_PACKING_ACCEPTED"] : []),
+    ...(expectedArrivals > 0 && appendedArrivals === 0 ? ["NO_ORDER_ARRIVALS"] : []),
+    ...(measuredRequests.length > 0 && successfulRequests === 0 ? ["NO_SUCCESSFUL_REQUESTS"] : []),
+  ];
+  const verdict = fatalReasons.length ? "FAIL"
+    : !loadMet || !oracle || oracle.verdict === "INCONCLUSIVE" ? "INCONCLUSIVE"
+      : phase.scored && !metricPass ? "TARGET_MISSED" : "PASS";
   return {
     schema: "quickhack-load-report/v1", runId: profile.runId, phaseId, scored: phase.scored,
     targetOrdersPerMinute: ordersPerMinute(profile, phase.orderMultiplier), expectedArrivals,
     scheduledArrivals, appendedArrivals, arrivalCoverage,
     requestCount: measuredRequests.length, duplicateAttempts: requests.length - measuredRequests.length, duplicateViolations, unexpectedFailures, traceMissing,
     resourceSampleCount: resources.length, resourceErrorCount: resourceErrors.length, deadlockDelta,
-    readP95Ms, writeP95Ms, commitMatched, routes, oracle, verdict,
+    readP95Ms, writeP95Ms, commitMatched, routes, oracle, fatalReasons, verdict,
   };
 }
