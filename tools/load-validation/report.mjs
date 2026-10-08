@@ -72,6 +72,11 @@ export function summarizeLoadRun(profileInput, phaseId, events, oracle = null, r
     scheduledArrivals, appendedArrivals, arrivalCoverage,
     requestCount: measuredRequests.length, duplicateAttempts: requests.length - measuredRequests.length, duplicateViolations, unexpectedFailures, traceMissing,
     resourceSampleCount: resources.length, resourceErrorCount: resourceErrors.length, deadlockDelta,
+    workerStatesAtEnd: resources.at(-1)?.workers ?? [],
+    syncCursorsAtEnd: resources.at(-1)?.syncCursors ?? [],
+    arrivalLagSampleCount: oracle?.findings?.arrivalLagSampleCount ?? 0,
+    arrivalLagP95Ms: oracle?.findings?.arrivalLagP95Ms ?? null,
+    arrivalLagMaxMs: oracle?.findings?.arrivalLagMaxMs ?? null,
     readP95Ms, writeP95Ms, commitMatched, routes, oracle, fatalReasons, verdict,
   };
 }

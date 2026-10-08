@@ -48,6 +48,7 @@ export type RegisteredWorker = {
   type: string;
   defaultIntervalSeconds?: number;
   defaultScheduleEnabled?: boolean;
+  inheritScheduleFromWorkerKey?: string;
   scheduleRequired?: boolean;
   dailyScheduleKstTime?: `${number}${number}:${number}${number}`;
   initialScheduleMode?: "IMMEDIATE" | "NEXT_SCHEDULE";

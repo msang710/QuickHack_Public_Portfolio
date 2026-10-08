@@ -73,6 +73,28 @@ export async function verifyLoadDatabases(profileInput, { serverUrl, coupangUrl,
     let serverOnly = 0;
     for (const id of mockIds) if (!serverIds.has(id)) mockOnly += 1;
     for (const id of serverIds) if (!mockIds.has(id)) serverOnly += 1;
+    const [serverFirstSeen, mockCreated] = await Promise.all([
+      server.pool.query("SELECT external_order_id AS id, created_at AS timestamp FROM coupang_order_raw"),
+      coupang.pool.query("SELECT order_id AS id, ordered_at AS timestamp FROM mock_orders"),
+    ]);
+    const initialIds = new Set(Array.from(
+      { length: plan.counts.totalOrderCount },
+      (_, index) => plan.order(index).orderId
+    ));
+    const mockCreatedAt = new Map(
+      mockCreated.rows.map((row) => [row.id, Date.parse(row.timestamp)])
+    );
+    const arrivalLags = serverFirstSeen.rows
+      .filter((row) => !initialIds.has(row.id) && mockCreatedAt.has(row.id))
+      .map((row) => new Date(row.timestamp).getTime() - mockCreatedAt.get(row.id))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
+    const arrivalLagP95Ms = arrivalLags.length
+      ? arrivalLags[Math.ceil(arrivalLags.length * 0.95) - 1]
+      : null;
+    const arrivalLagMaxMs = arrivalLags.length
+      ? arrivalLags.at(-1)
+      : null;
     const malformedActive = await server.pool.query(`
       SELECT count(*)::int AS value FROM inventory
       WHERE pg_no >= $1 AND pg_no <= $2 AND inventory_status NOT IN ('PACKING','PACKED')`, [
@@ -88,6 +110,9 @@ export async function verifyLoadDatabases(profileInput, { serverUrl, coupangUrl,
       skuCount, deviceCount, inventoryCount, movementCount, serverOrderCount, workItemCount,
       mockSkuCount, mockOrderCount, logenShipmentCount: logenCount,
       missingInitialServer, missingInitialWork, missingInitialMock, mockOnly, serverOnly,
+      arrivalLagSampleCount: arrivalLags.length,
+      arrivalLagP95Ms,
+      arrivalLagMaxMs,
       ledger, malformedActiveInventoryCount: malformedActive.rows[0].value,
       duplicateActiveAllocationCount: duplicateAllocation.rows[0].value, packedActiveCount: packed.rows[0].value,
     };

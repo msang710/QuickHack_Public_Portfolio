@@ -8,6 +8,10 @@ import {
   type DatabaseDateTime,
 } from "@/quickhack_server/core/database/time-boundary";
 import { prisma } from "@/quickhack_server/core/prisma";
+import {
+  lockAggregateKey,
+  runRetriableMeasuredTransaction,
+} from "@/quickhack_server/core/database/aggregate-command";
 import { setOperationTraceField } from "@/quickhack_server/observability/operation-trace";
 import { runMeasuredTransaction } from "@/quickhack_server/observability/transaction-trace";
 import { getSalesOfferMatchingDefinition } from "@/quickhack_server/catalog/sales-offer-service";
@@ -33,6 +37,7 @@ import {
   runClaimedIntegrationProjection,
 } from "@/quickhack_server/integration/projection-service";
 import { validateCoupangOrdersheetPage } from "@/quickhack_server/sales-channel/coupang/ordersheet-schema";
+import { recentOrdersheetWindows } from "@/quickhack_server/sales-channel/coupang/recent-order-windows";
 import {
   validateCoupangExchangePage,
   validateCoupangReturnPage,
@@ -104,6 +109,8 @@ import {
 import { runtimeConfigService } from "@/quickhack_shared/core/runtime";
 import {
   addSeconds,
+  formatKstDate,
+  formatKstSqlDateTime,
   nowKstSqlDateTime,
   parseKstSqlDateTime,
   quickHackClock,
@@ -133,6 +140,7 @@ const RETURN_REQUEST_RECEIPT_TYPES = ["RETURN", "CANCEL"] as const;
 const SYNC_PAGE_TRANSACTION_MAX_WAIT_MS = 10_000;
 const SYNC_PAGE_TRANSACTION_TIMEOUT_MS = 60_000;
 const ACCEPT_ORDER_SYNC_STATUSES = ["ACCEPT"] as const;
+const ORDER_RECONCILIATION_RESOURCE = "ordersheets.reconciliation";
 const PRE_SHIPMENT_VERIFY_ORDER_STATUSES = ["INSTRUCT", "DEPARTURE"] as const;
 const SHIPMENT_STATUS_SYNC_STATUSES = [
   "DELIVERING",
@@ -2249,7 +2257,7 @@ async function markSyncFailure(input: SyncCursorResultInput & { error: unknown }
       resource: input.resource,
       status_filter: input.statusFilter,
       last_window_from: parseKstSqlDateTime(input.windowFrom),
-      last_window_to: parseKstSqlDateTime(input.windowTo),
+      last_window_to: null,
       next_token: input.nextToken ?? null,
       last_failure_at: input.timestamp,
       last_error_code: syncErrorCode(input.error),
@@ -2258,8 +2266,6 @@ async function markSyncFailure(input: SyncCursorResultInput & { error: unknown }
       updated_at: input.timestamp,
     },
     update: {
-      last_window_from: parseKstSqlDateTime(input.windowFrom),
-      last_window_to: parseKstSqlDateTime(input.windowTo),
       next_token: input.nextToken ?? null,
       last_failure_at: input.timestamp,
       last_error_code: syncErrorCode(input.error),
@@ -2418,6 +2424,9 @@ async function syncOrdersheetStatuses(input: {
   statuses: readonly string[];
   createdAtFrom: string;
   createdAtTo: string;
+  cursorWindowFrom?: string;
+  cursorWindowTo?: string;
+  searchType?: "timeFrame";
   cutoffSqlDateTime?: string | null;
   reason?: string;
   workerLease?: WorkerLeaseGuard;
@@ -2455,7 +2464,8 @@ async function syncOrdersheetStatuses(input: {
           periodFrom: input.createdAtFrom,
           periodTo: input.createdAtTo,
           pageToken: nextToken,
-          maxPerPage: ORDERSHEET_PAGE_SIZE,
+          maxPerPage:
+            input.searchType === "timeFrame" ? null : ORDERSHEET_PAGE_SIZE,
           workerJobId: input.workerLease?.workerJobId ?? null,
           projectionRevision: observation.revision,
           requestStartedAt,
@@ -2470,9 +2480,13 @@ async function syncOrdersheetStatuses(input: {
             {
               status,
               nextToken,
-              maxPerPage: ORDERSHEET_PAGE_SIZE,
+              maxPerPage:
+                input.searchType === "timeFrame"
+                  ? undefined
+                  : ORDERSHEET_PAGE_SIZE,
               createdAtFrom: input.createdAtFrom,
               createdAtTo: input.createdAtTo,
+              searchType: input.searchType,
             },
             credentialContext,
             { signal: input.workerLease?.signal }
@@ -2525,10 +2539,18 @@ async function syncOrdersheetStatuses(input: {
             processingStartedAt,
           });
 
-          const pageResult = await runMeasuredTransaction(
+          const pageResult = await runRetriableMeasuredTransaction(
             prisma,
             "coupang.ordersheet-page",
             async (tx) => {
+              // Recent and reconciliation workers may project overlapping orders.
+              // Hold this lock only for one page so neither worker keeps mapping
+              // rows locked while the other acquires them in a different order.
+              await lockAggregateKey(tx, {
+                namespace: "COUPANG_ORDERSHEET_PAGE",
+                key: COUPANG_CHANNEL,
+              });
+              throwIfWorkerLeaseAborted(input.workerLease);
               let pageOrders = 0;
               let pageShipments = 0;
               let pageItems = 0;
@@ -2582,6 +2604,7 @@ async function syncOrdersheetStatuses(input: {
             {
               maxWait: SYNC_PAGE_TRANSACTION_MAX_WAIT_MS,
               timeout: SYNC_PAGE_TRANSACTION_TIMEOUT_MS,
+              maxAttempts: 3,
             }
           );
 
@@ -2628,8 +2651,8 @@ async function syncOrdersheetStatuses(input: {
       await markSyncSuccess({
         resource: input.resource,
         statusFilter: status,
-        windowFrom: input.createdAtFrom,
-        windowTo: input.createdAtTo,
+        windowFrom: input.cursorWindowFrom ?? input.createdAtFrom,
+        windowTo: input.cursorWindowTo ?? input.createdAtTo,
         timestamp: databaseNow(),
       });
     } catch (error) {
@@ -2637,8 +2660,8 @@ async function syncOrdersheetStatuses(input: {
         await markSyncFailure({
           resource: input.resource,
           statusFilter: status,
-          windowFrom: input.createdAtFrom,
-          windowTo: input.createdAtTo,
+          windowFrom: input.cursorWindowFrom ?? input.createdAtFrom,
+          windowTo: input.cursorWindowTo ?? input.createdAtTo,
           nextToken,
           timestamp: databaseNow(),
           error,
@@ -3233,32 +3256,159 @@ async function syncReturnWithdrawals(input: {
   };
 }
 
-export async function syncCoupangAcceptOrders(
+export async function syncCoupangOrderReconciliation(
   input: { reason?: string; workerLease?: WorkerLeaseGuard } = {},
   dependencies: CoupangReadSyncDependencies = {}
 ) {
+  const now = quickHackClock.nowDate();
+  const [reconciliationCursor, legacyCursor] = await Promise.all([
+    prisma.channel_sync_cursors.findUnique({
+      where: {
+        channel_resource_status_filter: {
+          channel: COUPANG_CHANNEL,
+          resource: ORDER_RECONCILIATION_RESOURCE,
+          status_filter: "ACCEPT",
+        },
+      },
+    }),
+    prisma.channel_sync_cursors.findUnique({
+      where: {
+        channel_resource_status_filter: {
+          channel: COUPANG_CHANNEL,
+          resource: "ordersheets.accept",
+          status_filter: "ACCEPT",
+        },
+      },
+    }),
+  ]);
+  const previousCoverage = reconciliationCursor?.last_window_to ??
+    (reconciliationCursor?.last_window_from
+      ? addSeconds(reconciliationCursor.last_window_from, ONE_DAY_SECONDS)
+      : null) ?? legacyCursor?.last_success_at ?? now;
+  const boundedPreviousCoverage = new Date(
+    Math.min(previousCoverage.getTime(), now.getTime())
+  );
+  const from = addSeconds(boundedPreviousCoverage, -ONE_DAY_SECONDS);
+  const to = new Date(
+    Math.min(
+      now.getTime(),
+      addSeconds(boundedPreviousCoverage, ONE_DAY_SECONDS).getTime()
+    )
+  );
+  const recoveringLongGap =
+    now.getTime() - boundedPreviousCoverage.getTime() >
+    ONE_DAY_SECONDS * 1000;
+  const statuses = [
+    ...PRE_SHIPMENT_VERIFY_ORDER_STATUSES,
+    ...SHIPMENT_STATUS_SYNC_STATUSES,
+    "NONE_TRACKING",
+    ...ACCEPT_ORDER_SYNC_STATUSES,
+  ];
+  await prisma.channel_sync_cursors.upsert({
+    where: {
+      channel_resource_status_filter: {
+        channel: COUPANG_CHANNEL,
+        resource: ORDER_RECONCILIATION_RESOURCE,
+        status_filter: "ACCEPT",
+      },
+    },
+    create: {
+      channel: COUPANG_CHANNEL,
+      resource: ORDER_RECONCILIATION_RESOURCE,
+      status_filter: "ACCEPT",
+      last_window_from: from,
+    },
+    update: {},
+  });
   const credentialScope = createCoupangReadSyncCredentialScope(dependencies);
-  const window = syncWindow({ hours: 24 });
   const ordersheetSummary = await syncOrdersheetStatuses({
-    resource: "ordersheets.accept",
-    statuses: ACCEPT_ORDER_SYNC_STATUSES,
-    createdAtFrom: window.fromDate,
-    createdAtTo: window.toDate,
-    cutoffSqlDateTime: window.cutoffSqlDateTime,
+    resource: ORDER_RECONCILIATION_RESOURCE,
+    statuses,
+    createdAtFrom: formatKstDate(from),
+    createdAtTo: formatKstDate(to),
+    cursorWindowFrom: formatKstSqlDateTime(from),
+    cursorWindowTo: formatKstSqlDateTime(to),
+    cutoffSqlDateTime: formatKstSqlDateTime(from),
     reason: input.reason,
     workerLease: input.workerLease,
     credentialScope,
     dependencies,
+  }).catch(async (error) => {
+    if (!isWorkerShutdownRequestedError(error)) {
+      await markSyncFailure({
+        resource: ORDER_RECONCILIATION_RESOURCE,
+        statusFilter: "ACCEPT",
+        windowFrom: formatKstSqlDateTime(from),
+        windowTo: formatKstSqlDateTime(to),
+        timestamp: databaseNow(),
+        error,
+      });
+    }
+    throw error;
   });
   await assertWorkerLeaseActive(input.workerLease);
-  const expiredWorkItems = await expireOldMatchingWorkItems(
-    window.cutoffSqlDateTime,
-    ordersheetSummary.syncedAt
-  );
+  const caughtUp = now.getTime() - to.getTime() <= 60_000;
+  const expiredWorkItems = caughtUp
+    ? await expireOldMatchingWorkItems(
+        formatKstSqlDateTime(addSeconds(now, -ONE_DAY_SECONDS)),
+        ordersheetSummary.syncedAt
+      )
+    : 0;
 
   return {
     ...ordersheetSummary,
     expiredWorkItems,
+    coveredThrough: formatKstSqlDateTime(to),
+    backlogSeconds: Math.max(0, Math.floor((now.getTime() - to.getTime()) / 1000)),
+    recoveringLongGap,
+    caughtUp,
+  };
+}
+
+export const syncCoupangAcceptOrders = syncCoupangOrderReconciliation;
+
+export async function syncCoupangRecentAcceptOrders(
+  input: { reason?: string; workerLease?: WorkerLeaseGuard } = {},
+  dependencies: CoupangReadSyncDependencies = {}
+) {
+  const credentialScope = createCoupangReadSyncCredentialScope(dependencies);
+  const windows = recentOrdersheetWindows(quickHackClock.nowDate());
+  const summaries = [];
+
+  for (const window of windows) {
+    await assertWorkerLeaseActive(input.workerLease);
+    summaries.push(await syncOrdersheetStatuses({
+      resource: "ordersheets.accept.recent",
+      statuses: ACCEPT_ORDER_SYNC_STATUSES,
+      createdAtFrom: window.from,
+      createdAtTo: window.to,
+      searchType: "timeFrame",
+      reason: input.reason,
+      workerLease: input.workerLease,
+      credentialScope,
+      dependencies,
+    }));
+  }
+
+  const last = summaries.at(-1);
+  if (!last) throw new Error("Recent Coupang order sync has no query window.");
+
+  return {
+    ...last,
+    syncStartedAt: summaries[0].syncStartedAt,
+    createdAtFrom: windows[0].from,
+    createdAtTo: windows.at(-1)?.to ?? windows[0].to,
+    intervals: windows.length,
+    pages: summaries.reduce((total, summary) => total + summary.pages, 0),
+    orders: summaries.reduce((total, summary) => total + summary.orders, 0),
+    shipments: summaries.reduce((total, summary) => total + summary.shipments, 0),
+    items: summaries.reduce((total, summary) => total + summary.items, 0),
+    skippedOutsideWindow: summaries.reduce(
+      (total, summary) => total + summary.skippedOutsideWindow, 0
+    ),
+    staleSnapshotCount: summaries.reduce(
+      (total, summary) => total + summary.staleSnapshotCount, 0
+    ),
   };
 }
 

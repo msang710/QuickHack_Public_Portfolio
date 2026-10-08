@@ -64,7 +64,7 @@ async function createProjectionFixtures(ledgerApi, writeRules) {
     prisma,
     ledgerApi,
     catalog,
-    { count: shipmentDefinitions.length * 2, timestamp }
+    { count: shipmentDefinitions.length * 2 + 2, timestamp }
   );
   const orders = [
     {
@@ -165,7 +165,7 @@ async function createProjectionFixtures(ledgerApi, writeRules) {
     }
   }
 
-  return expectedRows;
+  return { expectedRows, extraDevices: devices.slice(-2), timestamp };
 }
 
 function findProjectedRow(result, expected) {
@@ -252,6 +252,52 @@ function assertDeliveringProjection(result, expectedRows) {
   }
 }
 
+function assertAllOrderSummary(result, expected) {
+  for (const [field, value] of Object.entries(expected)) {
+    assert(
+      result.summary[field] === value,
+      `All-orders summary ${field} was ${result.summary[field]}, expected ${value}.`
+    );
+  }
+}
+
+async function createSummaryOrder({ orderId, shipmentId, vendorId, allocationVendorId, pgNo, allocationStatus, workStatus, timestamp }) {
+  await prisma.coupang_order_raw.create({
+    data: {
+      external_order_id: orderId,
+      external_shipment_id: shipmentId,
+      external_order_status: "ACCEPT",
+      ordered_at: timestamp,
+      created_at: timestamp,
+      updated_at: timestamp,
+    },
+  });
+  await prisma.order_matching_work_queue.create({
+    data: {
+      channel: "COUPANG",
+      external_order_id: orderId,
+      external_shipment_id: shipmentId,
+      external_vendor_item_id: vendorId,
+      ordered_quantity: 1,
+      matchable_quantity: 1,
+      work_status: workStatus,
+      created_at: timestamp,
+      updated_at: timestamp,
+    },
+  });
+  await prisma.match_worker_allocation.create({
+    data: {
+      external_order_id: orderId,
+      external_shipment_id: shipmentId,
+      external_vendor_item_id: allocationVendorId,
+      pg_no: pgNo,
+      allocation_status: allocationStatus,
+      created_at: timestamp,
+      updated_at: timestamp,
+    },
+  });
+}
+
 try {
   ({ prisma } = await import("@/quickhack_server/core/prisma"));
   const shipmentApi = await import(
@@ -263,12 +309,17 @@ try {
   const writeRules = await import(
     "@/quickhack_shared/inventory/inventory-write-rules"
   );
-  const expectedRows = await createProjectionFixtures(ledgerApi, writeRules);
+  const { expectedRows, extraDevices, timestamp } = await createProjectionFixtures(ledgerApi, writeRules);
 
-  assertExactShipmentProjection(
-    await shipmentApi.listShipmentOrderItems({ mode: "all", limit: 100 }),
-    expectedRows
-  );
+  const allOrders = await shipmentApi.listShipmentOrderItems({ mode: "all", limit: 100 });
+  assertExactShipmentProjection(allOrders, expectedRows);
+  assertAllOrderSummary(allOrders, {
+    orderCount: 2,
+    orderItemCount: 8,
+    matchedOrderItemCount: 8,
+    fullyMatchedOrderItemCount: 8,
+    matchedDeviceCount: 8,
+  });
   assertMatchedProjection(
     await shipmentApi.listShipmentOrderItems({ mode: "matched", limit: 100 }),
     expectedRows
@@ -277,8 +328,73 @@ try {
     await shipmentApi.listDeliveringShipmentItems({ limit: 100 }),
     expectedRows
   );
+
+  const duplicateTarget = expectedRows[0];
+  await prisma.match_worker_allocation.create({
+    data: {
+      external_order_id: duplicateTarget.externalOrderId,
+      external_shipment_id: duplicateTarget.externalShipmentId,
+      external_vendor_item_id: `${duplicateTarget.externalOrderId}-${duplicateTarget.externalShipmentId}-ITEM`,
+      pg_no: extraDevices[0].pgNo,
+      allocation_status: "ALLOCATED",
+      created_at: timestamp,
+      updated_at: timestamp,
+    },
+  });
+  await createSummaryOrder({
+    orderId: "PROJECTION-ORDER-EMPTY-VENDOR",
+    shipmentId: "SHIPMENT-EMPTY-VENDOR",
+    vendorId: "",
+    allocationVendorId: null,
+    pgNo: extraDevices[1].pgNo,
+    allocationStatus: "ALLOCATED",
+    workStatus: "MATCHED",
+    timestamp,
+  });
+  const beforeInsert = await shipmentApi.listShipmentOrderItems({ mode: "all", limit: 2 });
+  assert(beforeInsert.hasMore && beforeInsert.nextCursor, "A stable next-page cursor was not returned.");
+  assertAllOrderSummary(beforeInsert, {
+    orderCount: 3,
+    orderItemCount: 9,
+    matchedOrderItemCount: 9,
+    fullyMatchedOrderItemCount: 9,
+    matchedDeviceCount: 10,
+  });
+
+  await createSummaryOrder({
+    orderId: "PROJECTION-ORDER-INACTIVE",
+    shipmentId: "SHIPMENT-INACTIVE",
+    vendorId: "INACTIVE-VENDOR",
+    allocationVendorId: "INACTIVE-VENDOR",
+    pgNo: extraDevices[1].pgNo,
+    allocationStatus: "CANCELED",
+    workStatus: "UNMATCHED",
+    timestamp,
+  });
+  const afterInsert = await shipmentApi.listShipmentOrderItems({ mode: "all", limit: 2 });
+  assertAllOrderSummary(afterInsert, {
+    orderCount: 4,
+    orderItemCount: 10,
+    matchedOrderItemCount: 9,
+    fullyMatchedOrderItemCount: 9,
+    matchedDeviceCount: 10,
+  });
+  assert(
+    afterInsert.items[0]?.externalOrderId === "PROJECTION-ORDER-INACTIVE",
+    "The fresh first page did not include the inserted order."
+  );
+  const nextPage = await shipmentApi.listShipmentOrderItems({
+    mode: "all",
+    limit: 2,
+    cursor: beforeInsert.nextCursor,
+  });
+  assertAllOrderSummary(nextPage, beforeInsert.summary);
+  assert(
+    nextPage.items.every((row) => row.externalOrderId !== "PROJECTION-ORDER-INACTIVE"),
+    "The inserted order leaked into an existing cursor snapshot."
+  );
   console.log(
-    "Shipment projections preserve exact order/shipment status and receiver data."
+    "Shipment projections and all-orders summary preserve exact counts and cursor snapshots."
   );
 } finally {
   await prisma?.$disconnect();

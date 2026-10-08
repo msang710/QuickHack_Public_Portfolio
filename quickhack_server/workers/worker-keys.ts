@@ -1,5 +1,6 @@
 export const COUPANG_SYNC_WORKER_KEY = {
   acceptOrders: "coupang-accept-order-sync",
+  orderReconciliation: "coupang-order-reconciliation",
   preShipmentVerification: "coupang-pre-shipment-verification-sync",
   preShipmentReturns: "coupang-pre-shipment-return-sync",
   shipmentStatus: "coupang-shipment-status-sync",

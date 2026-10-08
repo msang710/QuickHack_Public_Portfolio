@@ -1522,7 +1522,21 @@ async function ordersheetPage(db, input) {
   const status = pageRequest?.status || input.status || "INSTRUCT";
   const limit = positiveInteger(pageRequest?.limit ?? input.limit, defaultPageSize, maxPageSize);
   const offset = nonNegativeInteger(pageRequest?.offset, 0);
-  const loadWindow = process.env.QUICKHACK_LOAD_TEST_MODE === "1" &&
+  const minuteWindow = input.searchType === "timeFrame";
+  const minuteFrom = minuteWindow ? Date.parse(input.createdAtFrom || "") : NaN;
+  const minuteTo = minuteWindow ? Date.parse(input.createdAtTo || "") : NaN;
+  if (minuteWindow && (
+    !Number.isFinite(minuteFrom) || !Number.isFinite(minuteTo) ||
+    minuteTo < minuteFrom || minuteTo - minuteFrom >= 86_400_000
+  )) {
+    throw new Error("Invalid minute ordersheet window");
+  }
+  const loadWindow = minuteWindow
+    ? {
+        from: new Date(minuteFrom).toISOString(),
+        to: new Date(minuteTo + 60_000).toISOString(),
+      }
+    : process.env.QUICKHACK_LOAD_TEST_MODE === "1" &&
     /^\d{4}-\d{2}-\d{2}$/.test(input.createdAtFrom || "") &&
     /^\d{4}-\d{2}-\d{2}$/.test(input.createdAtTo || "")
       ? {
@@ -1530,20 +1544,32 @@ async function ordersheetPage(db, input) {
         to: new Date(Date.parse(`${input.createdAtTo}T00:00:00+09:00`) + 86_400_000).toISOString(),
       }
       : null;
-  const windowClause = loadWindow ? " AND ordered_at >= ? AND ordered_at < ?" : "";
+  const windowClause = loadWindow
+    ? " AND ordered_at::timestamptz >= ?::timestamptz AND ordered_at::timestamptz < ?::timestamptz"
+    : "";
   const windowArgs = loadWindow ? [loadWindow.from, loadWindow.to] : [];
+  const delayMs = Math.max(0, Number(process.env.QUICKHACK_MOCK_ORDER_VISIBILITY_DELAY_MS) || 0);
+  const visibleThrough = delayMs > 0
+    ? pageRequest?.visibleThrough ?? new Date(Date.now() - delayMs).toISOString()
+    : null;
+  const visibilityClause = visibleThrough
+    ? " AND ordered_at::timestamptz <= ?::timestamptz"
+    : "";
+  const visibilityArgs = visibleThrough ? [visibleThrough] : [];
   const maxId =
     pageRequest?.maxId ??
     Number((await db
-      .prepare(`SELECT COALESCE(MAX(id), 0) AS value FROM mock_orders WHERE status = ?${windowClause}`)
-      .get(status, ...windowArgs)).value);
+      .prepare(`SELECT COALESCE(MAX(id), 0) AS value FROM mock_orders WHERE status = ?${windowClause}${visibilityClause}`)
+      .get(status, ...windowArgs, ...visibilityArgs)).value);
 
   if (
     pageRequest &&
     (!Number.isInteger(pageRequest.maxId) ||
       !Number.isInteger(pageRequest.offset) ||
       !Number.isInteger(pageRequest.limit) ||
-      typeof pageRequest.status !== "string")
+      typeof pageRequest.status !== "string" ||
+      (pageRequest.visibleThrough != null &&
+        typeof pageRequest.visibleThrough !== "string"))
   ) {
     throw new Error("Invalid nextToken");
   }
@@ -1551,11 +1577,11 @@ async function ordersheetPage(db, input) {
   const orders = await db
     .prepare(`
       SELECT * FROM mock_orders
-      WHERE status = ? AND id <= ?${windowClause}
+      WHERE status = ? AND id <= ?${windowClause}${visibilityClause}
       ORDER BY id ASC
       LIMIT ? OFFSET ?
     `)
-    .all(status, maxId, ...windowArgs, limit, offset);
+    .all(status, maxId, ...windowArgs, ...visibilityArgs, limit, offset);
   const itemQuery = db.prepare(`
     SELECT
       items.*,
@@ -1573,8 +1599,8 @@ async function ordersheetPage(db, input) {
     ORDER BY items.id ASC
   `);
   const total = Number((await db
-    .prepare(`SELECT COUNT(*) AS value FROM mock_orders WHERE status = ? AND id <= ?${windowClause}`)
-    .get(status, maxId, ...windowArgs)).value);
+    .prepare(`SELECT COUNT(*) AS value FROM mock_orders WHERE status = ? AND id <= ?${windowClause}${visibilityClause}`)
+    .get(status, maxId, ...windowArgs, ...visibilityArgs)).value);
   const nextOffset = offset + orders.length;
   const nextToken =
     nextOffset < total
@@ -1584,6 +1610,7 @@ async function ordersheetPage(db, input) {
           maxId,
           offset: nextOffset,
           limit,
+          visibleThrough,
         })
       : null;
 
@@ -3351,6 +3378,7 @@ async function handleRequest(request, response, db, generatorConfig, failurePoli
 
     sendMockJson(response, 200, await ordersheetPage(db, {
       status: url.searchParams.get("status") || "INSTRUCT",
+      searchType: url.searchParams.get("searchType"),
       createdAtFrom: url.searchParams.get("createdAtFrom"),
       createdAtTo: url.searchParams.get("createdAtTo"),
       nextToken: url.searchParams.get("nextToken"),

@@ -247,6 +247,7 @@
     "test:coupang-claim-schema": "node --import ./tests/support/register-ts-alias.mjs tests/contracts/test-coupang-claim-schema.mjs",
     "test:coupang-read-sync-recovery": "node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-coupang-read-sync-recovery.mjs",
     "test:coupang-read-sync-credential-context": "node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-coupang-read-sync-credential-context.mjs",
+    "test:coupang-accept-sync-split": "node --import ./tests/support/register-ts-alias.mjs tests/regression/test-coupang-recent-order-windows.mjs && node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-coupang-accept-sync-split.mjs && node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-coupang-worker-lanes.mjs && node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-coupang-order-page-contention.mjs",
     "test:coupang-claim-history": "node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-coupang-claim-history.mjs && npm run test:shipment-address-change-event-ownership",
     "test:shipment-address-change-event-ownership-migration": "npm run test:postgresql-baseline",
     "test:shipment-address-change-event-ownership": "npm run test:shipment-address-change-event-ownership-migration && node --import ./tests/support/register-ts-alias.mjs tests/integration/postgresql/test-shipment-address-change-event-ownership.mjs",

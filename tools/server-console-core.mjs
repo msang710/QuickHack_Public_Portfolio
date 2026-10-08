@@ -29,6 +29,12 @@ import {
 } from "./server-console-qhkey-common.mjs";
 
 const DEFAULT_PORTS = Object.freeze({ console: 2999, backend: 3000, gateway: 3443 });
+
+export function mainServerState({ database, backend, gateway, tlsReady, backendReadiness, coreProcessRunning }) {
+  if (database.state === "ACTIVE" && backend.ok && gateway.ok && tlsReady && backendReadiness.databaseReady === true) return "ACTIVE";
+  return coreProcessRunning || backend.ok || gateway.ok ? "DEGRADED" : "INACTIVE";
+}
+
 const RESTORE_BARRIER_PROTOCOL = "QUICKHACK_POSTGRESQL_RESTORE_BARRIER_V1";
 const RESTORE_BARRIER_FILE_NAME = "postgresql-restore-barrier.json";
 
@@ -728,7 +734,7 @@ export function createServerConsole(input) {
     if (shutdown.isActive()) throw Object.assign(new Error("Shutdown is in progress."), { code: "SHUTDOWN_IN_PROGRESS", statusCode: 409 });
     const started = [];
     try {
-      for (const id of ["backend", "gateway", ...integration.childIds]) {
+      for (const id of ["backend", "gateway"]) {
         const result = await startOne(id);
         if (result.changed) started.push(id);
       }
@@ -765,7 +771,24 @@ export function createServerConsole(input) {
       }
       throw error;
     }
-    return { changed: started.length > 0, message: "QuickHack application is ready.", started, applicationState: "ACTIVE" };
+    // Demonstration simulators are optional and cannot roll back a ready main server.
+    const simulatorFailures = [];
+    for (const id of integration.childIds) {
+      try {
+        const result = await startOne(id);
+        if (result.changed) started.push(id);
+      } catch (error) {
+        simulatorFailures.push({ id, code: error?.code || "UNKNOWN" });
+      }
+    }
+    const failureSummary = simulatorFailures.map(({ id, code }) => `${id} (${code})`).join(", ");
+    return {
+      changed: started.length > 0,
+      message: failureSummary ? `QuickHack application is ready. Simulator startup failed: ${failureSummary}` : "QuickHack application is ready.",
+      started,
+      simulatorFailures,
+      applicationState: "ACTIVE",
+    };
   }
 
   async function stop() {
@@ -787,13 +810,12 @@ export function createServerConsole(input) {
         ? secureHealth(`https://127.0.0.1:${DEFAULT_PORTS.gateway}/__quickhack_tls_health`, tls.paths.rootCaPem)
         : Promise.resolve({ ok: false, status: null, error: "TLS_UNAVAILABLE" }),
       publicObservation(() => callBackend("/api/internal/supervisor/readiness", "GET", undefined, 2_000), "BACKEND_READINESS_UNAVAILABLE"),
-      integration.status({ managed, ownedInstances, config: runtimeConfig }),
+      publicObservation(() => integration.status({ managed, ownedInstances, config: runtimeConfig }), "INTEGRATION_STATUS_UNAVAILABLE"),
     ]);
-    const applicationState = database.state === "ACTIVE" && backend.ok && gateway.ok && tlsReady && backendReadiness.databaseReady === true && integrationStatus.ready
-      ? "ACTIVE"
-      : managed.size > 0 || backend.ok || gateway.ok
-        ? "DEGRADED"
-        : "INACTIVE";
+    const applicationState = mainServerState({
+      database, backend, gateway, tlsReady, backendReadiness,
+      coreProcessRunning: managed.has("backend") || managed.has("gateway"),
+    });
     return {
       flavor,
       runtimeSettings: {

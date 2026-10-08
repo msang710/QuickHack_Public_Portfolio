@@ -98,7 +98,7 @@ function orderPayload(input = {}) {
 function apiResponse(payload, hash) {
   const responsePayload = {
     code: "SUCCESS",
-    data: [payload],
+    data: payload ? [payload] : [],
     nextToken: "",
   };
 
@@ -264,7 +264,10 @@ try {
     { reason: "projection-revision-older" },
     {
       openCredentialContext: credentialContext,
-      async getOrdersheets() {
+      async getOrdersheets(input) {
+        if (input.status !== "ACCEPT") {
+          return apiResponse(null, "older-empty");
+        }
         markOlderReadStarted();
         await olderReadGate;
         return apiResponse(
@@ -280,7 +283,10 @@ try {
     { reason: "projection-revision-newer" },
     {
       openCredentialContext: credentialContext,
-      async getOrdersheets() {
+      async getOrdersheets(input) {
+        if (input.status !== "ACCEPT") {
+          return apiResponse(null, "newer-empty");
+        }
         return apiResponse(
           orderPayload({ receiverName: "Newer receiver", shippingCount: 2 }),
           "newer-response"

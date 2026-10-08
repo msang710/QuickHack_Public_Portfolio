@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pg from "pg";
 import { issueMockCoupangCredential } from "../../../tools/mock-coupang-credential-client.mjs";
 import { createTemporaryDatabase } from "../../support/postgresql-test-scope.mjs";
 
@@ -35,6 +36,7 @@ async function startTestMockServer() {
         NODE_ENV: "test",
         QUICKHACK_TEST_COUPANG_MOCK_DATABASE_URL: databaseScope.databaseUrl,
         COUPANG_MOCK_FAILURE_ENABLED: "false",
+        QUICKHACK_MOCK_ORDER_VISIBILITY_DELAY_MS: "1200",
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -156,7 +158,7 @@ async function applyClaimScenario(input) {
   return response.json();
 }
 
-async function main() {
+async function main(mockDatabaseUrl = null) {
   const first = await issueMockCoupangCredential({ baseUrl });
   const resetResponse = await fetch(
     `${baseUrl}/admin/reset?orderCount=12&returnExchangeCount=8`,
@@ -177,6 +179,82 @@ async function main() {
 
   if (!orderId) {
     throw new Error("Mock ordersheet list did not provide an orderId.");
+  }
+
+  const orderedAt = Date.parse(ordersheetList.data[0].orderedAt);
+  const orderMinute = new Date(Math.floor(orderedAt / 60_000) * 60_000);
+  const kstMinute = (date) =>
+    new Date(date.getTime() + 9 * 60 * 60_000).toISOString().slice(0, 16) +
+    "+09:00";
+  const minuteText = kstMinute(orderMinute);
+  const minuteQuery = new URLSearchParams({
+    createdAtFrom: minuteText,
+    createdAtTo: minuteText,
+    searchType: "timeFrame",
+    status: "ACCEPT",
+  }).toString();
+  const minuteResponse = await signedApiRequest(first, {
+    path: unsignedPath,
+    query: minuteQuery,
+  });
+  assertStatus(minuteResponse, 200, "minute ordersheet query");
+  const minuteOrders = await minuteResponse.json();
+  if (!minuteOrders.data.some((row) => String(row.orderId) === orderId)) {
+    throw new Error("Minute ordersheet query missed an order in its minute.");
+  }
+  const previousMinute = kstMinute(new Date(orderMinute.getTime() - 60_000));
+  const previousQuery = new URLSearchParams({
+    createdAtFrom: previousMinute,
+    createdAtTo: previousMinute,
+    searchType: "timeFrame",
+    status: "ACCEPT",
+  }).toString();
+  const previousResponse = await signedApiRequest(first, {
+    path: unsignedPath,
+    query: previousQuery,
+  });
+  assertStatus(previousResponse, 200, "previous minute ordersheet query");
+  const previousOrders = await previousResponse.json();
+  if (previousOrders.data.some((row) => String(row.orderId) === orderId)) {
+    throw new Error("Minute ordersheet query included an order outside its minute.");
+  }
+  if (mockDatabaseUrl) {
+    const freshOrderTime = new Date();
+    const pool = new pg.Pool({ connectionString: mockDatabaseUrl, max: 1 });
+    try {
+      await pool.query(
+        "UPDATE mock_orders SET ordered_at = $1 WHERE order_id = $2",
+        [freshOrderTime.toISOString(), orderId]
+      );
+    } finally {
+      await pool.end();
+    }
+    const freshMinute = kstMinute(new Date(
+      Math.floor(freshOrderTime.getTime() / 60_000) * 60_000
+    ));
+    const freshQuery = new URLSearchParams({
+      createdAtFrom: freshMinute,
+      createdAtTo: freshMinute,
+      searchType: "timeFrame",
+      status: "ACCEPT",
+    }).toString();
+    const fetchFresh = async () => {
+      const result = await signedApiRequest(first, {
+        path: unsignedPath,
+        query: freshQuery,
+      });
+      assertStatus(result, 200, "delayed minute ordersheet query");
+      return (await result.json()).data.some(
+        (row) => String(row.orderId) === orderId
+      );
+    };
+    if (await fetchFresh()) {
+      throw new Error("Mock exposed the delayed order before its visibility time.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_300));
+    if (!(await fetchFresh())) {
+      throw new Error("Mock did not expose the delayed order after its visibility time.");
+    }
   }
 
   const singleOrdersheetPath =
@@ -534,7 +612,7 @@ async function run() {
   const managedServer = await startTestMockServer();
 
   try {
-    await main();
+    await main(managedServer?.databaseScope.databaseUrl ?? null);
   } finally {
     if (managedServer) {
       if (managedServer.child.exitCode === null) {

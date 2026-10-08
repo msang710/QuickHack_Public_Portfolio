@@ -11,12 +11,19 @@ async function processSample(pid) {
 }
 
 export async function collectResourceSample(pool, pid = null) {
-  const [activity, database, process] = await Promise.all([
+  const [activity, database, workers, syncCursors, process] = await Promise.all([
     pool.query(`SELECT state, count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() GROUP BY state`),
     pool.query(`SELECT numbackends, xact_commit, xact_rollback, blks_read, blks_hit, temp_bytes, deadlocks FROM pg_stat_database WHERE datname=current_database()`),
+    pool.query(`SELECT worker_key, status, started_at, finished_at, last_error_code
+      FROM server_worker_jobs
+      WHERE worker_key IN ('coupang-accept-order-sync', 'coupang-order-reconciliation')`),
+    pool.query(`SELECT resource, status_filter, last_window_to, last_success_at, last_failure_at
+      FROM channel_sync_cursors
+      WHERE channel='COUPANG' AND status_filter='ACCEPT'
+        AND resource IN ('ordersheets.accept.recent', 'ordersheets.reconciliation')`),
     processSample(pid).catch((error) => ({ pid, errorCode: error.code ?? error.name })),
   ]);
-  return { type: "resource", at: new Date().toISOString(), process, database: database.rows[0], connections: activity.rows };
+  return { type: "resource", at: new Date().toISOString(), process, database: database.rows[0], connections: activity.rows, workers: workers.rows, syncCursors: syncCursors.rows };
 }
 
 export async function monitorResources({ pool, pid, write, signal, intervalMs = 1_000 }) {

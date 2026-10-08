@@ -283,7 +283,7 @@ try {
   assert(failedReaderCallCount === 0, "The API was called after credential failure.");
 
   const credentialFailureLog = await prisma.coupang_api_call_log.findFirst({
-    where: { api_name: "ordersheets.accept" },
+    where: { api_name: "ordersheets.reconciliation" },
     orderBy: { coupang_api_call_log_id: "desc" },
   });
   assert(credentialFailureLog, "Credential failure did not create an API call log.");
@@ -335,7 +335,7 @@ try {
 
   const leaseFailureLog = await prisma.coupang_api_call_log.findFirst({
     where: {
-      api_name: "ordersheets.accept",
+      api_name: "ordersheets.reconciliation",
       worker_job_id: leaseWorker.worker_job_id,
     },
     orderBy: { coupang_api_call_log_id: "desc" },

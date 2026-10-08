@@ -96,10 +96,12 @@ async function main() {
     coupang = await openDedicatedPool(urls.coupangUrl, "runner-coupang");
     if (server.identity === coupang.identity) throw new Error("Target and Mock DB identities must differ.");
     if (Math.floor(ordersPerMinute(profile, phase.orderMultiplier) * phase.durationSeconds / 60) > 0) {
-      const worker = await server.pool.query("SELECT status, schedule_enabled, interval_seconds, last_error_code FROM server_worker_jobs WHERE worker_key='coupang-accept-order-sync'");
-      const state = worker.rows[0];
-      if (!state || state.schedule_enabled !== 1 || !state.interval_seconds || ["DISABLED", "FAILED", "RETRY_WAITING"].includes(state.status)) {
-        throw new Error(`Coupang ACCEPT sync worker is not ready for live arrivals: ${JSON.stringify(state ?? null)}.`);
+      const workers = await server.pool.query("SELECT worker_key, status, schedule_enabled, interval_seconds, last_error_code FROM server_worker_jobs WHERE worker_key IN ('coupang-accept-order-sync', 'coupang-order-reconciliation')");
+      for (const workerKey of ['coupang-accept-order-sync', 'coupang-order-reconciliation']) {
+        const state = workers.rows.find((row) => row.worker_key === workerKey);
+        if (!state || state.schedule_enabled !== 1 || !state.interval_seconds || ["DISABLED", "FAILED", "RETRY_WAITING"].includes(state.status)) {
+          throw new Error(`Coupang ACCEPT worker is not ready for live arrivals: ${workerKey} ${JSON.stringify(state ?? null)}.`);
+        }
       }
     }
   } catch (error) {

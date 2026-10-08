@@ -133,7 +133,7 @@ export async function waitForVerifiedApplicationReady(config, runtime, options =
     if (proof?.pid === unitPid) {
       const status = await runtime.applicationStatus(config, proof.secret).catch(() => null);
       const currentPid = await runtime.activeConsolePid(config).catch(() => null);
-      if (currentPid === unitPid && status?.applicationState === "ACTIVE" && status?.runtimeVersion === expectedVersion && status?.runtimeBuildId === expectedBuildId && status?.database?.state === "ACTIVE" && status?.tls?.ready === true && status?.backend?.ok === true && status?.backendReadiness?.databaseReady === true && status?.gateway?.ok === true && status?.integration?.ready === true) return status;
+      if (currentPid === unitPid && status?.applicationState === "ACTIVE" && status?.runtimeVersion === expectedVersion && status?.runtimeBuildId === expectedBuildId && status?.database?.state === "ACTIVE" && status?.tls?.ready === true && status?.backend?.ok === true && status?.backendReadiness?.databaseReady === true && status?.gateway?.ok === true) return status;
     }
     if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, options.delayMs ?? 1_000));
   }

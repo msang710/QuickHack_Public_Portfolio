@@ -317,6 +317,15 @@ export async function ensureRegisteredWorkerJobs() {
   for (const worker of registeredWorkers) {
     const intervalSeconds =
       registeredWorkerIntervalSeconds(worker);
+    const inheritedSchedule = worker.inheritScheduleFromWorkerKey
+      ? await prisma.server_worker_jobs.findUnique({
+          where: { worker_key: worker.inheritScheduleFromWorkerKey },
+          select: { schedule_enabled: true },
+        })
+      : null;
+    const initialScheduleEnabled = worker.inheritScheduleFromWorkerKey
+      ? inheritedSchedule?.schedule_enabled === 1
+      : Boolean(worker.scheduleRequired || worker.defaultScheduleEnabled);
     const unschedulableUpdate = intervalSeconds
       ? {}
       : {
@@ -336,13 +345,9 @@ export async function ensureRegisteredWorkerJobs() {
         worker_name: worker.name,
         worker_type: worker.type,
         status: "IDLE",
-        schedule_enabled:
-          worker.scheduleRequired || worker.defaultScheduleEnabled ? 1 : 0,
+        schedule_enabled: initialScheduleEnabled ? 1 : 0,
         interval_seconds: intervalSeconds,
-        next_run_at:
-          worker.scheduleRequired || worker.defaultScheduleEnabled
-            ? initialNextRunAt
-            : null,
+        next_run_at: initialScheduleEnabled ? initialNextRunAt : null,
         max_attempts: worker.maxAttempts ?? 3,
         created_at: now,
         updated_at: now,
@@ -1071,7 +1076,10 @@ export async function runWorkerJobImmediately(
 
 export async function runDueWorkerJobs(
   triggeredBy: AuthUser | null = null,
-  options: { excludeWorkerKeys?: readonly string[] } = {}
+  options: {
+    excludeWorkerKeys?: readonly string[];
+    includeWorkerKeys?: readonly string[];
+  } = {}
 ) {
   assertWorkerRunsAllowed();
   await ensureRegisteredWorkerJobs();
@@ -1083,6 +1091,14 @@ export async function runDueWorkerJobs(
         .filter(Boolean)
     )
   );
+  const includedWorkerKeys = options.includeWorkerKeys
+    ? new Set(options.includeWorkerKeys)
+    : null;
+  for (const worker of registeredWorkers) {
+    if (includedWorkerKeys && !includedWorkerKeys.has(worker.key)) {
+      excludedWorkerKeys.push(worker.key);
+    }
+  }
   const results = [];
 
   for (let claimedCount = 0; claimedCount < 10; claimedCount += 1) {

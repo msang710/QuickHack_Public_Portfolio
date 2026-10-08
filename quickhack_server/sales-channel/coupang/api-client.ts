@@ -526,7 +526,10 @@ export async function getCoupangOrdersheets(
       createdAtTo: input.createdAtTo ?? date,
       status: input.status ?? "INSTRUCT",
       nextToken: input.nextToken,
-      maxPerPage: input.maxPerPage ?? 50,
+      maxPerPage:
+        input.searchType === "timeFrame"
+          ? input.maxPerPage
+          : input.maxPerPage ?? 50,
       searchType: input.searchType,
     },
     authSession,

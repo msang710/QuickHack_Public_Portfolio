@@ -103,6 +103,14 @@ try {
     true
   );
   assert.equal(
+    isRetryablePostgresqlTransactionError({
+      code: "P2010",
+      meta: { driverAdapterError: { cause: { originalCode: "40P01" } } },
+    }),
+    true,
+    "A raw-query deadlock wrapped by Prisma must retry the page transaction."
+  );
+  assert.equal(
     isRetryablePostgresqlTransactionError({ code: "P2002" }),
     false,
     "Unique violations must not enter the transaction retry loop."
