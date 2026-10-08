@@ -75,10 +75,10 @@ mock_server/database/
 *.qhb
 *.csv
 !README*.csv
-!outputs/hackathon-demo-inventory-20261008/inventory-example.csv
 !demo/
 
 # Local-only development helpers
+/outputs/hackathon-demo-inventory-20261008/
 .codex-remote-attachments/
 .agents/
 tools/dev/
