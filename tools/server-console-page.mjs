@@ -214,6 +214,15 @@ export function renderRestoredServerConsolePage({
       node.className = "pill " + (running ? (healthy ? "ok" : "warn") : "off");
       node.textContent = running ? onText : offText;
     }
+    const logTimeFormatter = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "Asia/Seoul",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    });
+    function formatLogTime(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value : logTimeFormatter.format(date) + " KST";
+    }
     function renderLogs() {
       const visible = logEntries.filter((entry) => {
         if (!activeLog) return true;
@@ -223,7 +232,7 @@ export function renderRestoredServerConsolePage({
       });
       const node = $("logs");
       node.textContent = visible.length
-        ? visible.map((entry) => entry.at + " [" + entry.server + "] " + entry.line).join("\\n")
+        ? visible.map((entry) => formatLogTime(entry.at) + " [" + entry.server + "] " + entry.line).join("\\n")
         : noLogs;
       node.scrollTop = node.scrollHeight;
     }
