@@ -3,6 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { PrismaClient } from "../generated/prisma/client.ts";
 import { resolvePostgresqlConnectionStringSync } from "../quickhack_server/core/database/postgresql-credential.mjs";
+import { prismaUtcConnectionString } from "../quickhack_server/core/database/postgresql-prisma-session.mjs";
 
 const { Pool } = pg;
 
@@ -21,7 +22,7 @@ export function createPrismaClient(options = {}) {
     applicationName: options.applicationName ?? "quickhack-tool",
   });
   const pool = new Pool({
-    connectionString,
+    connectionString: prismaUtcConnectionString(connectionString),
     max: 2,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 5_000,

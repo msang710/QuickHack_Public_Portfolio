@@ -1,6 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
+import { prismaUtcConnectionString } from "./postgresql-prisma-session.mjs";
 
 const { Pool } = pg;
 
@@ -30,7 +31,7 @@ export function createPostgresqlPrismaClient(
   options: PostgresqlPrismaClientOptions
 ) {
   const pool = new Pool({
-    connectionString: options.connectionString,
+    connectionString: prismaUtcConnectionString(options.connectionString),
     application_name: options.applicationName,
     max: POSTGRESQL_POOL_POLICY.max,
     connectionTimeoutMillis: POSTGRESQL_POOL_POLICY.connectionTimeoutMillis,
