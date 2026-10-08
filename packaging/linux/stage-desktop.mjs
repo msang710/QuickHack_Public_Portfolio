@@ -54,7 +54,7 @@ if [ -f "${config.runtimeConfig}" ]; then
 else
   action=setup
 fi
-if ! /usr/bin/node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync("${config.applicationRoot}/quickhack-package.json","utf8"));fetch("http://127.0.0.1:2999/api/readiness", {signal:AbortSignal.timeout(5000)}).then(r=>r.json()).then(s=>process.exit(s.applicationState==="ACTIVE"&&s.runtimeBuildId===m.contentInventorySha256&&s.database?.state==="ACTIVE"&&s.backendReadiness?.databaseReady===true&&s.integration?.ready===true&&s.tls?.ready===true?0:1)).catch(()=>process.exit(1))'; then
+if ! /usr/bin/node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync("${config.applicationRoot}/quickhack-package.json","utf8"));fetch("http://127.0.0.1:2999/api/readiness", {signal:AbortSignal.timeout(5000)}).then(r=>r.json()).then(s=>process.exit(s.applicationState==="ACTIVE"&&s.runtimeBuildId===m.contentInventorySha256&&s.database?.state==="ACTIVE"&&s.backendReadiness?.databaseReady===true&&s.tls?.ready===true?0:1)).catch(()=>process.exit(1))'; then
   if /usr/bin/${config.launcherName}-$action; then
     printf '\\nInitial login details can be shown with: sudo /usr/bin/${config.launcherName}-initial-login\\nPress Enter to continue.\\n'
     read -r answer || true

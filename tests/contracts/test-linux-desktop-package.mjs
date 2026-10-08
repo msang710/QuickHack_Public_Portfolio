@@ -54,6 +54,7 @@ try {
       assert.match(launcher, /action=setup/);
       assert.match(launcher, /action=repair/);
       assert.match(launcher, /api\/readiness/);
+      assert.doesNotMatch(launcher, /integration\?\.ready/);
       assert.match(launcher, /initial-login/);
       assert.match(launcher, /exit/);
       assert.doesNotMatch(launcher, /\[ ! -f .*server-runtime\.json/);

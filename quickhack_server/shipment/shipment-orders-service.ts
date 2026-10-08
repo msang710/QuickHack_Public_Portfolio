@@ -987,24 +987,28 @@ async function loadAllOrderPage(input: {
           matched_item_count: bigint;
           fully_matched_count: bigint;
         }>>`
+          WITH active_allocation_keys AS (
+            SELECT DISTINCT
+              external_order_id,
+              external_shipment_id,
+              COALESCE(external_vendor_item_id, '') AS external_vendor_item_id
+            FROM match_worker_allocation
+            WHERE allocation_status IN (${Prisma.join([
+              ...ACTIVE_MATCH_WORKER_ALLOCATION_STATUSES,
+            ])})
+          )
           SELECT
             COUNT(*)::bigint AS total_count,
             COUNT(DISTINCT w.external_order_id)::bigint AS order_count,
-            COUNT(*) FILTER (
-              WHERE EXISTS (
-                SELECT 1
-                FROM match_worker_allocation AS a
-                WHERE a.external_order_id = w.external_order_id
-                  AND a.external_shipment_id = w.external_shipment_id
-                  AND COALESCE(a.external_vendor_item_id, '') = w.external_vendor_item_id
-                  AND a.allocation_status IN (${Prisma.join([
-                    ...ACTIVE_MATCH_WORKER_ALLOCATION_STATUSES,
-                  ])})
-              )
-            )::bigint AS matched_item_count,
+            COUNT(*) FILTER (WHERE a.external_order_id IS NOT NULL)::bigint
+              AS matched_item_count,
             COUNT(*) FILTER (WHERE w.work_status = 'MATCHED')::bigint
               AS fully_matched_count
           FROM order_matching_work_queue AS w
+          LEFT JOIN active_allocation_keys AS a
+            ON a.external_order_id = w.external_order_id
+            AND a.external_shipment_id = w.external_shipment_id
+            AND a.external_vendor_item_id = w.external_vendor_item_id
           WHERE w.channel = 'COUPANG'
         `,
         input.client.match_worker_allocation.count({

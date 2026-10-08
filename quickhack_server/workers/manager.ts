@@ -1,4 +1,5 @@
 import { isClientRuntime } from "@/quickhack_shared/core/runtime";
+import { COUPANG_SYNC_WORKER_KEY } from "@/quickhack_server/workers/worker-keys";
 import { nowKstSqlDateTime, quickHackClock } from "@/quickhack_shared/core/time";
 import {
   ensureRegisteredWorkerJobs,
@@ -19,14 +20,24 @@ type WorkerManagerState = {
   started: boolean;
   starting: boolean;
   tickRunning: boolean;
+  recentTickRunning: boolean;
+  reconciliationTickRunning: boolean;
   disabledReason: string;
   pollSeconds: number;
   timer: ReturnType<typeof setInterval> | null;
+  recentTimer: ReturnType<typeof setInterval> | null;
+  reconciliationTimer: ReturnType<typeof setInterval> | null;
   initialTickTimer: ReturnType<typeof setTimeout> | null;
+  recentInitialTickTimer: ReturnType<typeof setTimeout> | null;
+  reconciliationInitialTickTimer: ReturnType<typeof setTimeout> | null;
   startupPromise: Promise<void> | null;
   immediateTickTimers: Set<ReturnType<typeof setTimeout>>;
   lastTickAt: string;
+  lastRecentTickAt: string;
+  lastReconciliationTickAt: string;
   lastErrorMessage: string;
+  lastRecentErrorMessage: string;
+  lastReconciliationErrorMessage: string;
   lastReadSyncRecoveryAttemptAtMs: number;
   lastReadSyncRecoveryAt: string;
   lastReadSyncRecoveryError: string;
@@ -56,14 +67,24 @@ function initialState(): WorkerManagerState {
     started: false,
     starting: false,
     tickRunning: false,
+    recentTickRunning: false,
+    reconciliationTickRunning: false,
     disabledReason: "",
     pollSeconds: DEFAULT_POLL_SECONDS,
     timer: null,
+    recentTimer: null,
+    reconciliationTimer: null,
     initialTickTimer: null,
+    recentInitialTickTimer: null,
+    reconciliationInitialTickTimer: null,
     startupPromise: null,
     immediateTickTimers: new Set(),
     lastTickAt: "",
+    lastRecentTickAt: "",
+    lastReconciliationTickAt: "",
     lastErrorMessage: "",
+    lastRecentErrorMessage: "",
+    lastReconciliationErrorMessage: "",
     lastReadSyncRecoveryAttemptAtMs: 0,
     lastReadSyncRecoveryAt: "",
     lastReadSyncRecoveryError: "",
@@ -96,6 +117,16 @@ function state() {
   current.lastCarrierInvoiceIssueRecoveryAt ??= "";
   current.lastCarrierInvoiceIssueRecoveryError ??= "";
   current.initialTickTimer ??= null;
+  current.recentInitialTickTimer ??= null;
+  current.recentTimer ??= null;
+  current.recentTickRunning ??= false;
+  current.lastRecentTickAt ??= "";
+  current.lastRecentErrorMessage ??= "";
+  current.reconciliationInitialTickTimer ??= null;
+  current.reconciliationTimer ??= null;
+  current.reconciliationTickRunning ??= false;
+  current.lastReconciliationTickAt ??= "";
+  current.lastReconciliationErrorMessage ??= "";
   current.startupPromise ??= null;
   current.immediateTickTimers ??= new Set();
 
@@ -185,13 +216,58 @@ async function runWorkerManagerTick() {
     }
 
     assertWorkerRunsAllowed();
-    await runDueWorkerJobs(null);
+    await runDueWorkerJobs(null, {
+      excludeWorkerKeys: [
+        COUPANG_SYNC_WORKER_KEY.acceptOrders,
+        COUPANG_SYNC_WORKER_KEY.orderReconciliation,
+      ],
+    });
     current.lastTickAt = nowKstSqlDateTime(quickHackClock.nowDate());
     current.lastErrorMessage = "";
   } catch (error) {
     current.lastErrorMessage = error instanceof Error ? error.message : String(error);
   } finally {
     current.tickRunning = false;
+  }
+}
+
+async function runRecentWorkerManagerTick() {
+  const current = state();
+  if (current.recentTickRunning) return;
+
+  assertWorkerRunsAllowed();
+  current.recentTickRunning = true;
+  try {
+    await runDueWorkerJobs(null, {
+      includeWorkerKeys: [COUPANG_SYNC_WORKER_KEY.acceptOrders],
+    });
+    current.lastRecentTickAt = nowKstSqlDateTime(quickHackClock.nowDate());
+    current.lastRecentErrorMessage = "";
+  } catch (error) {
+    current.lastRecentErrorMessage =
+      error instanceof Error ? error.message : String(error);
+  } finally {
+    current.recentTickRunning = false;
+  }
+}
+
+async function runReconciliationWorkerManagerTick() {
+  const current = state();
+  if (current.reconciliationTickRunning) return;
+
+  assertWorkerRunsAllowed();
+  current.reconciliationTickRunning = true;
+  try {
+    await runDueWorkerJobs(null, {
+      includeWorkerKeys: [COUPANG_SYNC_WORKER_KEY.orderReconciliation],
+    });
+    current.lastReconciliationTickAt = nowKstSqlDateTime(quickHackClock.nowDate());
+    current.lastReconciliationErrorMessage = "";
+  } catch (error) {
+    current.lastReconciliationErrorMessage =
+      error instanceof Error ? error.message : String(error);
+  } finally {
+    current.reconciliationTickRunning = false;
   }
 }
 
@@ -226,6 +302,16 @@ export function startWorkerManager() {
         current.pollSeconds * 1000
       );
       current.timer.unref?.();
+      current.recentTimer = setInterval(
+        () => void runRecentWorkerManagerTick().catch(() => undefined),
+        current.pollSeconds * 1000
+      );
+      current.recentTimer.unref?.();
+      current.reconciliationTimer = setInterval(
+        () => void runReconciliationWorkerManagerTick().catch(() => undefined),
+        current.pollSeconds * 1000
+      );
+      current.reconciliationTimer.unref?.();
       current.started = true;
       current.disabledReason = "";
       current.initialTickTimer = setTimeout(
@@ -236,6 +322,22 @@ export function startWorkerManager() {
         1_000
       );
       current.initialTickTimer.unref?.();
+      current.recentInitialTickTimer = setTimeout(
+        () => {
+          current.recentInitialTickTimer = null;
+          void runRecentWorkerManagerTick().catch(() => undefined);
+        },
+        1_000
+      );
+      current.recentInitialTickTimer.unref?.();
+      current.reconciliationInitialTickTimer = setTimeout(
+        () => {
+          current.reconciliationInitialTickTimer = null;
+          void runReconciliationWorkerManagerTick().catch(() => undefined);
+        },
+        1_000
+      );
+      current.reconciliationInitialTickTimer.unref?.();
     } catch (error) {
       current.disabledReason =
         error instanceof Error ? error.message : String(error);
@@ -267,10 +369,16 @@ export function getWorkerManagerState() {
     started: current.started,
     starting: current.starting,
     tickRunning: current.tickRunning,
+    recentTickRunning: current.recentTickRunning,
+    reconciliationTickRunning: current.reconciliationTickRunning,
     disabledReason: current.disabledReason,
     pollSeconds: current.pollSeconds,
     lastTickAt: current.lastTickAt,
+    lastRecentTickAt: current.lastRecentTickAt,
+    lastReconciliationTickAt: current.lastReconciliationTickAt,
     lastErrorMessage: current.lastErrorMessage,
+    lastRecentErrorMessage: current.lastRecentErrorMessage,
+    lastReconciliationErrorMessage: current.lastReconciliationErrorMessage,
     lastReadSyncRecoveryAt: current.lastReadSyncRecoveryAt,
     lastReadSyncRecoveryError: current.lastReadSyncRecoveryError,
     lastInventoryVerificationRecoveryAt:
@@ -300,6 +408,8 @@ export function wakeWorkerManager() {
     () => {
       current.immediateTickTimers.delete(immediateTick);
       void runWorkerManagerTick().catch(() => undefined);
+      void runRecentWorkerManagerTick().catch(() => undefined);
+      void runReconciliationWorkerManagerTick().catch(() => undefined);
     },
     0
   );
@@ -315,9 +425,25 @@ export function beginWorkerManagerShutdown(reason: string) {
     clearInterval(current.timer);
     current.timer = null;
   }
+  if (current.recentTimer) {
+    clearInterval(current.recentTimer);
+    current.recentTimer = null;
+  }
+  if (current.reconciliationTimer) {
+    clearInterval(current.reconciliationTimer);
+    current.reconciliationTimer = null;
+  }
   if (current.initialTickTimer) {
     clearTimeout(current.initialTickTimer);
     current.initialTickTimer = null;
+  }
+  if (current.recentInitialTickTimer) {
+    clearTimeout(current.recentInitialTickTimer);
+    current.recentInitialTickTimer = null;
+  }
+  if (current.reconciliationInitialTickTimer) {
+    clearTimeout(current.reconciliationInitialTickTimer);
+    current.reconciliationInitialTickTimer = null;
   }
   for (const timer of current.immediateTickTimers) {
     clearTimeout(timer);
@@ -328,14 +454,19 @@ export function beginWorkerManagerShutdown(reason: string) {
   return {
     ...shutdown,
     managerStarting: current.starting,
-    managerTickRunning: current.tickRunning,
+    managerTickRunning:
+      current.tickRunning || current.recentTickRunning ||
+      current.reconciliationTickRunning,
   };
 }
 
 export async function waitForWorkerManagerToDrain() {
   const current = state();
 
-  while (current.starting || current.tickRunning) {
+  while (
+    current.starting || current.tickRunning || current.recentTickRunning ||
+    current.reconciliationTickRunning
+  ) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 

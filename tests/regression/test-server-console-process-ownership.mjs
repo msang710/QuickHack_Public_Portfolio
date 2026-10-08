@@ -14,7 +14,8 @@ assert.match(core, /child\.kill\("SIGTERM"\)/);
 assert.match(core, /waitForExit\(child, timeoutMs\)/);
 assert.match(core, /stopOwned\(id, 10_000\)/);
 assert.doesNotMatch(core.split("async function stopOwned(id,")[1].split("async function start()")[0], /terminateOwnedProcess/);
-assert.match(core, /applicationState = database\.state === "ACTIVE" && backend\.ok && gateway\.ok/);
+assert.match(core, /applicationState = mainServerState\(/);
+assert.doesNotMatch(core, /backendReadiness\.databaseReady === true && integrationStatus\.ready/);
 assert.match(core, /\? "DEGRADED"/);
 assert.doesNotMatch(core, /systemctl|sc\.exe|taskkill|powershell/iu);
 

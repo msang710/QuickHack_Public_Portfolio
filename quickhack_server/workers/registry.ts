@@ -129,22 +129,46 @@ export const registeredWorkers: RegisteredWorker[] = [
   },
   {
     key: COUPANG_SYNC_WORKER_KEY.acceptOrders,
-    name: "Coupang ACCEPT order sync",
+    name: "Coupang recent ACCEPT order sync",
     type: "COUPANG_SYNC",
     defaultIntervalSeconds: 60,
     maxAttempts: 3,
     lockSeconds: 300,
     async run(context) {
-      const { syncCoupangAcceptOrders } = await import(
+      const { syncCoupangRecentAcceptOrders } = await import(
         "@/quickhack_server/sales-channel/coupang/sync-service"
       );
-      const result = await syncCoupangAcceptOrders({
+      const result = await syncCoupangRecentAcceptOrders({
         reason: "scheduled-worker",
         workerLease: context,
       });
 
       await context.updateProgress(result.orders, null);
 
+      return {
+        summary: result,
+        progressCurrent: result.orders,
+        progressTotal: null,
+      };
+    },
+  },
+  {
+    key: COUPANG_SYNC_WORKER_KEY.orderReconciliation,
+    name: "Coupang order reconciliation",
+    type: "COUPANG_SYNC",
+    defaultIntervalSeconds: 60 * 60,
+    inheritScheduleFromWorkerKey: COUPANG_SYNC_WORKER_KEY.acceptOrders,
+    maxAttempts: 3,
+    lockSeconds: 300,
+    async run(context) {
+      const { syncCoupangOrderReconciliation } = await import(
+        "@/quickhack_server/sales-channel/coupang/sync-service"
+      );
+      const result = await syncCoupangOrderReconciliation({
+        reason: "scheduled-reconciliation",
+        workerLease: context,
+      });
+      await context.updateProgress(result.orders, null);
       return {
         summary: result,
         progressCurrent: result.orders,

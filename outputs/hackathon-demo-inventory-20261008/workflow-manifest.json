@@ -1,0 +1,150 @@
+{
+  "scenario": "HACKATHON_DEMO_WORKFLOW_20261008",
+  "anchor_date": "2026-10-07",
+  "sales": [
+    {
+      "pg_no": "MX2435678288",
+      "reference_pg_no": "IV1193057160",
+      "sold_days_before_anchor": 168,
+      "return": false
+    },
+    {
+      "pg_no": "CQ1579496620",
+      "reference_pg_no": "GK7368225886",
+      "sold_days_before_anchor": 161,
+      "return": false
+    },
+    {
+      "pg_no": "GL5907585137",
+      "reference_pg_no": "QC4032924448",
+      "sold_days_before_anchor": 154,
+      "return": false
+    },
+    {
+      "pg_no": "LM1394154365",
+      "reference_pg_no": "ZW6005737495",
+      "sold_days_before_anchor": 147,
+      "return": false
+    },
+    {
+      "pg_no": "XX5563944731",
+      "reference_pg_no": "VF5221005790",
+      "sold_days_before_anchor": 140,
+      "return": false
+    },
+    {
+      "pg_no": "PZ6741887264",
+      "reference_pg_no": "EC6384316323",
+      "sold_days_before_anchor": 133,
+      "return": false
+    },
+    {
+      "pg_no": "XE8425958867",
+      "reference_pg_no": "VO4589896242",
+      "sold_days_before_anchor": 126,
+      "return": false
+    },
+    {
+      "pg_no": "YH5357766068",
+      "reference_pg_no": "AL4460586548",
+      "sold_days_before_anchor": 119,
+      "return": false
+    },
+    {
+      "pg_no": "QA8370887087",
+      "reference_pg_no": "HO1199960381",
+      "sold_days_before_anchor": 112,
+      "return": false
+    },
+    {
+      "pg_no": "QP3250690781",
+      "reference_pg_no": "SK7534636948",
+      "sold_days_before_anchor": 105,
+      "return": false
+    },
+    {
+      "pg_no": "MF9900184624",
+      "reference_pg_no": "ZJ1831146896",
+      "sold_days_before_anchor": 98,
+      "return": false
+    },
+    {
+      "pg_no": "IC5938779430",
+      "reference_pg_no": "KK5546096922",
+      "sold_days_before_anchor": 91,
+      "return": false
+    },
+    {
+      "pg_no": "SX4621625725",
+      "reference_pg_no": "JW9458039629",
+      "sold_days_before_anchor": 84,
+      "return": false
+    },
+    {
+      "pg_no": "FX8262784650",
+      "reference_pg_no": "KD8318560219",
+      "sold_days_before_anchor": 77,
+      "return": false
+    },
+    {
+      "pg_no": "RG5634590517",
+      "reference_pg_no": "ZL0744296385",
+      "sold_days_before_anchor": 70,
+      "return": false
+    },
+    {
+      "pg_no": "BF6588973489",
+      "reference_pg_no": "SE2093140095",
+      "sold_days_before_anchor": 63,
+      "return": false
+    },
+    {
+      "pg_no": "HY0590772880",
+      "reference_pg_no": "OT3395826124",
+      "sold_days_before_anchor": 56,
+      "return": true
+    },
+    {
+      "pg_no": "WT4311583018",
+      "reference_pg_no": "RQ1963800877",
+      "sold_days_before_anchor": 49,
+      "return": false
+    },
+    {
+      "pg_no": "BL3716346669",
+      "reference_pg_no": "ZI1491815210",
+      "sold_days_before_anchor": 42,
+      "return": false
+    },
+    {
+      "pg_no": "QO9413803904",
+      "reference_pg_no": "FF7870430688",
+      "sold_days_before_anchor": 35,
+      "return": true
+    },
+    {
+      "pg_no": "UZ6563713346",
+      "reference_pg_no": "TL5398230346",
+      "sold_days_before_anchor": 28,
+      "return": false
+    },
+    {
+      "pg_no": "XU5778151187",
+      "reference_pg_no": "NM1723122546",
+      "sold_days_before_anchor": 21,
+      "return": true
+    },
+    {
+      "pg_no": "LS0181952118",
+      "reference_pg_no": "IZ4621331095",
+      "sold_days_before_anchor": 14,
+      "return": false
+    },
+    {
+      "pg_no": "OZ3089172209",
+      "reference_pg_no": "KF3015338974",
+      "sold_days_before_anchor": 7,
+      "return": true
+    }
+  ]
+}

@@ -82,6 +82,9 @@ test("setup rejects a spoofed response, stale PID, and restart during readiness"
       applicationStatus: async () => ready,
     };
     assert.deepEqual(await waitForVerifiedApplicationReady(config, baseline, { attempts: 1 }), ready);
+    const withoutSimulators = { ...ready, integration: { ready: false } };
+    assert.deepEqual(await waitForVerifiedApplicationReady(config, { ...baseline, applicationStatus: async () => withoutSimulators }, { attempts: 1 }), withoutSimulators);
+    await assert.rejects(() => waitForVerifiedApplicationReady(config, { ...baseline, applicationStatus: async () => ({ ...ready, backend: { ok: false } }) }, { attempts: 1 }), (error) => error.code === "APPLICATION_NOT_READY");
     await assert.rejects(() => waitForVerifiedApplicationReady(config, { ...baseline, consoleReadinessProof: async () => ({ pid: 999, secret }) }, { attempts: 1 }), (error) => error.code === "APPLICATION_NOT_READY");
     await assert.rejects(() => waitForVerifiedApplicationReady(config, { ...baseline, applicationStatus: async () => { throw new Error("bad proof"); } }, { attempts: 1 }), (error) => error.code === "APPLICATION_NOT_READY");
     let calls = 0;
