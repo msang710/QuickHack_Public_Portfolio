@@ -202,20 +202,15 @@ stateDiagram-v2
 
 Secret Key는 브라우저나 클라이언트 패키지에 전달하지 않습니다. 서버가 QHKEY 자격 증명 컨텍스트 안에서 요청을 서명하고, 자격 증명 원문 대신 복구 판단에 필요한 요청 상태·실패 단계·오류 코드를 기록합니다.
 
-## 3분 데모 영상
+## 설치 클라이언트 UI 시연
 
-> 공개 가능한 데모 영상은 아직 촬영되지 않았습니다. 존재하지 않는 링크를 넣는 대신, 아래 시나리오를 3분 영상의 촬영 기준으로 고정합니다.
+[![QuickHack 설치 클라이언트 UI 시연](assets/quickhack-ui-demo-cover.jpg)](https://raw.githubusercontent.com/msang710/QuickHack_Public_Portfolio/main/assets/quickhack-ui-demo.mp4)
 
-| 구간 | 보여줄 내용 | 확인할 설계 포인트 |
-| --- | --- | --- |
-| 0:00–0:20 | 기기 입고부터 반품까지의 문제 정의 | PG 한 개가 전체 흐름의 기준 |
-| 0:20–0:50 | 입고 차수와 외관·기능 검수 | 단계별 입력과 검수 이력 분리 |
-| 0:50–1:20 | 매입 확정 후 재고 조회·수량 원장 | 기기 상태와 SKU 잔액 동시 반영 |
-| 1:20–1:55 | Mock 주문 수집과 재고 자동 매칭 | 중복 배정 방지와 실패 사유 |
-| 1:55–2:30 | 포장·송장 처리와 외부 쓰기 실패 주입 | blind retry 대신 GET 검증 |
-| 2:30–3:00 | 처리 확인 대기열과 응답 성능 화면 | 사람이 개입할 경계와 추적 가능성 |
+[UI 조작 영상 열기 (4분 49초)](https://raw.githubusercontent.com/msang710/QuickHack_Public_Portfolio/main/assets/quickhack-ui-demo.mp4)
 
-영상 공개 시 이 섹션 상단에 썸네일과 단일 링크를 추가하고, 아래의 실행 절차는 영상과 같은 순서로 유지합니다.
+설치된 데모 클라이언트에서 검수 정보 입력·업로드, PG 발급, 매입 확정, 판매 오퍼 생성, Coupang Mock 상품·주문 매핑과 자동 매칭을 조작한 영상입니다. 자막이나 별도의 기술 설명 화면은 넣지 않았습니다. 주문과 상품은 격리된 Mock 데이터입니다.
+
+영상은 전체 기능 시연이 아닙니다. Android 앱을 통한 출고 검수, 포장·송장, 반품과 외부 연동 복구 등은 영상에 포함되지 않습니다. 출고 검수의 구현 범위는 [Android 앱](quickhack_android/README.md)과 [서버 검증 서비스](quickhack_server/mobile/packing-check-service.ts)를 참고하세요.
 
 ## 성능 개선 전후
 

@@ -189,20 +189,15 @@ stateDiagram-v2
 
 External secret keys are not delivered to the browser or client package. The server signs requests within the QHKEY credential context and records recovery-relevant states, stages, and error codes instead of raw credentials.
 
-## Three-minute demo
+## Installed client UI demo
 
-A public demo video has not yet been recorded. The intended walkthrough is:
+[![QuickHack installed client UI demo](assets/quickhack-ui-demo-cover.jpg)](https://raw.githubusercontent.com/msang710/QuickHack_Public_Portfolio/main/assets/quickhack-ui-demo.mp4)
 
-| Time | Content | Design point |
-| --- | --- | --- |
-| 0:00–0:20 | Inbound-to-return problem | One PG connects the workflow |
-| 0:20–0:50 | Inbound batch and inspections | Separate inputs and inspection history |
-| 0:50–1:20 | Purchase confirmation and inventory ledger | Device state and SKU balance update together |
-| 1:20–1:55 | Mock order collection and matching | Prevent duplicate allocations; expose failure reasons |
-| 1:55–2:30 | Packing/invoicing and injected API failure | Verify with GET rather than retry blindly |
-| 2:30–3:00 | Review queue and performance view | Operator intervention and traceability |
+[Open the UI walkthrough (4 minutes 49 seconds)](https://raw.githubusercontent.com/msang710/QuickHack_Public_Portfolio/main/assets/quickhack-ui-demo.mp4)
 
-A thumbnail and a single video link can be added when the recording is available. The demonstration steps below follow the same workflow.
+This recording shows actual interaction with the installed demonstration client: entering and uploading inspection data, issuing a PG, confirming a purchase, creating a sales offer, mapping Coupang Mock products and orders, and running automatic matching. It has no subtitles or separate technical slides. Products and orders are isolated Mock data.
+
+The video covers only part of the product. Android app packing verification, packing and invoicing, returns, and external-write recovery are not shown. See the [Android app](quickhack_android/README.md) and [server packing-check service](quickhack_server/mobile/packing-check-service.ts) for the implemented packing-verification path.
 
 ## Performance evidence
 
