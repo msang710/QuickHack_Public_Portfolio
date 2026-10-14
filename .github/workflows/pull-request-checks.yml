@@ -147,7 +147,7 @@ jobs:
           --version="$env:QUICKHACK_RELEASE_VERSION"
           --publisher="$env:QUICKHACK_MSIX_PUBLISHER"
           --require-unsigned
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-msix-exact-four-unsigned
           path: release/distribution/windows/msix/exact-four/
@@ -204,22 +204,22 @@ jobs:
               --target="$target" \
               --release-version="$QUICKHACK_RELEASE_VERSION"
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-demo-server
           path: release/distribution/linux/demo-server/
           if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-demo-client
           path: release/distribution/linux/demo-client/
           if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-operational-server
           path: release/distribution/linux/operational-server/
           if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-operational-client
           path: release/distribution/linux/operational-client/
@@ -275,7 +275,7 @@ jobs:
         run: |
           mkdir -p release/final-integration
           printf '%s\n' "$GITHUB_SHA" > release/final-integration/source-commit.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: inputs.scope == 'all'
         with:
           name: final-integration-complete

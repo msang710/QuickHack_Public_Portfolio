@@ -142,7 +142,7 @@ jobs:
           [[ "$(find release/distribution/windows/msix/exact-four -type f | wc -l)" -eq 12 ]]
           [[ "$(find release/distribution/windows/msix/release-metadata -type f | wc -l)" -eq 4 ]]
           ! find release/distribution/windows/msix -type f \( -iname '*.exe' -o -iname '*.appinstaller' \) | grep -q .
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-msix-release-ready-${{ needs.prepare.outputs.version }}
           path: |
