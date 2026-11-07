@@ -4,6 +4,7 @@ import { inferStoredDeviceStatus } from "@/quickhack_server/inspection/device-st
 import {
   createInspectionRecord,
   deriveInspectionRecordKind,
+  FIRST_CALL_DATE_UNKNOWN,
   saleGradeFromAppearanceGrade,
   type InspectionRecord,
 } from "@/quickhack_shared/inspection/inspection-schema";
@@ -24,7 +25,7 @@ import {
 } from "@/quickhack_server/inventory/inventory-quantity-ledger-service";
 import { randomUUID } from "node:crypto";
 import { runMeasuredTransaction } from "@/quickhack_server/observability/transaction-trace";
-import { publicConflict } from "@/quickhack_server/core/public-error";
+import { publicConflict, publicNotFound } from "@/quickhack_server/core/public-error";
 import { claimInboundWorkflowState } from "@/quickhack_server/inbound/inbound-workflow-claim-service";
 import { lockAggregateKey } from "@/quickhack_server/core/database/aggregate-command";
 import { lockDeviceAggregateRow } from "@/quickhack_server/inventory/device-aggregate-lock";
@@ -37,7 +38,7 @@ import { assignCurrentInventorySkuToDevice } from "@/quickhack_server/catalog/in
 import { normalizePgNo as normalizeCanonicalPgNo } from "@/quickhack_shared/inventory/pg-no";
 import {
   consumeLockedInspectionPg,
-  lockInspectionPgReservation,
+  findLockedInspectionPgReservation,
   lockInspectionPgReservationByPg,
 } from "@/quickhack_server/inspection/pg-issuance-service";
 
@@ -94,7 +95,8 @@ function nullableDateTime(record: InspectionRecordInput, key: string) {
 
 function nullableDate(record: InspectionRecordInput, key: string) {
   const value = record[key];
-  if (value === undefined || value === null || String(value).trim() === "") {
+  const normalized = value === undefined || value === null ? "" : String(value).trim();
+  if (!normalized || normalized === FIRST_CALL_DATE_UNKNOWN) {
     return null;
   }
   return databaseDate(value as DateTimeInput);
@@ -545,7 +547,7 @@ export async function saveInspectionRecord(
   return runMeasuredTransaction(client, "inspection.record.save", async (tx) => {
     await lockAggregateKey(tx, { namespace: "device-inbound", key: pgNo });
     const reservation = activeReservationContext
-      ? await lockInspectionPgReservation(tx, activeReservationContext.clientRecordId)
+      ? await findLockedInspectionPgReservation(tx, activeReservationContext.clientRecordId)
       : null;
     if (reservation) {
       if (reservation.status === "CONSUMED" && reservation.result_payload) {
@@ -588,6 +590,9 @@ export async function saveInspectionRecord(
         },
       },
     });
+    if (activeReservationContext && !reservation && !existingDevice) {
+      throw publicNotFound("PG_RESERVATION_NOT_FOUND", "PG_RESERVATION_NOT_FOUND");
+    }
     const device = await upsertDevice(tx, normalizedRecord, pgNo, timestamp);
     const inboundBeforeClaim = await tx.inbounds.findFirst({
       where: { pg_no: pgNo },

@@ -62,6 +62,19 @@ export async function ensureConsoleOperatorStateDirectory(dataRoot, uid, gid) {
   }
 }
 
+export async function ensureServerRuntimeConfigOwnership(configRoot, runtimeConfig, uid, gid) {
+  const directory = await fs.lstat(configRoot);
+  const file = await fs.lstat(runtimeConfig);
+  if (!directory.isDirectory() || directory.isSymbolicLink() ||
+      !file.isFile() || file.isSymbolicLink()) {
+    throw lifecycleError("RUNTIME_CONFIG_PATH_INVALID", "Runtime configuration path is invalid.");
+  }
+  await fs.chown(configRoot, uid, gid);
+  await fs.chmod(configRoot, 0o700);
+  await fs.chown(runtimeConfig, uid, gid);
+  await fs.chmod(runtimeConfig, 0o600);
+}
+
 export function childFailureCode(stderr) {
   return /^([A-Z][A-Z0-9_]{2,63}):/u.exec(String(stderr ?? ""))?.[1] ?? null;
 }
@@ -193,10 +206,15 @@ function defaultRuntime() {
       const existing = await fs.lstat(runtimeConfig).catch(() => null);
       if (existing) {
         if (!existing.isFile() || existing.isSymbolicLink()) throw lifecycleError("PACKAGE_ARTIFACT_INVALID", "Runtime configuration is not a regular file.");
-        return runtimeConfig;
+      } else {
+        const template = path.posix.join(config.applicationRoot, "packaging/server-runtime.template.json");
+        await fs.copyFile(template, runtimeConfig, constants.COPYFILE_EXCL);
       }
-      const template = path.posix.join(config.applicationRoot, "packaging/server-runtime.template.json");
-      await fs.copyFile(template, runtimeConfig, constants.COPYFILE_EXCL);
+      const user = config.users.application;
+      const uid = Number((await defaultExec("/usr/bin/id", ["-u", user])).stdout.trim());
+      const gid = Number((await defaultExec("/usr/bin/id", ["-g", user])).stdout.trim());
+      if (!Number.isSafeInteger(uid) || !Number.isSafeInteger(gid)) throw lifecycleError("APPLICATION_ACCOUNT_INVALID", "Application account is invalid.");
+      await ensureServerRuntimeConfigOwnership(config.configRoot, runtimeConfig, uid, gid);
       return runtimeConfig;
     },
     async runOperator(config, command) {

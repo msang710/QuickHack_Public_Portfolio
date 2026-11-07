@@ -403,7 +403,9 @@ export function normalizeInspectionField(
     case "저장공간":
       return normalizeStorage(value);
     case "최초통화일":
-      return normalizeFirstCallDate(value);
+      return normalizeOptionalText(value)
+        ? normalizeFirstCallDate(value)
+        : "";
     case "차수": {
       const normalized = normalizeOptionalText(value);
       return /^\d+$/.test(normalized)

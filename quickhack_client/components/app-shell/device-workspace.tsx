@@ -1350,8 +1350,20 @@ function DeviceWorkspaceContent({
       return;
     }
 
+    const inspectionMenus: MenuItemId[] = [
+      "inbound-appearance",
+      "inbound-function",
+      "inbound-upload-pending",
+    ];
+    const keepsInspectionRecords =
+      inspectionMenus.includes(selectedMenuId) &&
+      inspectionMenus.includes(nextMenuId);
+
     runGuardedAction({
       intent: "menu-change",
+      preserveDirtyFormIds: keepsInspectionRecords
+        ? ["inspection.pending-records"]
+        : undefined,
       targetLabel: findMenuItem(
         nextMenuId,
         localizedMenuGroups,

@@ -27,6 +27,7 @@ export type GuardedActionOptions = {
   intent: UnsavedGuardIntent;
   action: () => void;
   formIds?: readonly string[];
+  preserveDirtyFormIds?: readonly string[];
   targetLabel?: string;
 };
 
@@ -187,7 +188,10 @@ export function UnsavedChangesProvider({
         return;
       }
 
-      const matchingDirtyEntries = registry.getDirtyEntries(selection);
+      const matchingDirtyEntries = registry.getDirtyEntries(
+        selection,
+        options.preserveDirtyFormIds
+      );
       if (matchingDirtyEntries.length === 0) {
         executeAction(options);
         return;

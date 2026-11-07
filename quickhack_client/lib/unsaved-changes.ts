@@ -144,9 +144,12 @@ export class UnsavedChangesRegistry {
   }
 
   getDirtyEntries(
-    selection: UnsavedFormSelection = "all"
+    selection: UnsavedFormSelection = "all",
+    preservedIds: readonly string[] = []
   ): UnsavedFormEntry[] {
-    return this.getEntries(selection).filter((entry) => entry.isDirty);
+    return this.getEntries(selection).filter(
+      (entry) => entry.isDirty && !preservedIds.includes(entry.id)
+    );
   }
 
   getBusyEntries(

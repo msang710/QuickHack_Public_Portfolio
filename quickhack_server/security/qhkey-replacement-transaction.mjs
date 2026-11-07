@@ -547,6 +547,12 @@ export function createQhkeyReplacementService(options = {}) {
         targetHandle = await fileSystem.open(temporaryTarget, "wx", 0o600);
         await targetHandle.writeFile(payload);
         await targetHandle.sync();
+        if (platform === "linux" && Number.isInteger(record.ownerUid)) {
+          await targetHandle.chown(
+            record.ownerUid,
+            Number.isInteger(record.ownerGid) ? record.ownerGid : record.ownerUid
+          );
+        }
         await targetHandle.close();
         targetHandle = null;
         await composed.volumeProvider.validate(record.volume, {

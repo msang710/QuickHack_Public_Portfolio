@@ -983,6 +983,7 @@ export function InspectionWorkspace({
       reservedRecordIds.map((recordId) =>
         fetch(`/api/inspection-pg-reservations/${encodeURIComponent(recordId)}`, {
           method: "DELETE",
+          headers: { "content-type": "application/json" },
         }).then((response) => {
           if (!response.ok) throw new Error("PG_RESERVATION_ABANDON_FAILED");
         })

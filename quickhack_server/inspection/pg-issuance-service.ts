@@ -196,7 +196,7 @@ export async function abandonInspectionPg(client: PrismaClient, clientRecordIdRa
   });
 }
 
-export async function lockInspectionPgReservation(tx: TransactionClient, clientRecordIdRaw: unknown) {
+export async function findLockedInspectionPgReservation(tx: TransactionClient, clientRecordIdRaw: unknown) {
   const clientRecordId = requiredClientRecordId(clientRecordIdRaw);
   const rows = await tx.$queryRaw<Array<{
     inspection_pg_reservation_id: string; client_record_id: string; pg_no: string;
@@ -205,8 +205,13 @@ export async function lockInspectionPgReservation(tx: TransactionClient, clientR
     SELECT inspection_pg_reservation_id, client_record_id, pg_no, inspection_kind, status, expires_at, result_payload
     FROM inspection_pg_reservations WHERE client_record_id = ${clientRecordId} FOR UPDATE
   `;
-  if (!rows[0]) throw publicNotFound("PG_RESERVATION_NOT_FOUND", "PG_RESERVATION_NOT_FOUND");
-  return rows[0];
+  return rows[0] ?? null;
+}
+
+export async function lockInspectionPgReservation(tx: TransactionClient, clientRecordIdRaw: unknown) {
+  const reservation = await findLockedInspectionPgReservation(tx, clientRecordIdRaw);
+  if (!reservation) throw publicNotFound("PG_RESERVATION_NOT_FOUND", "PG_RESERVATION_NOT_FOUND");
+  return reservation;
 }
 
 export async function lockInspectionPgReservationByPg(tx: TransactionClient, pgNo: string) {
