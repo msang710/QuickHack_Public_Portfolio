@@ -468,7 +468,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "autoprefixer": "^10.5.4",
-    "electron": "44.1.0",
+    "electron": "44.10.2",
     "esbuild": "0.28.2",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.4.1",
@@ -503,11 +503,14 @@
       "deepmerge-ts": "8.0.0"
     },
     "browserslist": "4.28.8",
-    "fast-uri": "4.1.4",
+    "fast-uri": "4.2.3",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    },
     "mysql2": "3.24.3"
   },
   "allowScripts": {
-    "electron@44.1.0": true,
+    "electron@44.10.2": true,
     "esbuild@0.28.2": true,
     "@parcel/watcher@2.6.0": true,
     "@swc/core@1.16.1": true,

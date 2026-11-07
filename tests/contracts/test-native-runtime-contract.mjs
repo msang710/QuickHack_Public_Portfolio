@@ -31,7 +31,7 @@ assert.equal(packageJson.engines.npm, ">=12 <13");
 assert.equal(packageJson.packageManager, NATIVE_RUNTIME_CONTRACT.npm.packageManager);
 assert.equal(packageLock.packages[""].engines.npm, packageJson.engines.npm);
 assert.deepEqual(packageJson.allowScripts, {
-  "electron@44.1.0": true,
+  "electron@44.10.2": true,
   "esbuild@0.28.2": true,
   "@parcel/watcher@2.6.0": true,
   "@swc/core@1.16.1": true,

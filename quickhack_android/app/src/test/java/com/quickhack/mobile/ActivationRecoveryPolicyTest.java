@@ -52,7 +52,8 @@ public final class ActivationRecoveryPolicyTest {
         return new QuickHackApi.ApiResponse(
             status,
             "{\"ok\":false,\"code\":\"" + code + "\"}",
-            true
+            true,
+            null
         );
     }
 

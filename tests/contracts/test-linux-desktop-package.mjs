@@ -13,8 +13,8 @@ const write = (name, content) => {
   fs.writeFileSync(filename, content);
 };
 try {
-  write("node_modules/electron/package.json", JSON.stringify({ version: "44.1.0" }));
-  write("node_modules/electron/dist/version", "44.1.0");
+  write("node_modules/electron/package.json", JSON.stringify({ version: "44.10.2" }));
+  write("node_modules/electron/dist/version", "44.10.2");
   write("node_modules/electron/dist/electron", "fixture executable");
   write("node_modules/electron/dist/resources/default_app.asar", "development app");
   write(".quickhack-electron/main.cjs", "main fixture");

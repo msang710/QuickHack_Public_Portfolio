@@ -30,10 +30,10 @@ public final class ServerOriginTest {
 
     @Test
     public void quickHackResponseRequiresExplicitJsonSuccess() {
-        assertFalse(new QuickHackApi.ApiResponse(200, "", true).isQuickHackOk());
-        assertFalse(new QuickHackApi.ApiResponse(200, "{}", true).isQuickHackOk());
-        assertFalse(new QuickHackApi.ApiResponse(200, "{\"ok\":\"true\"}", true).isQuickHackOk());
-        assertFalse(new QuickHackApi.ApiResponse(302, "{\"ok\":true}", false).isQuickHackOk());
-        assertTrue(new QuickHackApi.ApiResponse(200, "{\"ok\":true}", true).isQuickHackOk());
+        assertFalse(new QuickHackApi.ApiResponse(200, "", true, null).isQuickHackOk());
+        assertFalse(new QuickHackApi.ApiResponse(200, "{}", true, null).isQuickHackOk());
+        assertFalse(new QuickHackApi.ApiResponse(200, "{\"ok\":\"true\"}", true, null).isQuickHackOk());
+        assertFalse(new QuickHackApi.ApiResponse(302, "{\"ok\":true}", false, null).isQuickHackOk());
+        assertTrue(new QuickHackApi.ApiResponse(200, "{\"ok\":true}", true, null).isQuickHackOk());
     }
 }

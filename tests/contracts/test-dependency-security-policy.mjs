@@ -89,8 +89,8 @@ function assertApprovedRemoteActions(relativePath, source) {
 }
 
 const packageJson = JSON.parse(await readProjectFile("package.json"));
-assert.equal(packageJson.dependencies.next, "^16.3.4");
-assert.equal(packageJson.devDependencies["eslint-config-next"], "^16.3.4");
+assert.equal(packageJson.dependencies.next, "16.4.1");
+assert.equal(packageJson.devDependencies["eslint-config-next"], "16.4.1");
 assert.equal(packageJson.dependencies.prisma, "^7.10.0");
 assert.equal(packageJson.dependencies["@prisma/client"], "^7.10.0");
 assert.equal(packageJson.dependencies["@prisma/adapter-pg"], "^7.10.0");
@@ -100,13 +100,17 @@ assert.deepEqual(packageJson.overrides, {
     "deepmerge-ts": "8.0.0",
   },
   browserslist: "4.28.8",
-  "fast-uri": "4.1.4",
+  "fast-uri": "4.2.3",
+  "@typescript-eslint/typescript-estree": {
+    minimatch: "11.0.1",
+  },
   mysql2: "3.24.3",
 }, "검토된 dependency 보안 보정 외 override를 허용하지 않습니다.");
 const packageLock = JSON.parse(await readProjectFile("package-lock.json"));
 assert.equal(packageLock.packages["node_modules/deepmerge-ts"]?.version, "8.0.0");
 assert.equal(packageLock.packages["node_modules/browserslist"]?.version, "4.28.8");
-assert.equal(packageLock.packages["node_modules/fast-uri"]?.version, "4.1.4");
+assert.equal(packageLock.packages["node_modules/fast-uri"]?.version, "4.2.3");
+assert.equal(packageLock.packages["node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch"]?.version, "11.0.1");
 assert.equal(packageLock.packages["node_modules/mysql2"]?.version, "3.24.3");
 assert.equal(packageLock.packages["node_modules/js-yaml"]?.version, "4.3.2");
 assert.equal(packageJson.scripts["audit:dependencies"], "npm audit --package-lock-only --audit-level=low");
