@@ -1349,19 +1349,20 @@ async function validateRelationChildren(
   category: ProductCriteriaCategory,
   label: string
 ) {
-  if (optionIds.length === 0) {
+  const uniqueOptionIds = Array.from(new Set(optionIds));
+  if (uniqueOptionIds.length === 0) {
     return [];
   }
 
   const rows = await tx.product_criteria_options.findMany({
     where: {
-      option_id: { in: optionIds },
+      option_id: { in: uniqueOptionIds },
       category,
       is_active: 1,
     },
   });
 
-  if (rows.length !== optionIds.length) {
+  if (rows.length !== uniqueOptionIds.length) {
     throw publicBadRequest(
       "PRODUCT_CRITERIA_LINK_NOT_FOUND",
       "PRODUCT_CRITERIA_LINK_NOT_FOUND"
