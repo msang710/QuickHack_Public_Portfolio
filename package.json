@@ -57,6 +57,7 @@
     "test:server-console-flavor-composition": "node tests/contracts/test-server-console-flavor-composition.mjs",
     "test:linux-console-unit": "node tests/contracts/test-linux-console-unit.mjs",
     "test:server-console-process-ownership": "node tests/regression/test-server-console-process-ownership.mjs",
+    "test:server-console-main-readiness": "node tests/regression/test-server-console-main-readiness.mjs",
     "test:server-console-lifecycle": "node tests/regression/test-server-console-lifecycle.mjs",
     "test:quickhack-operator": "node tests/contracts/test-quickhack-operator.mjs",
     "test:durable-handoff": "node tests/regression/test-durable-handoff.mjs",
